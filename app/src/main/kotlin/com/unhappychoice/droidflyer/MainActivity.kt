@@ -6,8 +6,13 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import com.github.salomonbrys.kodein.Kodein
+import com.github.salomonbrys.kodein.bind
+import com.github.salomonbrys.kodein.provider
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
+import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
+import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
 import flow.KeyDispatcher
@@ -17,6 +22,10 @@ import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 
 class MainActivity : AppCompatActivity() {
+    val module = Kodein {
+        bind<SettingsPresenter>() with provider { SettingsPresenter(this@MainActivity) }
+    }
+
     private val bag = CompositeDisposable()
 
     private val scope: MortarScope by lazy {
@@ -74,7 +83,7 @@ class MainActivity : AppCompatActivity() {
     private fun getFlowContext(baseContext: Context): Context =
         Flow.configure(baseContext, this)
             .dispatcher(KeyDispatcher.configure(this, ScreenChanger(this)).build())
-            .defaultKey("")
+            .defaultKey(SettingsScreen())
             .keyParceler(GsonParceler())
             .install()
 

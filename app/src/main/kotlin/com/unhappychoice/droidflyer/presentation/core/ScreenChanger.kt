@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.presentation.screen.core.Screen
+import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import flow.*
 import kotlinx.android.synthetic.main.activity_main.*
 
@@ -29,6 +30,7 @@ class ScreenChanger(val activity: MainActivity) : KeyChanger {
         val screen = incomingState.getScreen()
 
         screen?.inflateView()?.let {
+            inject(it)
             containerView.addView(it)
             incomingState.restore(it)
         }
@@ -45,6 +47,8 @@ class ScreenChanger(val activity: MainActivity) : KeyChanger {
         activity.supportActionBar?.title = screen.getTitle()
         activity.invalidateOptionsMenu()
     }
+
+    private fun inject(view: View) = (view as? BaseView)?.inject(activity.module)
 
     private fun hasScreens(): Boolean = false
 
