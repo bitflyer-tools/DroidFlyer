@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:icon="@drawable/ic_timeline_black_24dp" android:title="@string/chart"/>
-    <item android:icon="@drawable/ic_description_black_24dp" android:title="@string/order"/>
-    <item android:icon="@drawable/ic_build_black_24dp" android:title="@string/setting"/>
+    <item
+        android:id="@+id/chartIcon"
+        android:icon="@drawable/ic_timeline_black_24dp"
+        android:title="@string/chart"/>
+    <item
+        android:id="@+id/orderIcon"
+        android:icon="@drawable/ic_description_black_24dp"
+        android:title="@string/order"/>
+    <item
+        android:id="@+id/settingsIcon"
+        android:icon="@drawable/ic_build_black_24dp"
+        android:title="@string/setting"/>
 </menu>

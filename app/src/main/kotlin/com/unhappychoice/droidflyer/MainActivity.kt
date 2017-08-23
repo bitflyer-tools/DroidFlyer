@@ -1,8 +1,8 @@
 package com.unhappychoice.droidflyer
 
 import android.content.Context
-import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
+import android.support.v7.app.AppCompatActivity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -11,7 +11,9 @@ import com.github.salomonbrys.kodein.bind
 import com.github.salomonbrys.kodein.provider
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
+import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
+import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
@@ -24,6 +26,7 @@ import mortar.bundler.BundleServiceRunner
 class MainActivity : AppCompatActivity() {
     val module = Kodein {
         bind<SettingsPresenter>() with provider { SettingsPresenter(this@MainActivity) }
+        bind<ChartPresenter>() with provider { ChartPresenter(this@MainActivity) }
     }
 
     private val bag = CompositeDisposable()
@@ -49,6 +52,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         BundleServiceRunner.getBundleServiceRunner(this).onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        bottom_navigation.setOnNavigationItemSelectedListener {
+            when(it.itemId) {
+                R.id.chartIcon -> Flow.get(this).set(ChartScreen())
+                R.id.orderIcon -> {}
+                R.id.settingsIcon -> Flow.get(this).set(SettingsScreen())
+            }
+            true
+        }
     }
 
     override fun onDestroy() {
@@ -83,7 +94,7 @@ class MainActivity : AppCompatActivity() {
     private fun getFlowContext(baseContext: Context): Context =
         Flow.configure(baseContext, this)
             .dispatcher(KeyDispatcher.configure(this, ScreenChanger(this)).build())
-            .defaultKey(SettingsScreen())
+            .defaultKey(ChartScreen())
             .keyParceler(GsonParceler())
             .install()
 
