@@ -1,12 +1,9 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import android.util.Log
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
-import com.unhappychoice.norimaki.extension.subscribeNext
 import mortar.MortarScope
 import mortar.ViewPresenter
 

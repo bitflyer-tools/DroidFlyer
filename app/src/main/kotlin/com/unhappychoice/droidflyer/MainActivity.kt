@@ -7,29 +7,24 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import com.github.salomonbrys.kodein.Kodein
-import com.github.salomonbrys.kodein.bind
-import com.github.salomonbrys.kodein.provider
+import com.unhappychoice.droidflyer.di.activityModule
+import com.unhappychoice.droidflyer.di.applicationModule
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
-import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
-import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
 import flow.KeyDispatcher
-import io.reactivex.disposables.CompositeDisposable
 import kotlinx.android.synthetic.main.activity_main.*
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 
 class MainActivity : AppCompatActivity() {
     val module = Kodein {
-        bind<SettingsPresenter>() with provider { SettingsPresenter(this@MainActivity) }
-        bind<ChartPresenter>() with provider { ChartPresenter(this@MainActivity) }
+        import(applicationModule())
+        import(activityModule(this@MainActivity))
     }
-
-    private val bag = CompositeDisposable()
 
     private val scope: MortarScope by lazy {
         MortarScope.buildChild(applicationContext)
