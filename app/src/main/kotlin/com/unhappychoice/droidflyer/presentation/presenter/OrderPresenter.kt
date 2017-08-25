@@ -3,16 +3,20 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.norimaki.extension.subscribeNext
 import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.ViewPresenter
+import java.util.concurrent.TimeUnit
 
 class OrderPresenter(
     val apiClient: APIClientV1,
@@ -24,6 +28,9 @@ class OrderPresenter(
     val position = Variable<List<Position>>(listOf())
     val balance = Variable(0.0)
     val board = Variable(Board(0.0, listOf(), listOf()))
+
+    val size = Variable(1.0)
+    val amount = Variable(0.0)
 
     private val bag = CompositeDisposable()
 
@@ -40,17 +47,18 @@ class OrderPresenter(
             .subscribeNext { board.value = it }
             .addTo(bag)
 
-        apiClient.getPositions()
-            .doOnError { it }
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { position.value = it }
-            .addTo(bag)
+        Observable.interval(5, TimeUnit.SECONDS)
+            .subscribeNext {
+                apiClient.getPositions()
+                    .subscribeOnIoObserveOnUI()
+                    .subscribeNext { position.value = it }
+                    .addTo(bag)
 
-        apiClient.getCollateral()
-            .subscribeOnIoObserveOnUI()
-            .doOnError { it }
-            .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
-            .addTo(bag)
+                apiClient.getCollateral()
+                    .subscribeOnIoObserveOnUI()
+                    .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
+                    .addTo(bag)
+            }
 
         board.asObservable()
             .subscribeOnIoObserveOnUI()
@@ -67,15 +75,41 @@ class OrderPresenter(
 
     fun profit(): Long = position.value.profit(currentPrice.value.toLong()).toLong()
 
-    fun buy() {
+    fun increment() {
+        amount.value = amount.value + size.value
+    }
 
+    fun decrement() {
+        amount.value = amount.value - size.value
+        if (amount.value <= 0) amount.value = 0.0
+    }
+
+    fun buy() {
+        if (amount.value == 0.0) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, Math.abs(amount.value))
+        apiClient.sendChildOrder(request)
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext {}
+            .addTo(bag)
     }
 
     fun sell() {
-
+        if (amount.value == 0.0) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, Math.abs(amount.value))
+        apiClient.sendChildOrder(request)
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext {}
+            .addTo(bag)
     }
 
     fun clearPosition() {
-
+        val size = position.value.wholeSize()
+        if (size == 0.0) return
+        val side = if (size > 0.0) "SELL" else "BUY"
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
+        apiClient.sendChildOrder(request)
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext {}
+            .addTo(bag)
     }
 }

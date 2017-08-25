@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okio.Buffer
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
@@ -35,7 +36,7 @@ class APIClient(val gson: Gson, val key: String, val secret: String) {
         .build()
 
     private fun sign(request: Request, timestamp: String): String {
-        val body = request.body()?.toString() ?: ""
+        val body = Buffer().apply { request.body()?.writeTo(this) }.readUtf8()
         val method = request.method()
         val query = if (request.url().query() != null) "?${request.url().query()}" else ""
         val path = request.url().encodedPath() + query

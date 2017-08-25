@@ -19,5 +19,9 @@ class Variable<T>(value: T) {
 
     fun asObservable(): Observable<T> = _subject
 
+    fun setWithoutEvent(value: T) {
+        _value = value
+    }
+
     fun finalize() = _subject.onComplete()
 }
