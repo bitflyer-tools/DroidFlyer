@@ -12,6 +12,7 @@ import com.unhappychoice.droidflyer.di.applicationModule
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
+import com.unhappychoice.droidflyer.presentation.screen.OrderScreen
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
@@ -52,7 +53,7 @@ class MainActivity : AppCompatActivity() {
         bottom_navigation.setOnNavigationItemSelectedListener {
             when(it.itemId) {
                 R.id.chartIcon -> Flow.get(this).set(ChartScreen())
-                R.id.orderIcon -> {}
+                R.id.orderIcon -> Flow.get(this).set(OrderScreen())
                 R.id.settingsIcon -> Flow.get(this).set(SettingsScreen())
             }
             true

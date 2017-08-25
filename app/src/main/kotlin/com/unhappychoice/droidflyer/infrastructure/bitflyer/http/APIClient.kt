@@ -1,6 +1,5 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
-import android.util.Log
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import okhttp3.OkHttpClient
@@ -38,7 +37,8 @@ class APIClient(val gson: Gson, val key: String, val secret: String) {
     private fun sign(request: Request, timestamp: String): String {
         val body = request.body()?.toString() ?: ""
         val method = request.method()
-        val path = request.url().encodedPath()
+        val query = if (request.url().query() != null) "?${request.url().query()}" else ""
+        val path = request.url().encodedPath() + query
         return (timestamp + method + path + body).toHmacSHA256(secret)
     }
 }

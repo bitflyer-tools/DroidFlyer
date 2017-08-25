@@ -38,7 +38,7 @@ class RealtimeClient(val gson: Gson) {
         "lightning_executions_FX_BTC_JPY"
     )
 
-    fun connect() {
+    init {
         pubnub.addListener(object: SubscribeCallback() {
             override fun status(pubnub: PubNub?, status: PNStatus?) { }
             override fun message(pubnub: PubNub?, message: PNMessageResult?) { publish(message) }

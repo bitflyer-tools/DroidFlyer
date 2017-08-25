@@ -1,5 +1,8 @@
 <resources>
     <string name="app_name">DroidFlyer</string>
+    <string name="buy">Buy</string>
+    <string name="sell">Sell</string>
+    <string name="clear_position">Clear All Position</string>
     <string name="chart">Chart</string>
     <string name="order">Order</string>
     <string name="setting">Setting</string>
