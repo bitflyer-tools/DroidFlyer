@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer
 
 import android.content.Context
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
 import android.view.Menu
@@ -14,6 +15,7 @@ import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
 import com.unhappychoice.droidflyer.presentation.screen.OrderScreen
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
+import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
 import flow.KeyDispatcher
@@ -50,6 +52,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         BundleServiceRunner.getBundleServiceRunner(this).onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        setupStyle()
+
         bottom_navigation.setOnNavigationItemSelectedListener {
             when(it.itemId) {
                 R.id.chartIcon -> Flow.get(this).set(ChartScreen())
@@ -97,4 +101,11 @@ class MainActivity : AppCompatActivity() {
             .install()
 
     private fun getCurrentView(): View? = containerView.getChildAt(0)
+
+    private fun setupStyle() {
+        supportActionBar?.elevation = 0f
+        supportActionBar?.setBackgroundDrawable(ColorDrawable(DefaultStyle.darkerPrimaryColor))
+        bottom_navigation.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        containerView.setBackgroundColor(DefaultStyle.primaryColor)
+    }
 }

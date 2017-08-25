@@ -9,11 +9,15 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
+import com.unhappychoice.droidflyer.presentation.style.Style
 
 fun applicationModule(application: DroidFlyerApplication) = Kodein.Module {
     bind<Gson>() with singleton { createGson() }
     bind<APIClientV1>() with provider { APIClient(instance(), instance("API_KEY"), instance("API_SECRET")).client() }
     bind<RealtimeClient>() with singleton { RealtimeClient(instance()) }
+
+    bind<Style>() with provider { DefaultStyle }
 
     bind<APITokenPreference>() with provider { APITokenPreference(application) }
     bind<String>("API_KEY") with provider { APITokenPreference(application).key }

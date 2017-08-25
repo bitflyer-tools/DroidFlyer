@@ -5,6 +5,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.norimaki.extension.subscribeNext
 import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
@@ -21,7 +22,7 @@ class OrderPresenter(
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = Variable<List<Position>>(listOf())
-    val balance = Variable(0L)
+    val balance = Variable(0.0)
     val board = Variable(Board(0.0, listOf(), listOf()))
 
     private val bag = CompositeDisposable()
@@ -48,7 +49,7 @@ class OrderPresenter(
         apiClient.getCollateral()
             .subscribeOnIoObserveOnUI()
             .doOnError { it }
-            .subscribeNext { balance.value = it["collateral"] as? Long ?: 0 }
+            .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
             .addTo(bag)
 
         board.asObservable()
@@ -63,6 +64,8 @@ class OrderPresenter(
         bag.dispose()
         super.onExitScope()
     }
+
+    fun profit(): Long = position.value.profit(currentPrice.value.toLong()).toLong()
 
     fun buy() {
 
