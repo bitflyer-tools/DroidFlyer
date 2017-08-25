@@ -5,13 +5,14 @@ import com.google.gson.FieldNamingPolicy
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.DroidFlyerApplication
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.APIClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 
 fun applicationModule(application: DroidFlyerApplication) = Kodein.Module {
     bind<Gson>() with singleton { createGson() }
-    bind<APIClient>() with provider { APIClient(instance(), instance("API_KEY"), instance("API_SECRET"))}
+    bind<APIClientV1>() with provider { APIClient(instance(), instance("API_KEY"), instance("API_SECRET")).client() }
     bind<RealtimeClient>() with singleton { RealtimeClient(instance()) }
 
     bind<APITokenPreference>() with provider { APITokenPreference(application) }

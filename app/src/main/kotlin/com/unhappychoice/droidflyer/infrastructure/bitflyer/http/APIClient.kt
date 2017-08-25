@@ -1,4 +1,4 @@
-package com.unhappychoice.droidflyer.infrastructure.bitflyer
+package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import android.util.Log
 import com.google.gson.Gson
