@@ -70,6 +70,9 @@ dependencies {
     compile 'com.pubnub:pubnub-gson:4.9.1'
     compile 'com.squareup.flow:flow:1.0.0-alpha3'
     compile 'com.squareup.mortar:mortar:0.20'
+    compile 'com.squareup.retrofit2:adapter-rxjava2:2.2.0'
+    compile 'com.squareup.retrofit2:retrofit:2.2.0'
+    compile 'com.squareup.retrofit2:converter-gson:2.2.0'
     compile "io.reactivex.rxjava2:rxkotlin:$rx_version"
     compile "io.reactivex.rxjava2:rxandroid:$rx_version"
     compile 'jp.takuji31.koreference:koreference:1.1.0'

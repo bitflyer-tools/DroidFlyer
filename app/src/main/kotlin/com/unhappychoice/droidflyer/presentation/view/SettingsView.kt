@@ -3,7 +3,6 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
-import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
@@ -18,19 +17,15 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         super.onAttachedToWindow()
         presenter.takeView(this)
 
-        apiTokenTextView.setText(presenter.token.value)
+        apiTokenTextView.setText(presenter.key.value)
         apiSecretTextView.setText(presenter.secret.value)
 
         apiTokenTextView.textChanges()
-            .subscribeNext { presenter.token.value = it.toString() }
+            .subscribeNext { presenter.key.value = it.toString() }
             .addTo(bag)
 
         apiSecretTextView.textChanges()
             .subscribeNext { presenter.secret.value = it.toString() }
-            .addTo(bag)
-
-        submitButton.clicks()
-            .subscribeNext { presenter.saveToken() }
             .addTo(bag)
     }
 

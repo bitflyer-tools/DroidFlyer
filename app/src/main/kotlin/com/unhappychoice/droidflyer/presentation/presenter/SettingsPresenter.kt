@@ -1,24 +1,30 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
+import com.unhappychoice.norimaki.extension.subscribeNext
+import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.ViewPresenter
 
-class SettingsPresenter(val activity: MainActivity) : ViewPresenter<SettingsView>() {
-    val token: Variable<String> = Variable("")
+class SettingsPresenter(val preference: APITokenPreference) : ViewPresenter<SettingsView>() {
+    val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
+    private val bag = CompositeDisposable()
 
     override fun onEnterScope(scope: MortarScope?) {
         super.onEnterScope(scope)
-        token.value = APITokenPreference(activity.applicationContext).token
-        secret.value = APITokenPreference(activity.applicationContext).secret
+        key.value = preference.key
+        secret.value = preference.secret
+
+        key.asObservable().subscribeNext { preference.key = key.value }.addTo(bag)
+        secret.asObservable().subscribeNext { preference.secret = secret.value }.addTo(bag)
     }
 
-    fun saveToken() {
-        APITokenPreference(activity).token = token.value
-        APITokenPreference(activity).secret = secret.value
+    override fun onExitScope() {
+        bag.dispose()
+        super.onExitScope()
     }
 }

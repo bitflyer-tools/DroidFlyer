@@ -21,9 +21,11 @@ import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 
 class MainActivity : AppCompatActivity() {
-    val module = Kodein {
-        import(applicationModule())
-        import(activityModule(this@MainActivity))
+    val module by lazy {
+        Kodein {
+            import(applicationModule(application as DroidFlyerApplication))
+            import(activityModule(this@MainActivity))
+        }
     }
 
     private val scope: MortarScope by lazy {

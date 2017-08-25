@@ -3,4 +3,8 @@
     <string name="chart">Chart</string>
     <string name="order">Order</string>
     <string name="setting">Setting</string>
+    <string name="api_key">API key</string>
+    <string name="api_secret">API secret</string>
+    <string name="apply">Apply</string>
+    <string name="help_api_key">https://lightning.bitflyer.jp/developer</string>
 </resources>
