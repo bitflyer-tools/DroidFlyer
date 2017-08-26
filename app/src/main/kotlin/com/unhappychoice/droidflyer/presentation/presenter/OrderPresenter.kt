@@ -16,6 +16,7 @@ import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxkotlin.switchLatest
 import mortar.MortarScope
 import mortar.ViewPresenter
 import java.util.concurrent.TimeUnit
@@ -52,17 +53,8 @@ class OrderPresenter(
             .addTo(bag)
 
         Observable.interval(5, TimeUnit.SECONDS)
-            .subscribeNext {
-                apiClient.getPositions()
-                    .subscribeOnIoObserveOnUI()
-                    .subscribeNext { position.value = it }
-                    .addTo(bag)
-
-                apiClient.getCollateral()
-                    .subscribeOnIoObserveOnUI()
-                    .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
-                    .addTo(bag)
-            }
+            .subscribeNext { updateStatus() }
+            .addTo(bag)
 
         board.asObservable()
             .subscribeOnIoObserveOnUI()
@@ -94,7 +86,7 @@ class OrderPresenter(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext {}
+            .subscribeNext { updateStatus() }
             .addTo(bag)
     }
 
@@ -104,7 +96,7 @@ class OrderPresenter(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext {}
+            .subscribeNext { updateStatus() }
             .addTo(bag)
     }
 
@@ -116,7 +108,19 @@ class OrderPresenter(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext {}
+            .subscribeNext { updateStatus() }
+            .addTo(bag)
+    }
+
+    private fun updateStatus() {
+        apiClient.getPositions()
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { position.value = it }
+            .addTo(bag)
+
+        apiClient.getCollateral()
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
             .addTo(bag)
     }
 }
