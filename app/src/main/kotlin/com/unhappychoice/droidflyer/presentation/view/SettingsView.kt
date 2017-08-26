@@ -1,10 +1,13 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.support.v4.content.ContextCompat
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
+import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.addTo
@@ -16,6 +19,8 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
+
+        setupStyle()
 
         apiTokenTextView.setText(presenter.key.value)
         apiSecretTextView.setText(presenter.secret.value)
@@ -32,5 +37,12 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun setupStyle() {
+        apiTokenTextView.setTextColor(DefaultStyle.accentColor)
+        apiTokenTextView.setHintTextColor(DefaultStyle.accentColor)
+        apiSecretTextView.setTextColor(DefaultStyle.accentColor)
+        apiSecretTextView.setHintTextColor(DefaultStyle.accentColor)
     }
 }

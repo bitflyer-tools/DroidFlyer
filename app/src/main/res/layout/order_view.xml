@@ -47,7 +47,8 @@
         <LinearLayout
             android:orientation="horizontal"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/vertical_margin">
             <TextView
                 android:id="@+id/balance"
                 android:layout_width="wrap_content"
@@ -146,6 +147,7 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:inputType="number"
+                android:background="#00000000"
                 android:textSize="24sp"/>
             <TextView
                 android:id="@+id/plusButton"
@@ -193,17 +195,17 @@
                     android:id="@+id/sellButtonText"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_weight="0.8"
                     android:gravity="center|bottom"
                     android:text="@string/sell"
-                    android:textSize="24sp"/>
+                    android:textSize="16sp"/>
                 <TextView
                     android:id="@+id/sellPrice"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="0.8"
+                    android:layout_weight="1"
                     android:gravity="center|top"
-                    android:textSize="16sp"/>
+                    android:textSize="24sp"/>
             </LinearLayout>
             <LinearLayout
                 android:id="@+id/buyButton"
@@ -216,17 +218,17 @@
                     android:id="@+id/buyButtonText"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="1"
+                    android:layout_weight="0.8"
                     android:gravity="center|bottom"
                     android:text="@string/buy"
-                    android:textSize="24sp"/>
+                    android:textSize="16sp"/>
                 <TextView
                     android:id="@+id/buyPrice"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="0.8"
+                    android:layout_weight="1"
                     android:gravity="center|top"
-                    android:textSize="16sp"/>
+                    android:textSize="24sp"/>
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

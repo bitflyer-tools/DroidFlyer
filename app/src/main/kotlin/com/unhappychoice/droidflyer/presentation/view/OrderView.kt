@@ -50,10 +50,12 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
                 when(Math.abs(it.wholeSize())) {
                     0.0 -> {
                         position.text = "No position"
+                        profit.visibility = View.GONE
                         spread.visibility = View.GONE
                     }
                     else -> {
                         position.text = "${it.average().toLong().splitByComma()} JPY / ${it.wholeSize()} ɃFX"
+                        profit.visibility = View.VISIBLE
                         spread.visibility = View.VISIBLE
                     }
                 }
@@ -70,6 +72,22 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         presenter.amount.asObservable()
             .subscribeNext { amount.setText(it.toString()) }
             .addTo(bag)
+
+        presenter.size.asObservable()
+            .subscribeNext {
+                dotOneButton.alpha = 0.4f
+                dotFiveButton.alpha = 0.4f
+                oneButton.alpha = 0.4f
+                fiveButton.alpha = 0.4f
+                tenButton.alpha = 0.4f
+                when(it) {
+                    0.1 -> dotOneButton.alpha = 1.0f
+                    0.5 -> dotFiveButton.alpha = 1.0f
+                    1.0 -> oneButton.alpha = 1.0f
+                    5.0 -> fiveButton.alpha = 1.0f
+                    10.0 -> tenButton.alpha = 1.0f
+                }
+            }.addTo(bag)
 
         presenter.isLoading.asObservable()
             .subscribeNext {
@@ -158,12 +176,12 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         minusButton.setBackgroundColor(DefaultStyle.primaryColor)
         minusButton.setTextColor(DefaultStyle.accentColor)
 
-        buyPrice.setTextColor(DefaultStyle.darkerAccentColor)
-        sellPrice.setTextColor(DefaultStyle.darkerAccentColor)
+        buyPrice.setTextColor(DefaultStyle.accentColor)
+        sellPrice.setTextColor(DefaultStyle.accentColor)
         buyButton.setBackgroundColor(DefaultStyle.buyColor)
-        buyButtonText.setTextColor(DefaultStyle.accentColor)
+        buyButtonText.setTextColor(DefaultStyle.darkerAccentColor)
         sellButton.setBackgroundColor(DefaultStyle.sellColor)
-        sellButtonText.setTextColor(DefaultStyle.accentColor)
+        sellButtonText.setTextColor(DefaultStyle.darkerAccentColor)
         clearButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         clearButton.setTextColor(DefaultStyle.accentColor)
     }
