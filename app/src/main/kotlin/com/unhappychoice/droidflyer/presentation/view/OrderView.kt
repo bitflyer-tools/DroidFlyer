@@ -2,9 +2,12 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
+import android.view.View
+import android.widget.TextView
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
@@ -19,6 +22,7 @@ import kotlinx.android.synthetic.main.order_view.view.*
 
 class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: OrderPresenter by instance()
+    val currentStatusService: CurrentStatusService by instance()
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -26,31 +30,40 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
 
         setupStyle()
 
-        presenter.currentStatusService.currentPrice.asObservable()
+        currentStatusService.currentPrice.asObservable()
             .subscribeNext { currentPrice.text = "${it.toLong().splitByComma()} JPY" }
             .addTo(bag)
 
-        presenter.currentStatusService.currentPrice.asObservable()
+        currentStatusService.currentPrice.asObservable()
             .subscribeNext {
-                val color = if (presenter.currentStatusService.profit() >= 0L) DefaultStyle.greenColor else DefaultStyle.redColor
-                profit.text = presenter.currentStatusService.profit().splitByComma()
-                profit.setTextColor(color)
-                balance.text = "${(presenter.currentStatusService.balance.value.toLong() + presenter.currentStatusService.profit()).splitByComma()} JPY"
+                profit.text = currentStatusService.profit().splitByComma()
+                profit.setCoefficientColor(currentStatusService.profit())
+
+                spread.text = currentStatusService.spread().splitByComma()
+                spread.setCoefficientColor(currentStatusService.spread())
+
+                balance.text = "${(currentStatusService.balance.value.toLong() + currentStatusService.profit()).splitByComma()} JPY"
             }.addTo(bag)
 
-        presenter.currentStatusService.position.asObservable()
+        currentStatusService.position.asObservable()
             .subscribeNext {
                 when(Math.abs(it.wholeSize())) {
-                    0.0 -> position.text = "No position"
-                    else -> position.text = "${it.average().toLong().splitByComma()} JPY / ${it.wholeSize()} ɃFX"
+                    0.0 -> {
+                        position.text = "No position"
+                        spread.visibility = View.GONE
+                    }
+                    else -> {
+                        position.text = "${it.average().toLong().splitByComma()} JPY / ${it.wholeSize()} ɃFX"
+                        spread.visibility = View.VISIBLE
+                    }
                 }
             }.addTo(bag)
 
-        presenter.currentStatusService.buyPrice.asObservable()
+        currentStatusService.buyPrice.asObservable()
             .subscribeNext { buyPrice.text = it.splitByComma() }
             .addTo(bag)
 
-        presenter.currentStatusService.sellPrice.asObservable()
+        currentStatusService.sellPrice.asObservable()
             .subscribeNext { sellPrice.text = it.splitByComma() }
             .addTo(bag)
 
@@ -68,7 +81,7 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
             }.addTo(bag)
 
         Observables.combineLatest(
-            presenter.currentStatusService.position.asObservable(),
+            currentStatusService.position.asObservable(),
             presenter.isLoading.asObservable()
         ) { position: List<Position>, isLoading: Boolean -> position.wholeSize() != 0.0 && !isLoading }
             .subscribeNext {
@@ -153,5 +166,10 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         sellButtonText.setTextColor(DefaultStyle.accentColor)
         clearButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         clearButton.setTextColor(DefaultStyle.accentColor)
+    }
+
+    private fun TextView.setCoefficientColor(price: Long) {
+        val color = if (price >= 0L) DefaultStyle.greenColor else DefaultStyle.redColor
+        setTextColor(color)
     }
 }

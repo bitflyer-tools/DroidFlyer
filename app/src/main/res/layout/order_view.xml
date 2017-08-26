@@ -24,14 +24,26 @@
             android:layout_marginBottom="@dimen/vertical_margin"
             android:gravity="start"
             android:textSize="48sp"/>
-         <TextView
-            android:id="@+id/position"
+        <LinearLayout
+            android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="@dimen/vertical_margin"
-            android:gravity="start"
-            android:textSize="20sp"/>
-
+            android:layout_marginBottom="@dimen/vertical_margin">
+            <TextView
+                android:id="@+id/position"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginRight="@dimen/horizontal_margin"
+                android:layout_marginEnd="@dimen/horizontal_margin"
+                android:gravity="start"
+                android:textSize="20sp"/>
+            <TextView
+                android:id="@+id/spread"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="start|bottom"
+                android:textSize="16sp"/>
+        </LinearLayout>
         <LinearLayout
             android:orientation="horizontal"
             android:layout_width="match_parent"
