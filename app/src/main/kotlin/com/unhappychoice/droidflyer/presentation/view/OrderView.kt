@@ -6,12 +6,14 @@ import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.extension.splitByComma
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.norimaki.extension.subscribeNext
+import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.order_view.view.*
 
@@ -55,6 +57,24 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         presenter.amount.asObservable()
             .subscribeNext { amount.setText(it.toString()) }
             .addTo(bag)
+
+        presenter.isLoading.asObservable()
+            .subscribeNext {
+                buyButton.isEnabled = !it
+                sellButton.isEnabled = !it
+
+                buyButton.alpha = if(it) 0.4f else 1.0f
+                sellButton.alpha = if(it) 0.4f else 1.0f
+            }.addTo(bag)
+
+        Observables.combineLatest(
+            presenter.position.asObservable(),
+            presenter.isLoading.asObservable()
+        ) { position: List<Position>, isLoading: Boolean -> position.wholeSize() != 0.0 && !isLoading }
+            .subscribeNext {
+                clearButton.isEnabled = it
+                clearButton.alpha = if(it) 1.0f else 0.4f
+            }.addTo(bag)
 
         buyButton.clicks()
             .subscribeNext { presenter.buy() }

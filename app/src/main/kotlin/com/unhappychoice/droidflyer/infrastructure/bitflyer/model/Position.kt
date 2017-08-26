@@ -1,5 +1,9 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.model
 
+import com.unhappychoice.droidflyer.extension.round
+import java.math.BigDecimal
+import java.math.RoundingMode
+
 data class Position(
     val productCode: String,
     val side: String,
@@ -19,11 +23,11 @@ data class Position(
 }
 
 fun List<Position>.profit(currentPrice: Long): Double =
-    fold(0.0) { sum, position -> sum + (currentPrice - position.price) * position.size * position.coefficient() }
+    fold(0.0) { sum, position -> sum + (currentPrice - position.price) * position.size * position.coefficient() }.round(8)
 
-fun List<Position>.average(): Double = if (wholeSize() != 0.0) (sum() / Math.abs(wholeSize())) else 0.0
+fun List<Position>.average(): Double = (if (wholeSize() != 0.0) (sum() / Math.abs(wholeSize())) else 0.0).round(8)
 
-fun List<Position>.sum(): Double = fold(0.0) { sum, position -> sum + position.price * position.size }
+fun List<Position>.sum(): Double = fold(0.0) { sum, position -> sum + position.price * position.size }.round(8)
 
-fun List<Position>.wholeSize(): Double =  fold(0.0) { sum, position -> sum + position.size * position.coefficient() }
+fun List<Position>.wholeSize(): Double =  fold(0.0) { sum, position -> sum + position.size * position.coefficient() }.round(8)
 

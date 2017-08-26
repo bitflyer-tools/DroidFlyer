@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.round
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -8,6 +9,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
+import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.norimaki.extension.subscribeNext
 import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
@@ -21,7 +23,9 @@ import java.util.concurrent.TimeUnit
 class OrderPresenter(
     val apiClient: APIClientV1,
     val realtimeClient: RealtimeClient
-) : ViewPresenter<OrderView>() {
+) : ViewPresenter<OrderView>(), Loadable {
+    override val isLoading = Variable(false)
+
     val currentPrice = Variable(0.0)
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
@@ -76,11 +80,11 @@ class OrderPresenter(
     fun profit(): Long = position.value.profit(currentPrice.value.toLong()).toLong()
 
     fun increment() {
-        amount.value = amount.value + size.value
+        amount.value = (amount.value + size.value).round(8)
     }
 
     fun decrement() {
-        amount.value = amount.value - size.value
+        amount.value = (amount.value - size.value).round(8)
         if (amount.value <= 0) amount.value = 0.0
     }
 
@@ -89,6 +93,7 @@ class OrderPresenter(
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, Math.abs(amount.value))
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
+            .startLoading()
             .subscribeNext {}
             .addTo(bag)
     }
@@ -98,6 +103,7 @@ class OrderPresenter(
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, Math.abs(amount.value))
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
+            .startLoading()
             .subscribeNext {}
             .addTo(bag)
     }
@@ -109,6 +115,7 @@ class OrderPresenter(
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
+            .startLoading()
             .subscribeNext {}
             .addTo(bag)
     }

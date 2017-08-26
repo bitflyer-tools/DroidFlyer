@@ -2,10 +2,6 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 
-buildscript {
-    ext.rx_version = '2.0.0'
-}
-
 repositories {
     mavenCentral()
     jcenter()
@@ -62,19 +58,19 @@ dependencies {
     compile 'com.github.salomonbrys.kodein:kodein:4.1.0'
     compile 'com.github.unhappychoice:rxsnackbar:0.1.2'
     compile 'com.google.code.gson:gson:2.7'
-    compile "com.jakewharton.rxbinding2:rxbinding-kotlin:$rx_version"
-    compile "com.jakewharton.rxbinding2:rxbinding-support-v4-kotlin:$rx_version"
-    compile "com.jakewharton.rxbinding2:rxbinding-appcompat-v7-kotlin:$rx_version"
-    compile "com.jakewharton.rxbinding2:rxbinding-design-kotlin:$rx_version"
-    compile "com.jakewharton.rxbinding2:rxbinding-recyclerview-v7-kotlin:$rx_version"
+    compile "com.jakewharton.rxbinding2:rxbinding-kotlin:2.0.0"
+    compile "com.jakewharton.rxbinding2:rxbinding-support-v4-kotlin:2.0.0"
+    compile "com.jakewharton.rxbinding2:rxbinding-appcompat-v7-kotlin:2.0.0"
+    compile "com.jakewharton.rxbinding2:rxbinding-design-kotlin:2.0.0"
+    compile "com.jakewharton.rxbinding2:rxbinding-recyclerview-v7-kotlin:2.0.0"
     compile 'com.pubnub:pubnub-gson:4.9.1'
     compile 'com.squareup.flow:flow:1.0.0-alpha3'
     compile 'com.squareup.mortar:mortar:0.20'
     compile 'com.squareup.retrofit2:adapter-rxjava2:2.2.0'
     compile 'com.squareup.retrofit2:retrofit:2.2.0'
     compile 'com.squareup.retrofit2:converter-gson:2.2.0'
-    compile "io.reactivex.rxjava2:rxkotlin:$rx_version"
-    compile "io.reactivex.rxjava2:rxandroid:$rx_version"
+    compile "io.reactivex.rxjava2:rxkotlin:2.1.0"
+    compile "io.reactivex.rxjava2:rxandroid:2.0.0"
     compile 'jp.takuji31.koreference:koreference:1.1.0'
     compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     compile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"

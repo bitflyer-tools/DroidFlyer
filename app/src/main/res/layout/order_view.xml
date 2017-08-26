@@ -162,6 +162,8 @@
             android:gravity="center"
             android:textSize="20sp"
             android:text="@string/clear_position"
+            android:alpha="0.4"
+            android:enabled="false"
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"/>
         <LinearLayout
