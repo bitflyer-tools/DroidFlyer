@@ -26,19 +26,19 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
 
         setupStyle()
 
-        presenter.currentPrice.asObservable()
+        presenter.currentStatusService.currentPrice.asObservable()
             .subscribeNext { currentPrice.text = "${it.toLong().splitByComma()} JPY" }
             .addTo(bag)
 
-        presenter.currentPrice.asObservable()
+        presenter.currentStatusService.currentPrice.asObservable()
             .subscribeNext {
-                val color = if (presenter.profit() >= 0L) DefaultStyle.greenColor else DefaultStyle.redColor
-                profit.text = presenter.profit().splitByComma()
+                val color = if (presenter.currentStatusService.profit() >= 0L) DefaultStyle.greenColor else DefaultStyle.redColor
+                profit.text = presenter.currentStatusService.profit().splitByComma()
                 profit.setTextColor(color)
-                balance.text = "${(presenter.balance.value.toLong() + presenter.profit()).splitByComma()} JPY"
+                balance.text = "${(presenter.currentStatusService.balance.value.toLong() + presenter.currentStatusService.profit()).splitByComma()} JPY"
             }.addTo(bag)
 
-        presenter.position.asObservable()
+        presenter.currentStatusService.position.asObservable()
             .subscribeNext {
                 when(Math.abs(it.wholeSize())) {
                     0.0 -> position.text = "No position"
@@ -46,11 +46,11 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
                 }
             }.addTo(bag)
 
-        presenter.buyPrice.asObservable()
+        presenter.currentStatusService.buyPrice.asObservable()
             .subscribeNext { buyPrice.text = it.splitByComma() }
             .addTo(bag)
 
-        presenter.sellPrice.asObservable()
+        presenter.currentStatusService.sellPrice.asObservable()
             .subscribeNext { sellPrice.text = it.splitByComma() }
             .addTo(bag)
 
@@ -68,7 +68,7 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
             }.addTo(bag)
 
         Observables.combineLatest(
-            presenter.position.asObservable(),
+            presenter.currentStatusService.position.asObservable(),
             presenter.isLoading.asObservable()
         ) { position: List<Position>, isLoading: Boolean -> position.wholeSize() != 0.0 && !isLoading }
             .subscribeNext {

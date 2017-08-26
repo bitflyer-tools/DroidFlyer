@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.Buffer
@@ -9,7 +10,14 @@ import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
 
-class APIClient(val gson: Gson, val key: String, val secret: String) {
+class APIClient(val gson: Gson, val preference: APITokenPreference) {
+
+    private val key: String
+        get() = preference.key
+
+    private val secret: String
+        get() = preference.secret
+
     fun client(): APIClientV1 = retrofit().create(APIClientV1::class.java)
 
     private val baseUrl = "https://api.bitflyer.jp/v1/"
