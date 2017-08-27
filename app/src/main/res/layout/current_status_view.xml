@@ -8,15 +8,14 @@
     android:paddingEnd="@dimen/horizontal_margin"
     android:paddingLeft="@dimen/horizontal_margin"
     android:paddingRight="@dimen/horizontal_margin"
-    android:paddingStart="@dimen/horizontal_margin"
-    android:paddingTop="@dimen/vertical_margin">
+    android:paddingStart="@dimen/horizontal_margin">
     <TextView
         android:id="@+id/currentPrice"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="@dimen/vertical_margin"
         android:gravity="start"
-        android:textSize="48sp"/>
+        android:textSize="44sp"/>
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
@@ -29,19 +28,18 @@
             android:layout_marginRight="@dimen/horizontal_margin"
             android:layout_marginEnd="@dimen/horizontal_margin"
             android:gravity="start"
-            android:textSize="20sp"/>
+            android:textSize="18sp"/>
         <TextView
             android:id="@+id/spread"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="start|bottom"
-            android:textSize="16sp"/>
+            android:textSize="15sp"/>
     </LinearLayout>
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="@dimen/vertical_margin">
+        android:layout_height="wrap_content">
         <TextView
             android:id="@+id/balance"
             android:layout_width="wrap_content"
@@ -49,12 +47,12 @@
             android:layout_marginRight="@dimen/horizontal_margin"
             android:layout_marginEnd="@dimen/horizontal_margin"
             android:gravity="start"
-            android:textSize="20sp"/>
+            android:textSize="18sp"/>
         <TextView
             android:id="@+id/profit"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="start|bottom"
-            android:textSize="16sp"/>
+            android:textSize="15sp"/>
     </LinearLayout>
 </LinearLayout>

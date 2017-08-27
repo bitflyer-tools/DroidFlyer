@@ -47,13 +47,16 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
             .bindTo(amountSelector.size)
             .addTo(bag)
 
-        presenter.isLoading.asObservable()
+        Observables.combineLatest(
+            presenter.amount.asObservable(),
+            presenter.isLoading.asObservable()
+        ) { amount, isLoading -> amount != 0.0 && !isLoading }
             .subscribeNext {
-                buyButton.isEnabled = !it
-                sellButton.isEnabled = !it
+                buyButton.isEnabled = it
+                sellButton.isEnabled = it
 
-                buyButton.alpha = if(it) 0.4f else 1.0f
-                sellButton.alpha = if(it) 0.4f else 1.0f
+                buyButton.alpha = if(it) 1.0f else 0.4f
+                sellButton.alpha = if(it) 1.0f else 0.4f
             }.addTo(bag)
 
         Observables.combineLatest(

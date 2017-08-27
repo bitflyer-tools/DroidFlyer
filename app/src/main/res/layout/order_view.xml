@@ -13,15 +13,15 @@
 
     <com.unhappychoice.droidflyer.presentation.view.AmountSelectorView
         android:id="@+id/amountSelector"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
         android:layout_width="match_parent"
+        android:layout_weight="1"
         android:layout_marginTop="@dimen/vertical_margin"/>
 
     <LinearLayout
         android:orientation="vertical"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="wrap_content"
         android:gravity="bottom"
         android:layout_marginTop="@dimen/vertical_margin">
 
