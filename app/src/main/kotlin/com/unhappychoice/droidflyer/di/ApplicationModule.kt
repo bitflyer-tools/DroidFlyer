@@ -19,7 +19,7 @@ fun applicationModule(application: DroidFlyerApplication) = Kodein.Module {
     bind<RealtimeClient>() with singleton { RealtimeClient(instance()) }
     bind<APITokenPreference>() with provider { APITokenPreference(application) }
 
-    bind<CurrentStatusService>() with singleton { CurrentStatusService(instance(), instance()) }
+    bind<CurrentStatusService>() with eagerSingleton { CurrentStatusService(instance(), instance()) }
 
     bind<Style>() with provider { DefaultStyle }
 }

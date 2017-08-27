@@ -39,6 +39,8 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
                 buyPrice.value = board.value.asks.map { it.price }.min() ?: 0
                 sellPrice.value = board.value.bids.map { it.price }.max() ?: 0
             }.addTo(bag)
+
+        updateStatus()
     }
 
     fun profit(): Long = position.value.profit(currentPrice.value.toLong()).toLong()
