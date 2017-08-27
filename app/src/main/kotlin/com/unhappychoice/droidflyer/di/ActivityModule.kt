@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 
 fun activityModule(activity: MainActivity) = Kodein.Module {
+    bind<MainActivity>() with provider { activity }
     bind<SettingsPresenter>() with provider { SettingsPresenter(instance()) }
     bind<ChartPresenter>() with provider { ChartPresenter() }
     bind<OrderPresenter>() with provider { OrderPresenter(instance(), instance()) }

@@ -2,15 +2,13 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.View
-import android.widget.TextView
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
+import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
@@ -21,6 +19,7 @@ import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.order_view.view.*
 
 class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
+    val activity: MainActivity by instance()
     val presenter: OrderPresenter by instance()
     val currentStatusService: CurrentStatusService by instance()
 
@@ -28,38 +27,9 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         super.onAttachedToWindow()
         presenter.takeView(this)
 
+        header.inject(activity.module)
+
         setupStyle()
-
-        currentStatusService.currentPrice.asObservable()
-            .subscribeNext { currentPrice.text = "${it.toLong().splitByComma()} JPY" }
-            .addTo(bag)
-
-        currentStatusService.currentPrice.asObservable()
-            .subscribeNext {
-                profit.text = currentStatusService.profit().splitByComma()
-                profit.setCoefficientColor(currentStatusService.profit())
-
-                spread.text = currentStatusService.spread().splitByComma()
-                spread.setCoefficientColor(currentStatusService.spread())
-
-                balance.text = "${(currentStatusService.balance.value.toLong() + currentStatusService.profit()).splitByComma()} JPY"
-            }.addTo(bag)
-
-        currentStatusService.position.asObservable()
-            .subscribeNext {
-                when(Math.abs(it.wholeSize())) {
-                    0.0 -> {
-                        position.text = "No position"
-                        profit.visibility = View.GONE
-                        spread.visibility = View.GONE
-                    }
-                    else -> {
-                        position.text = "${it.average().toLong().splitByComma()} JPY / ${it.wholeSize()} ɃFX"
-                        profit.visibility = View.VISIBLE
-                        spread.visibility = View.VISIBLE
-                    }
-                }
-            }.addTo(bag)
 
         currentStatusService.buyPrice.asObservable()
             .subscribeNext { buyPrice.text = it.splitByComma() }
@@ -158,11 +128,6 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
     }
 
     private fun setupStyle() {
-        header.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
-        currentPrice.setTextColor(DefaultStyle.accentColor)
-        position.setTextColor(DefaultStyle.accentColor)
-        balance.setTextColor(DefaultStyle.accentColor)
-
         dotOneButton.setTextColor(DefaultStyle.accentColor)
         dotFiveButton.setTextColor(DefaultStyle.accentColor)
         oneButton.setTextColor(DefaultStyle.accentColor)
@@ -184,10 +149,5 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         sellButtonText.setTextColor(DefaultStyle.darkerAccentColor)
         clearButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         clearButton.setTextColor(DefaultStyle.accentColor)
-    }
-
-    private fun TextView.setCoefficientColor(price: Long) {
-        val color = if (price >= 0L) DefaultStyle.greenColor else DefaultStyle.redColor
-        setTextColor(color)
     }
 }
