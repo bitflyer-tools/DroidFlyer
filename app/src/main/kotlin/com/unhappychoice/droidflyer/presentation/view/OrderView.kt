@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
-import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
@@ -13,6 +12,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.norimaki.extension.bindTo
 import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
@@ -40,24 +40,12 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
             .addTo(bag)
 
         presenter.amount.asObservable()
-            .subscribeNext { amount.setText(it.toString()) }
+            .bindTo(amountSelector.amount)
             .addTo(bag)
 
         presenter.size.asObservable()
-            .subscribeNext {
-                dotOneButton.alpha = 0.4f
-                dotFiveButton.alpha = 0.4f
-                oneButton.alpha = 0.4f
-                fiveButton.alpha = 0.4f
-                tenButton.alpha = 0.4f
-                when(it) {
-                    0.1 -> dotOneButton.alpha = 1.0f
-                    0.5 -> dotFiveButton.alpha = 1.0f
-                    1.0 -> oneButton.alpha = 1.0f
-                    5.0 -> fiveButton.alpha = 1.0f
-                    10.0 -> tenButton.alpha = 1.0f
-                }
-            }.addTo(bag)
+            .bindTo(amountSelector.size)
+            .addTo(bag)
 
         presenter.isLoading.asObservable()
             .subscribeNext {
@@ -77,6 +65,22 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
                 clearButton.alpha = if(it) 1.0f else 0.4f
             }.addTo(bag)
 
+        amountSelector.amount.asObservable()
+            .subscribeNext { presenter.amount.setWithoutEvent(it) }
+            .addTo(bag)
+
+        amountSelector.size.asObservable()
+            .subscribeNext { presenter.size.setWithoutEvent(it) }
+            .addTo(bag)
+
+        amountSelector.didIncrement
+            .subscribeNext { presenter.increment() }
+            .addTo(bag)
+
+        amountSelector.didDecrement
+            .subscribeNext { presenter.decrement() }
+            .addTo(bag)
+
         buyButton.clicks()
             .subscribeNext { presenter.buy() }
             .addTo(bag)
@@ -88,38 +92,6 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         clearButton.clicks()
             .subscribeNext { presenter.clearPosition() }
             .addTo(bag)
-
-        dotOneButton.clicks()
-            .subscribeNext { presenter.size.value = 0.1 }
-            .addTo(bag)
-
-        dotFiveButton.clicks()
-            .subscribeNext { presenter.size.value = 0.5 }
-            .addTo(bag)
-
-        oneButton.clicks()
-            .subscribeNext { presenter.size.value = 1.0 }
-            .addTo(bag)
-
-        fiveButton.clicks()
-            .subscribeNext { presenter.size.value = 5.0 }
-            .addTo(bag)
-
-        tenButton.clicks()
-            .subscribeNext { presenter.size.value = 10.0 }
-            .addTo(bag)
-
-        plusButton.clicks()
-            .subscribeNext { presenter.increment() }
-            .addTo(bag)
-
-        minusButton.clicks()
-            .subscribeNext { presenter.decrement() }
-            .addTo(bag)
-
-        amount.textChanges()
-            .subscribeNext { presenter.amount.setWithoutEvent(it.toString().toDouble()) }
-            .addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
@@ -128,19 +100,6 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
     }
 
     private fun setupStyle() {
-        dotOneButton.setTextColor(DefaultStyle.accentColor)
-        dotFiveButton.setTextColor(DefaultStyle.accentColor)
-        oneButton.setTextColor(DefaultStyle.accentColor)
-        fiveButton.setTextColor(DefaultStyle.accentColor)
-        tenButton.setTextColor(DefaultStyle.accentColor)
-
-        amount.setTextColor(DefaultStyle.accentColor)
-        amount.setTextColor(DefaultStyle.accentColor)
-        plusButton.setBackgroundColor(DefaultStyle.primaryColor)
-        plusButton.setTextColor(DefaultStyle.accentColor)
-        minusButton.setBackgroundColor(DefaultStyle.primaryColor)
-        minusButton.setTextColor(DefaultStyle.accentColor)
-
         buyPrice.setTextColor(DefaultStyle.accentColor)
         sellPrice.setTextColor(DefaultStyle.accentColor)
         buyButton.setBackgroundColor(DefaultStyle.buyColor)
