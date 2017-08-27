@@ -1,8 +1,8 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
-import android.content.res.ColorStateList
-import android.support.v4.content.ContextCompat
+import android.graphics.PorterDuff
+import android.os.Build
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.widget.textChanges
@@ -12,6 +12,7 @@ import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.settings_view.view.*
+
 
 class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: SettingsPresenter by instance()
@@ -26,12 +27,16 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         apiSecretTextView.setText(presenter.secret.value)
 
         apiTokenTextView.textChanges()
-            .subscribeNext { presenter.key.value = it.toString() }
-            .addTo(bag)
+            .subscribeNext {
+                presenter.key.value = it.toString()
+                setupStyle()
+            }.addTo(bag)
 
         apiSecretTextView.textChanges()
-            .subscribeNext { presenter.secret.value = it.toString() }
-            .addTo(bag)
+            .subscribeNext {
+                presenter.secret.value = it.toString()
+                setupStyle()
+            }.addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
@@ -41,8 +46,8 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
     private fun setupStyle() {
         apiTokenTextView.setTextColor(DefaultStyle.accentColor)
-        apiTokenTextView.setHintTextColor(DefaultStyle.accentColor)
+        apiTokenTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
         apiSecretTextView.setTextColor(DefaultStyle.accentColor)
-        apiSecretTextView.setHintTextColor(DefaultStyle.accentColor)
+        apiSecretTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
     }
 }
