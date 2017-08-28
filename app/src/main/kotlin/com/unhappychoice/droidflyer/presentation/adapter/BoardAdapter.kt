@@ -14,6 +14,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.groupBySize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.disposables.CompositeDisposable
@@ -22,13 +23,17 @@ import io.reactivex.subjects.PublishSubject
 
 class BoardAdapter(val context: Context, val type: BoardType): RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val items = Variable<List<Order>>(listOf())
+    private val groupedItems: List<Order>
+        get() = items.value.groupBySize(groupSize.value).take(50)
     val clickItems = PublishSubject.create<Order>()
+    val groupSize = Variable(1L)
+
     private val bag = CompositeDisposable()
 
-    override fun getItemCount() = items.value.size
+    override fun getItemCount() = groupedItems.size
 
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
-        val item = items.value[position]
+        val item = groupedItems[position]
         holder.bind(item)
         holder.view.clicks().subscribeNext { clickItems.onNext(item) }.addTo(bag)
     }
@@ -41,7 +46,7 @@ class BoardAdapter(val context: Context, val type: BoardType): RecyclerView.Adap
     inner class ViewHolder(val view: View) : RecyclerView.ViewHolder(view) {
         fun bind(order: Order) {
             priceTextView.text = order.price.splitByComma()
-            sizeTextView.text = "%.8f".format(order.size)
+            sizeTextView.text = "%.4f".format(order.size)
 
             priceTextView.setTextColor(type.color())
             sizeTextView.setTextColor(type.color())
@@ -50,7 +55,7 @@ class BoardAdapter(val context: Context, val type: BoardType): RecyclerView.Adap
             sizeTextView.alignParent(type.sizeDirection())
 
             val screenWidth = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.width
-            val width = screenWidth / 2.0 * Math.min(Math.log10(order.size + 1) / 2.0, 1.0)
+            val width = screenWidth / 2.0 * Math.min(Math.log10(order.size + 1) / 2.0, 1.0) - 1.0
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
         }

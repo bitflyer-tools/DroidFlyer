@@ -37,8 +37,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             .subscribeOn(Schedulers.computation())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext {
-                askAdapter.items.value = it.asks.sortedBy { it.price }.take(50)
-                bidAdapter.items.value = it.bids.sortedByDescending { it.price }.take(50)
+                askAdapter.items.value = it.asks.sortedBy { it.price }
+                bidAdapter.items.value = it.bids.sortedByDescending { it.price }
                 askAdapter.notifyDataSetChanged()
                 bidAdapter.notifyDataSetChanged()
             }.addTo(bag)
