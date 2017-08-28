@@ -23,7 +23,7 @@ class OrderPresenter(val currentStatusService: CurrentStatusService) : ViewPrese
     override fun onEnterScope(scope: MortarScope?) {
         super.onEnterScope(scope)
 
-        Observable.interval(5, TimeUnit.SECONDS)
+        Observable.interval(6, TimeUnit.SECONDS)
             .subscribeNext { currentStatusService.updateStatus() }
             .addTo(bag)
     }
