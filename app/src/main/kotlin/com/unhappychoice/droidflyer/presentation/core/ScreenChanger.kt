@@ -7,7 +7,10 @@ import android.view.ViewGroup
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.presentation.screen.core.Screen
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import flow.*
+import flow.Direction
+import flow.KeyChanger
+import flow.State
+import flow.TraversalCallback
 import kotlinx.android.synthetic.main.activity_main.*
 
 class ScreenChanger(val activity: MainActivity) : KeyChanger {

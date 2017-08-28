@@ -5,6 +5,7 @@ import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.logging.HttpLoggingInterceptor
 import okio.Buffer
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
@@ -22,19 +23,21 @@ class APIClient(val gson: Gson, val preference: APITokenPreference) {
 
     private val baseUrl = "https://api.bitflyer.jp/v1/"
 
-    private val okHttp = OkHttpClient.Builder().addInterceptor {
-        val timestamp = (System.currentTimeMillis() / 1000L).toString()
+    private val okHttp = OkHttpClient.Builder()
+        .addInterceptor {
+            val timestamp = (System.currentTimeMillis() / 1000L).toString()
 
-        val builder = it.request().newBuilder()
-            .addHeader("Content-Type", "application/json")
-            .addHeader("Accept", "application/json")
-            .apply { if(key != "" && secret != "") addHeader("Access-Key", key) }
-            .apply { if(key != "" && secret != "") addHeader("Access-Timestamp", timestamp) }
-            .apply { if(key != "" && secret != "") addHeader("Access-Sign", sign(it.request(), timestamp)) }
-            .build()
+            val builder = it.request().newBuilder()
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "application/json")
+                .apply { if(key != "" && secret != "") addHeader("Access-Key", key) }
+                .apply { if(key != "" && secret != "") addHeader("Access-Timestamp", timestamp) }
+                .apply { if(key != "" && secret != "") addHeader("Access-Sign", sign(it.request(), timestamp)) }
+                .build()
 
-        it.proceed(builder)
-    }.build()
+            it.proceed(builder)
+        }.addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+        .build()
 
     private fun retrofit(): Retrofit = Retrofit.Builder()
         .client(okHttp)
