@@ -3,17 +3,16 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.support.v7.widget.LinearLayoutManager
 import android.util.AttributeSet
-import android.util.Log
 import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
-import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.norimaki.extension.subscribeNext
-import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.limit_order_view.view.*
 import java.util.concurrent.TimeUnit
 
@@ -35,7 +34,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
 
         currentStatusService.board.asObservable()
             .throttleLast(1, TimeUnit.SECONDS)
-            .subscribeOnIoObserveOnUI()
+            .subscribeOn(Schedulers.computation())
+            .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext {
                 askAdapter.items.value = it.asks.sortedBy { it.price }.take(50)
                 bidAdapter.items.value = it.bids.sortedByDescending { it.price }.take(50)
