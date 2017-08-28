@@ -46,7 +46,7 @@ class BoardAdapter(val context: Context, val type: BoardType): RecyclerView.Adap
     inner class ViewHolder(val view: View) : RecyclerView.ViewHolder(view) {
         fun bind(order: Order) {
             priceTextView.text = order.price.splitByComma()
-            sizeTextView.text = "%.4f".format(order.size)
+            sizeTextView.text = "%.3f".format(order.size)
 
             priceTextView.setTextColor(type.color())
             sizeTextView.setTextColor(type.color())
