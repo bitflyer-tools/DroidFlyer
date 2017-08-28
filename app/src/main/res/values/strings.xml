@@ -5,6 +5,8 @@
     <string name="clear_position">Clear all positions</string>
     <string name="chart">Chart</string>
     <string name="order">Order</string>
+    <string name="market">Market</string>
+    <string name="limit">Limit</string>
     <string name="setting">Setting</string>
     <string name="api_key">API key</string>
     <string name="api_secret">API secret</string>
