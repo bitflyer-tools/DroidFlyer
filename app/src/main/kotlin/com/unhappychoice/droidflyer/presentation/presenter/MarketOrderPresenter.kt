@@ -12,7 +12,6 @@ import com.unhappychoice.norimaki.extension.subscribeNext
 import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import mortar.MortarScope
 import mortar.ViewPresenter
 
 class MarketOrderPresenter(
@@ -25,10 +24,6 @@ class MarketOrderPresenter(
     val amount = Variable(0.0)
 
     private val bag = CompositeDisposable()
-
-    override fun onEnterScope(scope: MortarScope?) {
-        super.onEnterScope(scope)
-    }
 
     override fun onExitScope() {
         bag.dispose()
