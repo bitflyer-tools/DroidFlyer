@@ -14,7 +14,8 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.groupBySize
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.floorBySize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.disposables.CompositeDisposable
@@ -24,7 +25,7 @@ import io.reactivex.subjects.PublishSubject
 class BoardAdapter(val context: Context, val type: BoardType): RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val items = Variable<List<Order>>(listOf())
     private val groupedItems: List<Order>
-        get() = items.value.groupBySize(groupSize.value).take(50)
+        get() = type.groupBySize(items.value, groupSize.value).take(50)
     val clickItems = PublishSubject.create<Order>()
     val groupSize = Variable(1L)
 
@@ -77,17 +78,20 @@ class BoardAdapter(val context: Context, val type: BoardType): RecyclerView.Adap
 }
 
 sealed class BoardType {
+    abstract fun groupBySize(orders: List<Order>, size: Long): List<Order>
     abstract fun sizeDirection(): Int
     abstract fun priceDirection(): Int
     abstract fun color(): Int
 
     object Ask: BoardType() {
+        override fun groupBySize(orders: List<Order>, size: Long) = orders.ceilBySize(size)
         override fun color() = DefaultStyle.sellColor
         override fun priceDirection() = RelativeLayout.ALIGN_PARENT_RIGHT
         override fun sizeDirection() = RelativeLayout.ALIGN_PARENT_LEFT
     }
 
     object Bid: BoardType() {
+        override fun groupBySize(orders: List<Order>, size: Long) = orders.floorBySize(size)
         override fun color() = DefaultStyle.buyColor
         override fun priceDirection() = RelativeLayout.ALIGN_PARENT_LEFT
         override fun sizeDirection() = RelativeLayout.ALIGN_PARENT_RIGHT
