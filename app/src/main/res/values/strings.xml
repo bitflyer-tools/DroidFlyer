@@ -11,5 +11,6 @@
     <string name="api_key">API key</string>
     <string name="api_secret">API secret</string>
     <string name="apply">Apply</string>
+    <string name="grouping">Grouping</string>
     <string name="help_api_key">https://lightning.bitflyer.jp/developer</string>
 </resources>

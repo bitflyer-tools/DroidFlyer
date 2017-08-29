@@ -1,18 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.unhappychoice.droidflyer.presentation.view.LimitOrderView
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="horizontal"
+    android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <android.support.v7.widget.RecyclerView
-        android:id="@+id/askList"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"/>
-    <android.support.v7.widget.RecyclerView
-        android:id="@+id/bidList"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"/>
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="30dp"
+        android:layout_margin="3dp">
+        <TextView
+            android:id="@+id/groupingLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_marginRight="@dimen/horizontal_margin_small"
+            android:layout_marginEnd="@dimen/horizontal_margin_small"
+            android:layout_marginLeft="@dimen/horizontal_margin_small"
+            android:layout_marginStart="@dimen/horizontal_margin_small"
+            android:gravity="center|start"
+            android:text="@string/grouping"/>
+        <TextView
+            android:id="@+id/groupingTextView"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:gravity="center|start"
+            android:layout_weight="1"/>
+        <TextView
+            android:id="@+id/minusButton"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginRight="@dimen/horizontal_margin_small"
+            android:layout_marginEnd="@dimen/horizontal_margin_small"
+            android:text="-"
+            android:gravity="center"
+            android:clickable="true"
+            android:textSize="14sp"/>
+        <TextView
+            android:id="@+id/plusButton"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:clickable="true"
+            android:text="+"
+            android:gravity="center"
+            android:textSize="14sp"/>
+    </LinearLayout>
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+        <android.support.v7.widget.RecyclerView
+            android:id="@+id/askList"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+        <android.support.v7.widget.RecyclerView
+            android:id="@+id/bidList"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"/>
+    </LinearLayout>
 </com.unhappychoice.droidflyer.presentation.view.LimitOrderView>
