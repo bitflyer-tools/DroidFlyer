@@ -12,6 +12,8 @@ import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.norimaki.extension.subscribeNext
+import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
+import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
@@ -37,13 +39,10 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         bidList.adapter = bidAdapter
 
         currentStatusService.board.asObservable()
-            .throttleLast(1, TimeUnit.SECONDS, Schedulers.computation())
-            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeOnIoObserveOnUI()
             .subscribeNext {
                 askAdapter.items.value = it.asks.sortedBy { it.price }
                 bidAdapter.items.value = it.bids.sortedByDescending { it.price }
-                askAdapter.notifyDataSetChanged()
-                bidAdapter.notifyDataSetChanged()
             }.addTo(bag)
 
         presenter.groupingSize.asObservable()
@@ -51,6 +50,11 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                 groupingTextView.text = it.toString()
                 askAdapter.groupSize.value = it
                 bidAdapter.groupSize.value = it
+            }.addTo(bag)
+
+        Observable.interval(500, TimeUnit.MILLISECONDS)
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext {
                 askAdapter.notifyDataSetChanged()
                 bidAdapter.notifyDataSetChanged()
             }.addTo(bag)
