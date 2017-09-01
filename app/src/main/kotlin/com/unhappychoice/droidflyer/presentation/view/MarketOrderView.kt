@@ -5,14 +5,14 @@ import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import com.unhappychoice.norimaki.extension.bindTo
-import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.market_order_view.view.*
@@ -51,8 +51,8 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
                 buyButton.isEnabled = it
                 sellButton.isEnabled = it
 
-                buyButton.alpha = if(it) 1.0f else 0.4f
-                sellButton.alpha = if(it) 1.0f else 0.4f
+                buyButton.alpha = if (it) 1.0f else 0.4f
+                sellButton.alpha = if (it) 1.0f else 0.4f
             }.addTo(bag)
 
         Observables.combineLatest(
@@ -61,7 +61,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         ) { position: List<Position>, isLoading: Boolean -> position.wholeSize() != 0.0 && !isLoading }
             .subscribeNext {
                 clearButton.isEnabled = it
-                clearButton.alpha = if(it) 1.0f else 0.4f
+                clearButton.alpha = if (it) 1.0f else 0.4f
             }.addTo(bag)
 
         amountSelector.amount.asObservable()

@@ -2,7 +2,7 @@ package com.unhappychoice.droidflyer.presentation.style
 
 import android.graphics.Color
 
-object DefaultStyle: Style {
+object DefaultStyle : Style {
     override val buyColor = Color.rgb(237, 169, 9)
     override val sellColor = Color.rgb(247, 105, 77)
     override val primaryColor = Color.rgb(44, 57, 64)

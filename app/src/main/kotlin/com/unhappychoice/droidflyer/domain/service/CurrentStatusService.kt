@@ -1,14 +1,14 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
-import com.unhappychoice.norimaki.extension.subscribeNext
-import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 

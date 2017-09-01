@@ -39,10 +39,13 @@ class RealtimeClient(val gson: Gson) {
     )
 
     init {
-        pubnub.addListener(object: SubscribeCallback() {
-            override fun status(pubnub: PubNub?, status: PNStatus?) { }
-            override fun message(pubnub: PubNub?, message: PNMessageResult?) { publish(message) }
-            override fun presence(pubnub: PubNub?, presence: PNPresenceEventResult?) { }
+        pubnub.addListener(object : SubscribeCallback() {
+            override fun status(pubnub: PubNub?, status: PNStatus?) {}
+            override fun message(pubnub: PubNub?, message: PNMessageResult?) {
+                publish(message)
+            }
+
+            override fun presence(pubnub: PubNub?, presence: PNPresenceEventResult?) {}
         })
         pubnub.subscribe().channels(channels).execute()
     }
@@ -56,7 +59,7 @@ class RealtimeClient(val gson: Gson) {
             "lightning_ticker_FX_BTC_JPY" ->
                 ticker.onNext(gson.fromJson(message.message, Ticker::class.java))
             "lightning_executions_FX_BTC_JPY" ->
-                executions.onNext(gson.fromJson(message.message, object : TypeToken<List<Execution>>(){}.type))
+                executions.onNext(gson.fromJson(message.message, object : TypeToken<List<Execution>>() {}.type))
         }
     }
 }

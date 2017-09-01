@@ -7,15 +7,15 @@ import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.bindTo
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import com.unhappychoice.norimaki.extension.bindTo
-import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 import kotlinx.android.synthetic.main.amount_selector_view.view.*
 
-class AmountSelectorView(context: Context?, attr: AttributeSet?): BaseView(context, attr) {
+class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     init {
         LayoutInflater.from(context).inflate(R.layout.amount_selector_view, this)
     }
@@ -72,7 +72,7 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?): BaseView(conte
         oneButton.alpha = 0.4f
         fiveButton.alpha = 0.4f
         tenButton.alpha = 0.4f
-        when(size) {
+        when (size) {
             0.1 -> dotOneButton.alpha = 1.0f
             0.5 -> dotFiveButton.alpha = 1.0f
             1.0 -> oneButton.alpha = 1.0f

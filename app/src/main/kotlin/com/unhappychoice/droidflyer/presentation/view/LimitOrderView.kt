@@ -6,17 +6,16 @@ import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
+import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import com.unhappychoice.norimaki.extension.subscribeNext
-import com.unhappychoice.norimaki.extension.subscribeOnIoObserveOnUI
 import io.reactivex.Observable
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
-import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.limit_order_view.view.*
 import java.util.concurrent.TimeUnit
 
@@ -39,10 +38,13 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         bidList.adapter = bidAdapter
 
         currentStatusService.board.asObservable()
-            .subscribeOnIoObserveOnUI()
+            .throttleLast(100, TimeUnit.MILLISECONDS)
+            .subscribeOnComputationObserveOnUI()
             .subscribeNext {
                 askAdapter.items.value = it.asks.sortedBy { it.price }
                 bidAdapter.items.value = it.bids.sortedByDescending { it.price }
+                askAdapter.notifyDataSetChanged()
+                bidAdapter.notifyDataSetChanged()
             }.addTo(bag)
 
         presenter.groupingSize.asObservable()
@@ -50,11 +52,6 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                 groupingTextView.text = it.toString()
                 askAdapter.groupSize.value = it
                 bidAdapter.groupSize.value = it
-            }.addTo(bag)
-
-        Observable.interval(500, TimeUnit.MILLISECONDS)
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext {
                 askAdapter.notifyDataSetChanged()
                 bidAdapter.notifyDataSetChanged()
             }.addTo(bag)

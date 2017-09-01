@@ -1,8 +1,8 @@
 package com.unhappychoice.droidflyer
 
+import mortar.MortarScope
 import android.support.multidex.MultiDexApplication
 import com.squareup.leakcanary.LeakCanary
-import mortar.MortarScope
 
 class DroidFlyerApplication : MultiDexApplication() {
     private val scope by lazy {

@@ -7,12 +7,11 @@ import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.support.design.widget.selections
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.order_view.view.*
 

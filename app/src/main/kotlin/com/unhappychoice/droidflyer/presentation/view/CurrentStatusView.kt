@@ -9,13 +9,16 @@ import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
+import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
+import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.current_status_view.view.*
+import java.util.concurrent.TimeUnit
 
 class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val currentStatusService: CurrentStatusService by instance()
@@ -30,10 +33,14 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         setupStyle()
 
         currentStatusService.currentPrice.asObservable()
+            .throttleLast(100, TimeUnit.MILLISECONDS)
+            .subscribeOnComputationObserveOnUI()
             .subscribeNext { currentPrice.text = "${it.toLong().splitByComma()} JPY" }
             .addTo(bag)
 
         currentStatusService.currentPrice.asObservable()
+            .throttleLast(100, TimeUnit.MILLISECONDS)
+            .subscribeOnComputationObserveOnUI()
             .subscribeNext {
                 profit.text = currentStatusService.profit().splitByComma()
                 profit.setCoefficientColor(currentStatusService.profit())
@@ -46,7 +53,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
 
         currentStatusService.position.asObservable()
             .subscribeNext {
-                when(Math.abs(it.wholeSize())) {
+                when (Math.abs(it.wholeSize())) {
                     0.0 -> {
                         position.text = "No position"
                         profit.visibility = View.GONE

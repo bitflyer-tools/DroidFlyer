@@ -1,9 +1,9 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
-import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope

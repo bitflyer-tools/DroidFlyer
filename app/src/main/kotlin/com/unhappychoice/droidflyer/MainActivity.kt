@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         setupStyle()
 
         bottom_navigation.setOnNavigationItemSelectedListener {
-            when(it.itemId) {
+            when (it.itemId) {
                 R.id.chartIcon -> Flow.get(this).set(ChartScreen())
                 R.id.orderIcon -> Flow.get(this).set(OrderScreen())
                 R.id.settingsIcon -> Flow.get(this).set(SettingsScreen())

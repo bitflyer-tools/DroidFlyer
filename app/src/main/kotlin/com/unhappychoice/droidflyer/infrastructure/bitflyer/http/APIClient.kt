@@ -30,9 +30,9 @@ class APIClient(val gson: Gson, val preference: APITokenPreference) {
             val builder = it.request().newBuilder()
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "application/json")
-                .apply { if(key != "" && secret != "") addHeader("Access-Key", key) }
-                .apply { if(key != "" && secret != "") addHeader("Access-Timestamp", timestamp) }
-                .apply { if(key != "" && secret != "") addHeader("Access-Sign", sign(it.request(), timestamp)) }
+                .apply { if (key != "" && secret != "") addHeader("Access-Key", key) }
+                .apply { if (key != "" && secret != "") addHeader("Access-Timestamp", timestamp) }
+                .apply { if (key != "" && secret != "") addHeader("Access-Sign", sign(it.request(), timestamp)) }
                 .build()
 
             it.proceed(builder)

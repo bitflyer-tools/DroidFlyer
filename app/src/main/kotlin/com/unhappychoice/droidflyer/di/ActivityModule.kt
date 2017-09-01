@@ -2,7 +2,6 @@ package com.unhappychoice.droidflyer.di
 
 import com.github.salomonbrys.kodein.*
 import com.unhappychoice.droidflyer.MainActivity
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.*
 
 fun activityModule(activity: MainActivity) = Kodein.Module {

@@ -1,15 +1,13 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
-import android.graphics.PorterDuff
-import android.os.Build
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.widget.textChanges
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import com.unhappychoice.norimaki.extension.subscribeNext
 import io.reactivex.rxkotlin.addTo
 import kotlinx.android.synthetic.main.settings_view.view.*
 
