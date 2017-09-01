@@ -80,4 +80,7 @@ dependencies {
     testCompile ("io.polymorphicpanda.kspec:kspec-core:0.4.0") { exclude group: 'org.jetbrains.kotlin' }
     testCompile ("io.polymorphicpanda.kspec:kspec-junit-runner:0.4.0") { exclude group: 'org.jetbrains.kotlin' }
     testCompile 'org.robolectric:robolectric:3.3.2'
+
+    debugCompile 'com.squareup.leakcanary:leakcanary-android:1.5.1'
+    releaseCompile 'com.squareup.leakcanary:leakcanary-android-no-op:1.5.1'
 }
