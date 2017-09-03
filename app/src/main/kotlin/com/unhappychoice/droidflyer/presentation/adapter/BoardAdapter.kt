@@ -107,6 +107,5 @@ sealed class BoardType {
         override fun color() = DefaultStyle.buyColor
         override fun priceDirection() = RelativeLayout.ALIGN_PARENT_LEFT
         override fun sizeDirection() = RelativeLayout.ALIGN_PARENT_RIGHT
-
     }
 }
