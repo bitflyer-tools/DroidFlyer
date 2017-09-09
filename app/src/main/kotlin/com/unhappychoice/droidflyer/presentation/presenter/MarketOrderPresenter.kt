@@ -2,12 +2,12 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.round
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
+import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import io.reactivex.disposables.CompositeDisposable
@@ -17,26 +17,16 @@ import mortar.ViewPresenter
 class MarketOrderPresenter(
     val apiClient: APIClientV1,
     val currentStatusService: CurrentStatusService
-) : ViewPresenter<MarketOrderView>(), Loadable {
+) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
     override val isLoading = Variable(false)
-
-    val size = Variable(1.0)
-    val amount = Variable(0.0)
+    override val unitSize = Variable(1.0)
+    override val amount = Variable(0.0)
 
     private val bag = CompositeDisposable()
 
     override fun onExitScope() {
         bag.dispose()
         super.onExitScope()
-    }
-
-    fun increment() {
-        amount.value = (amount.value + size.value).round(8)
-    }
-
-    fun decrement() {
-        amount.value = (amount.value - size.value).round(8)
-        if (amount.value <= 0) amount.value = 0.0
     }
 
     fun buy() {

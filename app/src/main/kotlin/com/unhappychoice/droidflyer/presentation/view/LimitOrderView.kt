@@ -6,6 +6,7 @@ import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
@@ -16,6 +17,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.Observable
 import io.reactivex.rxkotlin.addTo
+import kotlinx.android.synthetic.main.amount_selector_view.view.*
 import kotlinx.android.synthetic.main.limit_order_view.view.*
 import java.util.concurrent.TimeUnit
 
@@ -32,10 +34,15 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
 
         setupStyle()
 
-        askList.layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
-        askList.adapter = askAdapter
-        bidList.layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
-        bidList.adapter = bidAdapter
+        askList.apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            adapter = askAdapter
+        }
+
+        bidList.apply {
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            adapter = bidAdapter
+        }
 
         currentStatusService.board.asObservable()
             .throttleLast(100, TimeUnit.MILLISECONDS)
@@ -47,17 +54,29 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                 bidAdapter.notifyDataSetChanged()
             }.addTo(bag)
 
-        presenter.groupingSize.asObservable()
-            .subscribeNext {
-                groupingTextView.text = it.toString()
-                askAdapter.groupSize.value = it
-                bidAdapter.groupSize.value = it
-                askAdapter.notifyDataSetChanged()
-                bidAdapter.notifyDataSetChanged()
-            }.addTo(bag)
+        presenter.apply {
+            groupingSize.asObservable()
+                .subscribeNext {
+                    groupingTextView.text = it.toString()
+                    askAdapter.groupSize.value = it
+                    bidAdapter.groupSize.value = it
+                    askAdapter.notifyDataSetChanged()
+                    bidAdapter.notifyDataSetChanged()
+                }.addTo(bag)
 
-        plusButton.clicks().subscribeNext { presenter.incrementGroupingSize() }.addTo(bag)
-        minusButton.clicks().subscribeNext { presenter.decrementGroupingSize() }.addTo(bag)
+            amount.asObservable().bindTo(amountSelector.amount).addTo(bag)
+            unitSize.asObservable().bindTo(amountSelector.size).addTo(bag)
+        }
+
+        amountSelector.apply {
+            amount.asObservable().subscribeNext { presenter.amount.setWithoutEvent(it) }.addTo(bag)
+            size.asObservable().subscribeNext { presenter.unitSize.setWithoutEvent(it) }.addTo(bag)
+            didIncrement.subscribeNext { presenter.incrementAmountByUnitSize() }.addTo(bag)
+            didDecrement.subscribeNext { presenter.decrementAmountByUnitSize() }.addTo(bag)
+        }
+
+        plusGroupButton.clicks().subscribeNext { presenter.incrementGroupingSize() }.addTo(bag)
+        minusGroupButton.clicks().subscribeNext { presenter.decrementGroupingSize() }.addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
@@ -68,9 +87,9 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     private fun setupStyle() {
         groupingLabel.setTextColor(DefaultStyle.accentColor)
         groupingTextView.setTextColor(DefaultStyle.accentColor)
-        plusButton.setTextColor(DefaultStyle.accentColor)
-        minusButton.setTextColor(DefaultStyle.accentColor)
-        plusButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
-        minusButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        plusGroupButton.setTextColor(DefaultStyle.accentColor)
+        minusGroupButton.setTextColor(DefaultStyle.accentColor)
+        plusGroupButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        minusGroupButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }

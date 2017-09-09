@@ -39,7 +39,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             .bindTo(amountSelector.amount)
             .addTo(bag)
 
-        presenter.size.asObservable()
+        presenter.unitSize.asObservable()
             .bindTo(amountSelector.size)
             .addTo(bag)
 
@@ -69,15 +69,15 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             .addTo(bag)
 
         amountSelector.size.asObservable()
-            .subscribeNext { presenter.size.setWithoutEvent(it) }
+            .subscribeNext { presenter.unitSize.setWithoutEvent(it) }
             .addTo(bag)
 
         amountSelector.didIncrement
-            .subscribeNext { presenter.increment() }
+            .subscribeNext { presenter.incrementAmountByUnitSize() }
             .addTo(bag)
 
         amountSelector.didDecrement
-            .subscribeNext { presenter.decrement() }
+            .subscribeNext { presenter.decrementAmountByUnitSize() }
             .addTo(bag)
 
         buyButton.clicks()

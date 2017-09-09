@@ -5,6 +5,12 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <com.unhappychoice.droidflyer.presentation.view.AmountSelectorView
+        android:id="@+id/amountSelector"
+        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_marginTop="@dimen/vertical_margin"/>
+
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
@@ -27,7 +33,7 @@
             android:gravity="center|start"
             android:layout_weight="1"/>
         <TextView
-            android:id="@+id/minusButton"
+            android:id="@+id/minusGroupButton"
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:layout_marginRight="@dimen/horizontal_margin_small"
@@ -37,7 +43,7 @@
             android:clickable="true"
             android:textSize="14sp"/>
         <TextView
-            android:id="@+id/plusButton"
+            android:id="@+id/plusGroupButton"
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:clickable="true"
