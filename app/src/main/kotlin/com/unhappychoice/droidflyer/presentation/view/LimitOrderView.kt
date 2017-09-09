@@ -44,6 +44,9 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             adapter = bidAdapter
         }
 
+        askAdapter.clickItems.subscribeNext { presenter.sell(it.price) }
+        bidAdapter.clickItems.subscribeNext { presenter.buy(it.price) }
+
         currentStatusService.board.asObservable()
             .throttleLast(100, TimeUnit.MILLISECONDS)
             .subscribeOnComputationObserveOnUI()

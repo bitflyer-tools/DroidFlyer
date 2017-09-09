@@ -1,12 +1,19 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
+import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
-class LimitOrderPresenter : ViewPresenter<LimitOrderView>(), HasAmount {
+class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
+    override val isLoading = Variable(false)
     override val amount = Variable(0.0)
     override val unitSize = Variable(1.0)
 
@@ -28,5 +35,25 @@ class LimitOrderPresenter : ViewPresenter<LimitOrderView>(), HasAmount {
     fun decrementGroupingSize() {
         val index = groupingSizes.indexOf(groupingSize.value)
         groupingSizes.getOrNull(index - 1)?.let { groupingSize.value = it }
+    }
+
+    fun buy(price: Long) {
+        if (amount.value == 0.0) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "BUY", price, Math.abs(amount.value))
+        apiClient.sendChildOrder(request)
+            .subscribeOnIoObserveOnUI()
+            .startLoading()
+            .subscribeNext { }
+            .addTo(bag)
+    }
+
+    fun sell(price: Long) {
+        if (amount.value == 0.0) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "SELL", price, Math.abs(amount.value))
+        apiClient.sendChildOrder(request)
+            .subscribeOnIoObserveOnUI()
+            .startLoading()
+            .subscribeNext { }
+            .addTo(bag)
     }
 }
