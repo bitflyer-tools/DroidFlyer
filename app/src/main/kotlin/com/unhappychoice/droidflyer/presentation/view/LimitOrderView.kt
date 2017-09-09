@@ -1,10 +1,13 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
+import android.content.DialogInterface
+import android.support.v7.app.AlertDialog
 import android.support.v7.widget.LinearLayoutManager
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -44,8 +47,27 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             adapter = bidAdapter
         }
 
-        askAdapter.clickItems.subscribeNext { presenter.sell(it.price) }
-        bidAdapter.clickItems.subscribeNext { presenter.buy(it.price) }
+        askAdapter.clickItems
+            .filter { presenter.amount.value != 0.0 }
+            .subscribeNext {
+                AlertDialog.Builder(context, R.style.DialogStyle)
+                    .setTitle(R.string.create_limit_order)
+                    .setMessage("${context.getString(R.string.sell)} / ${it.price} / ${presenter.amount.value}")
+                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.sell(it.price) }
+                    .setNegativeButton(context.getString(R.string.cancel), null)
+                    .show()
+            }.addTo(bag)
+
+        bidAdapter.clickItems
+            .filter { presenter.amount.value != 0.0 }
+            .subscribeNext {
+                AlertDialog.Builder(context, R.style.DialogStyle)
+                    .setTitle(R.string.create_limit_order)
+                    .setMessage("${context.getString(R.string.sell)} / ${it.price} / ${presenter.amount.value}")
+                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.buy(it.price) }
+                    .setNegativeButton(context.getString(R.string.cancel), null)
+                    .show()
+            }.addTo(bag)
 
         currentStatusService.board.asObservable()
             .throttleLast(100, TimeUnit.MILLISECONDS)

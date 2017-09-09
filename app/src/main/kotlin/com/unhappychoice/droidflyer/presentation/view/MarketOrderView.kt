@@ -1,9 +1,11 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
+import android.support.v7.app.AlertDialog
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
@@ -27,21 +29,15 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
 
         setupStyle()
 
-        currentStatusService.buyPrice.asObservable()
-            .subscribeNext { buyPrice.text = it.splitByComma() }
-            .addTo(bag)
+        currentStatusService.apply {
+            buyPrice.asObservable().subscribeNext { this@MarketOrderView.buyPrice.text = it.splitByComma() }.addTo(bag)
+            sellPrice.asObservable().subscribeNext { this@MarketOrderView.sellPrice.text = it.splitByComma() }.addTo(bag)
+        }
 
-        currentStatusService.sellPrice.asObservable()
-            .subscribeNext { sellPrice.text = it.splitByComma() }
-            .addTo(bag)
-
-        presenter.amount.asObservable()
-            .bindTo(amountSelector.amount)
-            .addTo(bag)
-
-        presenter.unitSize.asObservable()
-            .bindTo(amountSelector.size)
-            .addTo(bag)
+        presenter.apply {
+            amount.asObservable().bindTo(amountSelector.amount).addTo(bag)
+            unitSize.asObservable().bindTo(amountSelector.size).addTo(bag)
+        }
 
         Observables.combineLatest(
             presenter.amount.asObservable(),
@@ -64,33 +60,28 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
                 clearButton.alpha = if (it) 1.0f else 0.4f
             }.addTo(bag)
 
-        amountSelector.amount.asObservable()
-            .subscribeNext { presenter.amount.setWithoutEvent(it) }
-            .addTo(bag)
+        amountSelector.apply {
+            amount.asObservable().subscribeNext { presenter.amount.setWithoutEvent(it) }.addTo(bag)
+            size.asObservable().subscribeNext { presenter.unitSize.setWithoutEvent(it) }.addTo(bag)
+            didIncrement.subscribeNext { presenter.incrementAmountByUnitSize() }.addTo(bag)
+            didDecrement.subscribeNext { presenter.decrementAmountByUnitSize() }.addTo(bag)
+        }
 
-        amountSelector.size.asObservable()
-            .subscribeNext { presenter.unitSize.setWithoutEvent(it) }
-            .addTo(bag)
-
-        amountSelector.didIncrement
-            .subscribeNext { presenter.incrementAmountByUnitSize() }
-            .addTo(bag)
-
-        amountSelector.didDecrement
-            .subscribeNext { presenter.decrementAmountByUnitSize() }
-            .addTo(bag)
-
-        buyButton.clicks()
-            .subscribeNext { presenter.buy() }
-            .addTo(bag)
-
-        sellButton.clicks()
-            .subscribeNext { presenter.sell() }
-            .addTo(bag)
+        buyButton.clicks().subscribeNext { presenter.buy() }.addTo(bag)
+        sellButton.clicks().subscribeNext { presenter.sell() }.addTo(bag)
 
         clearButton.clicks()
-            .subscribeNext { presenter.clearPosition() }
-            .addTo(bag)
+            .filter { currentStatusService.position.value.wholeSize() != 0.0 }
+            .subscribeNext {
+                val size = currentStatusService.position.value.wholeSize()
+                val side = if (size > 0.0) context.getString(R.string.sell) else context.getString(R.string.buy)
+                AlertDialog.Builder(context, R.style.DialogStyle)
+                    .setTitle(R.string.clear_all_positions)
+                    .setMessage("$side / ${Math.abs(size)}")
+                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.clearPosition() }
+                    .setNegativeButton(context.getString(R.string.cancel), null)
+                    .show()
+            }.addTo(bag)
     }
 
     override fun onDetachedFromWindow() {

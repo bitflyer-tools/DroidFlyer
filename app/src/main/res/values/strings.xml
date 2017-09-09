@@ -1,5 +1,9 @@
 <resources>
     <string name="app_name">DroidFlyer</string>
+
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+
     <string name="buy">Buy</string>
     <string name="sell">Sell</string>
     <string name="clear_position">Clear all positions</string>
@@ -13,4 +17,7 @@
     <string name="apply">Apply</string>
     <string name="grouping">Grouping</string>
     <string name="help_api_key">https://lightning.bitflyer.jp/developer</string>
+
+    <string name="clear_all_positions">Clear all positions?</string>
+    <string name="create_limit_order">Create limit order?</string>
 </resources>
