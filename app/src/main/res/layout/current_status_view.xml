@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="@dimen/vertical_margin"
         android:gravity="start"
-        android:textSize="44sp"/>
+        android:textSize="40sp"/>
     <LinearLayout
         android:orientation="horizontal"
         android:layout_width="match_parent"
@@ -28,13 +28,13 @@
             android:layout_marginRight="@dimen/horizontal_margin"
             android:layout_marginEnd="@dimen/horizontal_margin"
             android:gravity="start"
-            android:textSize="18sp"/>
+            android:textSize="16sp"/>
         <TextView
             android:id="@+id/spread"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="start|bottom"
-            android:textSize="15sp"/>
+            android:textSize="14sp"/>
     </LinearLayout>
     <LinearLayout
         android:orientation="horizontal"
@@ -47,12 +47,12 @@
             android:layout_marginRight="@dimen/horizontal_margin"
             android:layout_marginEnd="@dimen/horizontal_margin"
             android:gravity="start"
-            android:textSize="18sp"/>
+            android:textSize="16sp"/>
         <TextView
             android:id="@+id/profit"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:gravity="start|bottom"
-            android:textSize="15sp"/>
+            android:textSize="14sp"/>
     </LinearLayout>
 </LinearLayout>
