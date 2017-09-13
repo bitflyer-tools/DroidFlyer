@@ -57,7 +57,7 @@ dependencies {
     compile 'com.android.support:support-v4:26.0.1'
     compile 'com.github.rahatarmanahmed:circularprogressview:2.5.0'
     compile 'com.github.salomonbrys.kodein:kodein:4.1.0'
-    compile 'com.github.unhappychoice:rxsnackbar:0.1.2'
+    compile 'com.github.unhappychoice:rxsnackbar:1.0.0'
     compile 'com.google.code.gson:gson:2.7'
     compile 'com.jakewharton.rxbinding2:rxbinding-kotlin:2.0.0'
     compile 'com.jakewharton.rxbinding2:rxbinding-support-v4-kotlin:2.0.0'

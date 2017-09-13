@@ -1,5 +1,8 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import android.support.design.widget.Snackbar
+import com.github.unhappychoice.rxsnackbar.withNextSnackBar
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -35,6 +38,7 @@ class MarketOrderPresenter(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
+            .withNextSnackBar(view, view.context.getString(R.string.bought_coins, Math.abs(amount.value)))
             .subscribeNext { currentStatusService.updateStatus() }
             .addTo(bag)
     }
@@ -45,6 +49,7 @@ class MarketOrderPresenter(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
+            .withNextSnackBar(view, view.context.getString(R.string.sold_coins, Math.abs(amount.value)))
             .subscribeNext { currentStatusService.updateStatus() }
             .addTo(bag)
     }
@@ -57,6 +62,7 @@ class MarketOrderPresenter(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
+            .withNextSnackBar(view, view.context.getString(R.string.cleared_all_positions))
             .subscribeNext { currentStatusService.updateStatus() }
             .addTo(bag)
     }

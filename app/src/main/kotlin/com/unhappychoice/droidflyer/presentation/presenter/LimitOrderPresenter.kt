@@ -1,5 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
@@ -43,7 +45,7 @@ class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrder
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext { }
+            .subscribeNextWithSnackBar(view, view.context.getString(R.string.ordered_buy, Math.abs(amount.value), price))
             .addTo(bag)
     }
 
@@ -53,7 +55,7 @@ class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrder
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext { }
+            .subscribeNextWithSnackBar(view, view.context.getString(R.string.ordered_sell, Math.abs(amount.value), price))
             .addTo(bag)
     }
 }
