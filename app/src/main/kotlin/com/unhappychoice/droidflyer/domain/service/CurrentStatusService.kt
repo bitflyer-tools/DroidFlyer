@@ -29,11 +29,6 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
 
-        realtimeClient.boardSnapshot
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { board.value = it }
-            .addTo(bag)
-
         realtimeClient.board
             .subscribeOnIoObserveOnUI()
             .subscribeNext { board.value = board.value.merge(it) }
@@ -62,6 +57,12 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
         apiClient.getCollateral()
             .subscribeOnIoObserveOnUI()
             .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
+            .addTo(bag)
+
+        apiClient.getBoard("FX_BTC_JPY")
+            .subscribeOnIoObserveOnUI()
+            .withLog()
+            .subscribeNext { board.value = it }
             .addTo(bag)
     }
 }

@@ -70,7 +70,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             }.addTo(bag)
 
         currentStatusService.board.asObservable()
-            .throttleLast(100, TimeUnit.MILLISECONDS)
+            .throttleLast(300, TimeUnit.MILLISECONDS)
             .subscribeOnComputationObserveOnUI()
             .subscribeNext {
                 askAdapter.items.value = it.asks.sortedBy { it.price }
