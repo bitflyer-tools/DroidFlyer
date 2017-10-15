@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.extension.withLog
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
@@ -31,6 +32,11 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
         realtimeClient.boardSnapshot
             .subscribeOnIoObserveOnUI()
             .subscribeNext { board.value = it }
+            .addTo(bag)
+
+        realtimeClient.board
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { board.value = board.value.merge(it) }
             .addTo(bag)
 
         board.asObservable()
