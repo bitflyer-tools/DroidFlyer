@@ -1,10 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Ticker
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Observable
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -85,8 +82,11 @@ interface APIClientV1 {
     // @POST("me/cancelallchildorders")
     // fun cancelAllChildOrders(@Body request: CancellAllChildOrderRequest): Observable<Map<String, Any>>
 
-    // @GET("me/getchildorders")
-    // fun getChildOrders(//): Observable<List<Map<String, Any>>>
+    @GET("me/getchildorders")
+    fun getChildOrders(
+        @Query("product_code") productCode: String = "BTC_JPY",
+        @Query("child_order_state") orderState: String = "ACTIVE"
+    ): Observable<List<ChildOrder>>
 
     // @GET("me/getparentorders")
     // fun getParentOrders(//): Observable<List<Map<String, Any>>>
