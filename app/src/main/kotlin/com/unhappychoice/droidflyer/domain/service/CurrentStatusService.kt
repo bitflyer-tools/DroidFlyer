@@ -62,7 +62,6 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
         apiClient.getChildOrders("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .withLog()
             .bindTo(orders)
             .addTo(bag)
     }
