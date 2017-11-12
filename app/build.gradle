@@ -1,6 +1,17 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.github.triplet.gradle:play-publisher:1.2.0'
+    }
+}
+
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
+apply plugin: 'jacoco'
+apply plugin: 'com.github.triplet.play'
 
 repositories {
     mavenCentral()
@@ -11,20 +22,40 @@ repositories {
 
 android {
     compileSdkVersion 26
-    buildToolsVersion '26.0.1'
+    buildToolsVersion '26.0.2'
     defaultConfig {
         applicationId "com.unhappychoice.droidflyer"
         minSdkVersion 19
         targetSdkVersion 26
-        versionCode 1
+        versionCode System.getenv("CIRCLE_BUILD_NUM") as Integer ?: 1
         versionName "1.0"
         multiDexEnabled true
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        release {
+            if (System.getenv("RELEASE_KEYSTORE_BASE64") != null) {
+                storeFile decodeFileFromBase64Env('RELEASE_KEYSTORE_BASE64', "tmp_ks_", ".jks")
+                storePassword System.getenv('RELEASE_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('RELEASE_KEYSTORE_KEY_ALIAS')
+                keyPassword System.getenv('RELEASE_KEYSTORE_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
+        debug {
+            minifyEnabled false
+            debuggable true
+            testCoverageEnabled true
+        }
         release {
             minifyEnabled false
+            debuggable false
+            testCoverageEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (System.getenv("RELEASE_KEYSTORE_BASE64") != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     sourceSets {
@@ -44,6 +75,13 @@ android {
         exclude 'META-INF/LGPL2.1'
         exclude 'META-INF/rxjava.properties'
         exclude 'META-INF/rxkotlin.properties'
+    }
+    testOptions {
+        unitTests.all {
+            jacoco {
+                includeNoLocationClasses = true
+            }
+        }
     }
 }
 
@@ -85,4 +123,48 @@ dependencies {
 
     debugCompile 'com.squareup.leakcanary:leakcanary-android:1.5.1'
     releaseCompile 'com.squareup.leakcanary:leakcanary-android-no-op:1.5.1'
+}
+
+jacoco {
+    toolVersion = '0.7.6.201602180812'
+}
+
+task jacoco(type: JacocoReport, dependsOn: "testDebugUnitTest") {
+    reports {
+        xml.enabled = true
+        html.enabled = true
+    }
+    classDirectories = fileTree(
+            dir: './build/intermediates/classes/debug',
+            excludes: [
+                    '**/R.class',
+                    '**/R$*.class',
+                    '**/BuildConfig.class',
+                    '**/Manifest*.*',
+                    '**/*_MembersInjector.class',
+                    '**/Dagger*Component.class',
+                    '**/Dagger*Component$Builder.class',
+                    '**/*Module_*Factory.class',
+                    '**/*$inlined$*.*',
+            ]
+    )
+    sourceDirectories = files('src/main/kotlin')
+    executionData = files('build/jacoco/testDebugUnitTest.exec')
+}
+
+static decodeFileFromBase64Env(String name, String fileName, String ext) {
+    String base64String = System.getenv(name)
+    if (base64String == null) return null
+    File tempFile = File.createTempFile(fileName, ext, File.createTempDir())
+    FileOutputStream fos = null
+    try {
+        fos = new FileOutputStream(tempFile)
+        fos.write(base64String.decodeBase64())
+        fos.flush()
+    } finally {
+        if (fos != null) {
+            fos.close()
+        }
+    }
+    return tempFile
 }
