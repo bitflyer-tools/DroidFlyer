@@ -15,6 +15,15 @@
         android:paddingStart="@dimen/horizontal_margin_small"
         android:paddingEnd="@dimen/horizontal_margin_small"/>
     <TextView
+        android:id="@+id/mineSize"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:paddingRight="@dimen/horizontal_margin_small"
+        android:paddingLeft="@dimen/horizontal_margin_small"
+        android:paddingStart="@dimen/horizontal_margin_small"
+        android:paddingEnd="@dimen/horizontal_margin_small"/>
+    <TextView
         android:id="@+id/size"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
