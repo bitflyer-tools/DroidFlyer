@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DroidFlyer</string>
+    <string name="api_key">APIキー</string>
+    <string name="api_secret">APIシークレット</string>
+    <string name="apply">適用</string>
+    <string name="bought_coins">%f BFX を買いました</string>
+    <string name="buy">買い</string>
+    <string name="cancel">キャンセル</string>
+    <string name="chart">チャート</string>
+    <string name="clear_all_positions">全決済しますか？</string>
+    <string name="clear_position">全決済</string>
+    <string name="cleared_all_positions">全決済を行いました</string>
+    <string name="create_limit_order">指値注文を行いますか？</string>
+    <string name="grouping">グループ</string>
+    <string name="help_api_key">https://lightning.bitflyer.jp/developer</string>
+    <string name="limit">指値</string>
+    <string name="market">成行</string>
+    <string name="ok">OK</string>
+    <string name="order">注文</string>
+    <string name="ordered_buy">注文を行いました 買い / %1$f / %2$d</string>
+    <string name="ordered_sell">注文を行いました 売り / %1$f / %2$d</string>
+    <string name="orders">注文</string>
+    <string name="sell">売り</string>
+    <string name="setting">設定</string>
+    <string name="sold_coins">\"%f BFX を売りました</string>
+</resources>
