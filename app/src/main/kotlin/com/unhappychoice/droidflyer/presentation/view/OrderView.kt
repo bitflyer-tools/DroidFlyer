@@ -29,6 +29,7 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
 
         tabLayout.addTab(tabLayout.newTab().setText(context.getString(R.string.market)))
         tabLayout.addTab(tabLayout.newTab().setText(context.getString(R.string.limit)))
+        tabLayout.addTab(tabLayout.newTab().setText(context.getString(R.string.orders)))
 
         tabLayout.selections()
             .subscribeNext { viewPager.currentItem = tabLayout.selectedTabPosition }

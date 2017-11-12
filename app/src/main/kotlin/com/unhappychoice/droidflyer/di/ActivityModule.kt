@@ -11,4 +11,5 @@ fun activityModule(activity: MainActivity) = Kodein.Module {
     bind<OrderPresenter>() with singleton { OrderPresenter(instance()) }
     bind<MarketOrderPresenter>() with singleton { MarketOrderPresenter(instance(), instance()) }
     bind<LimitOrderPresenter>() with singleton { LimitOrderPresenter(instance()) }
+    bind<OrdersPresenter>() with singleton { OrdersPresenter(instance(), instance()) }
 }

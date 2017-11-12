@@ -63,7 +63,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             .subscribeNext {
                 AlertDialog.Builder(context, R.style.DialogStyle)
                     .setTitle(R.string.create_limit_order)
-                    .setMessage("${context.getString(R.string.sell)} / ${it.price} / ${presenter.amount.value}")
+                    .setMessage("${context.getString(R.string.buy)} / ${it.price} / ${presenter.amount.value}")
                     .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.buy(it.price) }
                     .setNegativeButton(context.getString(R.string.cancel), null)
                     .show()
@@ -78,6 +78,9 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                 askAdapter.notifyDataSetChanged()
                 bidAdapter.notifyDataSetChanged()
             }.addTo(bag)
+
+        currentStatusService.orders.asObservable().bindTo(askAdapter.myOrders).addTo(bag)
+        currentStatusService.orders.asObservable().bindTo(bidAdapter.myOrders).addTo(bag)
 
         presenter.apply {
             groupingSize.asObservable()

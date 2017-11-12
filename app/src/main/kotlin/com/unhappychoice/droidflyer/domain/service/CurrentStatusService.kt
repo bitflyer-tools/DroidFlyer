@@ -1,15 +1,9 @@
 package com.unhappychoice.droidflyer.domain.service
 
-import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.extension.withLog
+import com.unhappychoice.droidflyer.extension.*
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 
@@ -20,6 +14,7 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
     val position = Variable<List<Position>>(listOf())
     val balance = Variable(0.0)
     val board = Variable(Board(0.0, listOf(), listOf()))
+    val orders = Variable<List<ChildOrder>>(listOf())
 
     private val bag = CompositeDisposable()
 
@@ -51,18 +46,23 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
     fun updateStatus() {
         apiClient.getPositions()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { position.value = it }
+            .bindTo(position)
             .addTo(bag)
 
         apiClient.getCollateral()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { balance.value = it["collateral"] as? Double ?: 0.0 }
+            .map { it["collateral"] as? Double ?: 0.0 }
+            .bindTo(balance)
             .addTo(bag)
 
         apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .withLog()
-            .subscribeNext { board.value = it }
+            .bindTo(board)
+            .addTo(bag)
+
+        apiClient.getChildOrders("FX_BTC_JPY")
+            .subscribeOnIoObserveOnUI()
+            .bindTo(orders)
             .addTo(bag)
     }
 }
