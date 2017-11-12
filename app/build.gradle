@@ -23,6 +23,12 @@ repositories {
 android {
     compileSdkVersion 26
     buildToolsVersion '26.0.2'
+    playAccountConfigs {
+        defaultAccountConfig {
+            serviceAccountEmail = 'unhappychoice@gmail.com'
+            jsonFile = decodeFileFromBase64Env("PLAY_ACCOUNT_JSON_BASE64", "norimaki", "json")
+        }
+    }
     defaultConfig {
         applicationId "com.unhappychoice.droidflyer"
         minSdkVersion 19
@@ -31,6 +37,7 @@ android {
         versionName "1.0"
         multiDexEnabled true
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        playAccountConfig = playAccountConfigs.defaultAccountConfig
     }
     signingConfigs {
         release {
