@@ -32,6 +32,11 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
                 orderAdapter.items.value = it
                 orderAdapter.notifyDataSetChanged()
             }.addTo(bag)
+
+        orderAdapter.clickCancel
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { presenter.cancelOrder(it) }
+            .addTo(bag)
     }
 
     override fun onDetachedFromWindow() {

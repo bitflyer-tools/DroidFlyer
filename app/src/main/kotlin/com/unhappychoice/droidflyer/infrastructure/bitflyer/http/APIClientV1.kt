@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Observable
@@ -70,8 +71,8 @@ interface APIClientV1 {
     @POST("me/sendchildorder")
     fun sendChildOrder(@Body request: SendChildOrderRequest): Observable<Map<String, Any>>
 
-    // @POST("me/cancelchildorder")
-    // fun cancelChildOrder(@Body request: CancelChildOrderRequest): Observable<Map<String, Any>>
+    @POST("me/cancelchildorder")
+    fun cancelChildOrder(@Body request: CancelChildOrderRequest): Observable<String>
 
     // @POST("me/sendparentorder")
     // fun sendParentOrder()
