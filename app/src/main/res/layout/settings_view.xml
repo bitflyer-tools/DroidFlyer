@@ -16,6 +16,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="@dimen/vertical_margin"
+        android:lines="1"
+        android:maxLines="1"
         android:background="#00000000"
         android:hint="@string/api_key"/>
 
@@ -25,8 +27,16 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="@dimen/vertical_margin"
         android:lines="1"
+        android:maxLines="1"
         android:hint="@string/api_secret"
+        android:inputType="textPassword"
         android:background="#00000000"/>
+
+    <Button
+        android:id="@+id/saveButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/apply"/>
 
     <TextView
         android:id="@+id/tokenTextView"

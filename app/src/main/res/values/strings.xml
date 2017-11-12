@@ -27,4 +27,6 @@
     <string name="sold_coins">Sold %f BFX</string>
     <string name="ordered_buy">Ordered BUY / %1$f / %2$d</string>
     <string name="ordered_sell">Ordered SELL / %1$f / %2$d</string>
+    <string name="api_key_not_saved">API key is incorrect</string>
+    <string name="api_key_saved">Saved API key</string>
 </resources>

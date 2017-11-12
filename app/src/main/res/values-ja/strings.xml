@@ -24,4 +24,6 @@
     <string name="sell">売り</string>
     <string name="setting">設定</string>
     <string name="sold_coins">\"%f BFX を売りました</string>
+    <string name="api_key_not_saved">APIキーが間違っています</string>
+    <string name="api_key_saved">APIキーを保存しました</string>
 </resources>

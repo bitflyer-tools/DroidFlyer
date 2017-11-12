@@ -6,7 +6,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.*
 
 fun activityModule(activity: MainActivity) = Kodein.Module {
     bind<MainActivity>() with provider { activity }
-    bind<SettingsPresenter>() with singleton { SettingsPresenter(instance()) }
+    bind<SettingsPresenter>() with singleton { SettingsPresenter(instance(), instance()) }
     bind<ChartPresenter>() with singleton { ChartPresenter() }
     bind<OrderPresenter>() with singleton { OrderPresenter(instance()) }
     bind<MarketOrderPresenter>() with singleton { MarketOrderPresenter(instance(), instance()) }
