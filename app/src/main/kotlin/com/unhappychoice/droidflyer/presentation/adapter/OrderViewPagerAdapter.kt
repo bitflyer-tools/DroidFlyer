@@ -12,9 +12,9 @@ import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
 
 class OrderViewPagerAdapter(val context: Context, val kodein: Kodein) : PagerAdapter() {
-    override fun isViewFromObject(view: View?, `object`: Any?): Boolean = view == `object`
+    override fun isViewFromObject(view: View, `object`: Any): Boolean = view == `object`
     override fun getCount(): Int = 3
-    override fun instantiateItem(container: ViewGroup?, position: Int): Any? {
+    override fun instantiateItem(container: ViewGroup, position: Int): Any {
         return when (position) {
             0 -> createMarketOrderView(container)
             1 -> createLimitOrderView(container)
@@ -22,8 +22,8 @@ class OrderViewPagerAdapter(val context: Context, val kodein: Kodein) : PagerAda
         }
     }
 
-    override fun destroyItem(container: ViewGroup?, position: Int, `object`: Any?) {
-        container?.removeView(`object` as View)
+    override fun destroyItem(container: ViewGroup, position: Int, `object`: Any) {
+        container.removeView(`object` as View)
     }
 
     private fun createMarketOrderView(container: ViewGroup?): View {

@@ -53,7 +53,7 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
         holder.view.setOnClickListener { clickItems.onNext(item) }
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup?, viewType: Int): BoardAdapter.ViewHolder {
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BoardAdapter.ViewHolder {
         val view = LayoutInflater.from(context).inflate(R.layout.order_list_item, parent, false)
         return ViewHolder(view)
     }
