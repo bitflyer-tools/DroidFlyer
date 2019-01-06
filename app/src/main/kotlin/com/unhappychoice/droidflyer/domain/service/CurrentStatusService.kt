@@ -20,6 +20,7 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
     init {
         realtimeClient.executions
+            .withLog("execution")
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
