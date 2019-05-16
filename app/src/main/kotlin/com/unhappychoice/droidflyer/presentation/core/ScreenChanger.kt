@@ -7,9 +7,9 @@ import android.view.ViewGroup
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.presentation.screen.core.Screen
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import flow.Direction
 import flow.KeyChanger
 import flow.State
-import flow.Direction
 import flow.TraversalCallback
 import kotlinx.android.synthetic.main.activity_main.*
 
