@@ -1,9 +1,9 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
-import android.support.design.widget.TabLayout
 import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
+import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter

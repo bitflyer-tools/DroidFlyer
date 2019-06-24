@@ -1,9 +1,10 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
-import android.support.v7.app.AlertDialog
-import android.support.v7.widget.LinearLayoutManager
 import android.util.AttributeSet
+import androidx.appcompat.app.AlertDialog
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
@@ -34,12 +35,12 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         setupStyle()
 
         askList.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
             adapter = askAdapter
         }
 
         bidList.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
             adapter = bidAdapter
         }
 

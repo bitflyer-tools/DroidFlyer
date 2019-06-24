@@ -2,8 +2,9 @@ package com.unhappychoice.droidflyer.presentation.view
 
 
 import android.content.Context
-import android.support.v7.widget.LinearLayoutManager
 import android.util.AttributeSet
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
@@ -22,7 +23,7 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         presenter.takeView(this)
 
         orderList.apply {
-            layoutManager = LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false)
+            layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
             adapter = orderAdapter
         }
 

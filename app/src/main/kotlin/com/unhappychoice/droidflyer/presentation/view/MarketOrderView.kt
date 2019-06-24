@@ -1,8 +1,8 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
-import android.support.v7.app.AlertDialog
 import android.util.AttributeSet
+import androidx.appcompat.app.AlertDialog
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R

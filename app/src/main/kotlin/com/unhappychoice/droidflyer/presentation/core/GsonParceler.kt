@@ -60,7 +60,7 @@ class GsonParceler : KeyParceler {
             @JvmField
             @Suppress("unused")
             val CREATOR = object : Parcelable.Creator<Wrapper> {
-                override fun createFromParcel(data: Parcel) = Wrapper(data.readString())
+                override fun createFromParcel(data: Parcel) = Wrapper(data.readString() ?: "")
                 override fun newArray(size: Int): Array<out Wrapper?>? = arrayOfNulls(size)
             }
         }

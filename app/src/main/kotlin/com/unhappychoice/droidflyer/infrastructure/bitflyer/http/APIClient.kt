@@ -47,10 +47,10 @@ class APIClient(val gson: Gson, val preference: APITokenPreference) {
         .build()
 
     private fun sign(request: Request, timestamp: String): String {
-        val body = Buffer().apply { request.body()?.writeTo(this) }.readUtf8()
-        val method = request.method()
-        val query = if (request.url().query() != null) "?${request.url().query()}" else ""
-        val path = request.url().encodedPath() + query
+        val body = Buffer().apply { request.body?.writeTo(this) }.readUtf8()
+        val method = request.method
+        val query = if (request.url.query != null) "?${request.url.query}" else ""
+        val path = request.url.encodedPath + query
         return (timestamp + method + path + body).toHmacSHA256(secret)
     }
 }

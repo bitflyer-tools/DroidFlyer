@@ -1,10 +1,10 @@
 package com.unhappychoice.droidflyer.presentation.adapter
 
 import android.content.Context
-import android.support.v4.view.PagerAdapter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.viewpager.widget.PagerAdapter
 import com.github.salomonbrys.kodein.Kodein
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
