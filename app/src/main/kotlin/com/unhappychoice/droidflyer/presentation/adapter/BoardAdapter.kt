@@ -8,12 +8,10 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.RelativeLayout
 import android.widget.TextView
-import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
-import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize

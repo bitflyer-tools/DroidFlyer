@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
-import android.content.DialogInterface
 import android.support.v7.app.AlertDialog
 import android.support.v7.widget.LinearLayoutManager
 import android.util.AttributeSet
@@ -12,15 +11,12 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import io.reactivex.Observable
 import io.reactivex.rxkotlin.addTo
-import kotlinx.android.synthetic.main.amount_selector_view.view.*
 import kotlinx.android.synthetic.main.limit_order_view.view.*
 import java.util.concurrent.TimeUnit
 
@@ -92,13 +88,13 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                     bidAdapter.notifyDataSetChanged()
                 }.addTo(bag)
 
-            amount.asObservable().bindTo(amountSelector.amount).addTo(bag)
-            unitSize.asObservable().bindTo(amountSelector.size).addTo(bag)
+            amount.asObservable().distinctUntilChanged().bindTo(amountSelector.amount).addTo(bag)
+            unitSize.asObservable().distinctUntilChanged().bindTo(amountSelector.size).addTo(bag)
         }
 
         amountSelector.apply {
-            amount.asObservable().subscribeNext { presenter.amount.setWithoutEvent(it) }.addTo(bag)
-            size.asObservable().subscribeNext { presenter.unitSize.setWithoutEvent(it) }.addTo(bag)
+            amount.asObservable().distinctUntilChanged().bindTo(presenter.amount).addTo(bag)
+            size.asObservable().distinctUntilChanged().bindTo(presenter.unitSize).addTo(bag)
             didIncrement.subscribeNext { presenter.incrementAmountByUnitSize() }.addTo(bag)
             didDecrement.subscribeNext { presenter.decrementAmountByUnitSize() }.addTo(bag)
         }

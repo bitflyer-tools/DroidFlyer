@@ -1,10 +1,8 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
-import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.extension.withLog
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder

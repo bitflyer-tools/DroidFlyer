@@ -3,7 +3,6 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import com.unhappychoice.droidflyer.extension.withLog
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Ticker

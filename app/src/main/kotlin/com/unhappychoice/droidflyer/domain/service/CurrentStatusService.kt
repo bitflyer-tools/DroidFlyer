@@ -1,6 +1,9 @@
 package com.unhappychoice.droidflyer.domain.service
 
-import com.unhappychoice.droidflyer.extension.*
+import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.bindTo
+import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
@@ -20,7 +23,6 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
     init {
         realtimeClient.executions
-            .withLog("execution")
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)

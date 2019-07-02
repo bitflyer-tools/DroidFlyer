@@ -35,11 +35,12 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
             .addTo(bag)
 
         amount.asObservable()
+            .distinctUntilChanged()
             .subscribeNext { amountTextView.setText(it.toString()) }
             .addTo(bag)
 
         amountTextView.textChanges()
-            .subscribeNext { amount.setWithoutEvent(it.toString().toDouble()) }
+            .subscribeNext { amount.value = it.toString().toDouble() }
             .addTo(bag)
 
         dotOneButton.clicks()
