@@ -34,7 +34,7 @@ android {
         minSdkVersion 19
         targetSdkVersion 28
         versionCode System.getenv("CIRCLE_BUILD_NUM") as Integer ?: 1
-        versionName "1.0.1"
+        versionName "1.0.2"
         multiDexEnabled true
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         playAccountConfig = playAccountConfigs.defaultAccountConfig
