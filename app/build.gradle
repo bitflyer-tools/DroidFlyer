@@ -115,7 +115,7 @@ dependencies {
     implementation 'com.pubnub:pubnub-gson:4.9.1'
     implementation 'com.squareup.flow:flow:1.0.0-alpha3'
     implementation 'com.squareup.mortar:mortar:0.20'
-    implementation 'com.squareup.retrofit2:adapter-rxjava2:2.2.0'
+    implementation 'com.squareup.retrofit2:adapter-rxjava2:2.6.0'
     implementation 'com.squareup.retrofit2:retrofit:2.3.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.3.0'
     implementation 'io.reactivex.rxjava2:rxkotlin:2.2.0'
