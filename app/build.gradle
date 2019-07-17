@@ -133,7 +133,7 @@ dependencies {
     testImplementation 'org.robolectric:robolectric:4.3'
 
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:1.6.3'
-    releaseImplementation 'com.squareup.leakcanary:leakcanary-android-no-op:1.5.1'
+    releaseImplementation 'com.squareup.leakcanary:leakcanary-android-no-op:1.6.3'
 }
 
 jacoco {
