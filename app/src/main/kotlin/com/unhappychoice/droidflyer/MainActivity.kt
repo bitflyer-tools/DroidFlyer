@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onSaveInstanceState(outState: Bundle?) {
+    override fun onSaveInstanceState(outState: Bundle) {
         BundleServiceRunner.getBundleServiceRunner(this).onSaveInstanceState(outState)
         super.onSaveInstanceState(outState)
     }
