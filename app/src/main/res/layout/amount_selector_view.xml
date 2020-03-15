@@ -23,7 +23,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="0.1"
+            android:text="0.01"
             android:textSize="18sp"
             android:clickable="true"/>
 
@@ -33,7 +33,7 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="0.5"
+            android:text="0.1"
             android:textSize="18sp"
             android:clickable="true"/>
 
