@@ -44,11 +44,11 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
             .addTo(bag)
 
         dotOneButton.clicks()
-            .subscribeNext { size.value = 0.1 }
+            .subscribeNext { size.value = 0.01 }
             .addTo(bag)
 
         dotFiveButton.clicks()
-            .subscribeNext { size.value = 0.5 }
+            .subscribeNext { size.value = 0.1 }
             .addTo(bag)
 
         oneButton.clicks()
@@ -74,8 +74,8 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         fiveButton.alpha = 0.4f
         tenButton.alpha = 0.4f
         when (size) {
-            0.1 -> dotOneButton.alpha = 1.0f
-            0.5 -> dotFiveButton.alpha = 1.0f
+            0.01 -> dotOneButton.alpha = 1.0f
+            0.1 -> dotFiveButton.alpha = 1.0f
             1.0 -> oneButton.alpha = 1.0f
             5.0 -> fiveButton.alpha = 1.0f
             10.0 -> tenButton.alpha = 1.0f
