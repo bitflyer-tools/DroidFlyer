@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer
 
 import androidx.multidex.MultiDexApplication
-import com.squareup.leakcanary.LeakCanary
 import mortar.MortarScope
 
 class DroidFlyerApplication : MultiDexApplication() {
@@ -14,11 +13,5 @@ class DroidFlyerApplication : MultiDexApplication() {
             true -> scope.getService(name)
             false -> super.getSystemService(name)
         }
-    }
-
-    override fun onCreate() {
-        super.onCreate()
-        if (LeakCanary.isInAnalyzerProcess(this)) return
-        LeakCanary.install(this)
     }
 }
