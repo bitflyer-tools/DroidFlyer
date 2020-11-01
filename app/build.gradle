@@ -22,7 +22,7 @@ repositories {
 
 android {
     compileSdkVersion 29
-    buildToolsVersion '29.0.1'
+    buildToolsVersion '29.0.3'
 
     compileOptions {
         sourceCompatibility 1.8
@@ -143,6 +143,11 @@ dependencies {
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.5'
 }
 
+tasks.withType(Test) {
+    jacoco.includeNoLocationClasses = true
+    jacoco.excludes = ['jdk.internal.*']
+}
+
 task jacoco(type: JacocoReport, dependsOn: "testDebugUnitTest") {
     description = "Generate Jacoco coverage reports after running tests."
     reports {
@@ -160,8 +165,8 @@ task jacoco(type: JacocoReport, dependsOn: "testDebugUnitTest") {
                 )
         )
     }
-    // sourceDirectories = files('src/main/kotlin')
-    // executionData = files('build/jacoco/testDebugUnitTest.exec')
+    sourceDirectories.from files('src/main/kotlin')
+    executionData.from files('build/jacoco/testDebugUnitTest.exec')
 }
 
 static decodeFileFromBase64Env(String name, String fileName, String ext) {
