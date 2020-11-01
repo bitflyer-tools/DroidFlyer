@@ -31,6 +31,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val chartScreen by lazy { ChartScreen() }
+    private val orderScreen by lazy { OrderScreen() }
+    private val settingsScreen by lazy { SettingsScreen() }
+
     private val scope: MortarScope by lazy {
         MortarScope.buildChild(applicationContext)
             .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -56,9 +60,9 @@ class MainActivity : AppCompatActivity() {
 
         bottom_navigation.setOnNavigationItemSelectedListener {
             when (it.itemId) {
-                R.id.chartIcon -> Flow.get(this).set(ChartScreen())
-                R.id.orderIcon -> Flow.get(this).set(OrderScreen())
-                R.id.settingsIcon -> Flow.get(this).set(SettingsScreen())
+                R.id.chartIcon -> Flow.get(this).set(chartScreen)
+                R.id.orderIcon -> Flow.get(this).set(orderScreen)
+                R.id.settingsIcon -> Flow.get(this).set(settingsScreen)
             }
             true
         }
@@ -96,7 +100,7 @@ class MainActivity : AppCompatActivity() {
     private fun getFlowContext(baseContext: Context): Context =
         Flow.configure(baseContext, this)
             .dispatcher(KeyDispatcher.configure(this, ScreenChanger(this)).build())
-            .defaultKey(ChartScreen())
+            .defaultKey(chartScreen)
             .keyParceler(GsonParceler())
             .install()
 
