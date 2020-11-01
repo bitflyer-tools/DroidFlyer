@@ -21,7 +21,7 @@ class ChartView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         chartWebView.setWebViewClient(WebViewClient())
         chartWebView.settings.javaScriptEnabled = true
         chartWebView.settings.domStorageEnabled = true
-        chartWebView.loadUrl("https://embed.cryptowat.ch/bitflyer/btcfxjpy?locale=ja-JP&customColorScheme=%257B%2522bg%2522%253A%25221b1f27%2522%252C%2522text%2522%253A%2522b6b6b6%2522%252C%2522textStrong%2522%253A%2522ffffff%2522%252C%2522textWeak%2522%253A%25227f7f7f%2522%252C%2522short%2522%253A%2522F7694D%2522%252C%2522shortFill%2522%253A%2522F7694D%2522%252C%2522long%2522%253A%2522fbbd2a%2522%252C%2522longFill%2522%253A%25221b1f27%2522%252C%2522cta%2522%253A%25222b3b45%2522%252C%2522ctaHighlight%2522%253A%25222b3b45%2522%252C%2522alert%2522%253A%2522F7694D%2522%257D")
+        chartWebView.loadUrl("https://cryptowat.ch/ja-jp/charts/BITFLYER:BTCFX-JPY")
     }
 
     override fun onDetachedFromWindow() {
