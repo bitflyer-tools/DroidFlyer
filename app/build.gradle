@@ -62,7 +62,7 @@ android {
         minSdkVersion 19
         targetSdkVersion 29
         versionCode System.getenv("CIRCLE_BUILD_NUM") as Integer ?: 1
-        versionName "1.1.0"
+        versionName "2.0.0"
         multiDexEnabled true
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
     }
