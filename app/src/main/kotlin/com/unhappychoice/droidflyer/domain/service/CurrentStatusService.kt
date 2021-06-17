@@ -35,8 +35,8 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
         board.asObservable()
             .subscribeOnIoObserveOnUI()
             .subscribeNext {
-                buyPrice.value = board.value.asks.map { it.price }.min() ?: 0
-                sellPrice.value = board.value.bids.map { it.price }.max() ?: 0
+                buyPrice.value = board.value.asks.map { it.price }.minOrNull() ?: 0
+                sellPrice.value = board.value.bids.map { it.price }.maxOrNull() ?: 0
             }.addTo(bag)
 
         updateStatus()
