@@ -8,6 +8,7 @@ import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.github.salomonbrys.kodein.Kodein
+import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
 import com.unhappychoice.droidflyer.di.applicationModule
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
@@ -19,7 +20,6 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
 import flow.KeyDispatcher
-import kotlinx.android.synthetic.main.activity_main.*
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 
@@ -30,6 +30,8 @@ class MainActivity : AppCompatActivity() {
             import(activityModule(this@MainActivity))
         }
     }
+
+    val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
 
     private val chartScreen by lazy { ChartScreen() }
     private val orderScreen by lazy { OrderScreen() }
@@ -55,10 +57,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         BundleServiceRunner.getBundleServiceRunner(this).onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        setContentView(binding.root)
         setupStyle()
 
-        bottom_navigation.setOnNavigationItemSelectedListener {
+        binding.bottomNavigation.setOnNavigationItemSelectedListener {
             when (it.itemId) {
                 R.id.chartIcon -> Flow.get(this).set(chartScreen)
                 R.id.orderIcon -> Flow.get(this).set(orderScreen)
@@ -90,7 +92,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item?.itemId) {
+        when (item.itemId) {
             android.R.id.home -> Flow.get(this).goBack()
         }
         (getCurrentView() as? HasMenu)?.onOptionsItemSelected(item)
@@ -104,12 +106,12 @@ class MainActivity : AppCompatActivity() {
             .keyParceler(GsonParceler())
             .install()
 
-    private fun getCurrentView(): View? = containerView.getChildAt(0)
+    private fun getCurrentView(): View? = binding.containerView.getChildAt(0)
 
     private fun setupStyle() {
         supportActionBar?.elevation = 0f
         supportActionBar?.setBackgroundDrawable(ColorDrawable(DefaultStyle.darkerPrimaryColor))
-        bottom_navigation.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
-        containerView.setBackgroundColor(DefaultStyle.primaryColor)
+        binding.bottomNavigation.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.containerView.setBackgroundColor(DefaultStyle.primaryColor)
     }
 }

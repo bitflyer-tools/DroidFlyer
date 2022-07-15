@@ -6,15 +6,16 @@ import com.github.salomonbrys.kodein.instance
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.databinding.OrderViewBinding
 import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import kotlinx.android.synthetic.main.order_view.view.*
 
 class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val activity: MainActivity by instance()
     val presenter: OrderPresenter by instance()
+    private val binding by lazy { OrderViewBinding.bind(this) }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -22,19 +23,19 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
 
         setupStyle()
 
-        header.inject(activity.module)
+        binding.header.inject(activity.module)
 
-        tabLayout.addTab(tabLayout.newTab().setText(context.getString(R.string.market)))
-        tabLayout.addTab(tabLayout.newTab().setText(context.getString(R.string.limit)))
-        tabLayout.addTab(tabLayout.newTab().setText(context.getString(R.string.orders)))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.market)))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.limit)))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.orders)))
 
-        tabLayout.addOnTabSelectedListener(object: TabLayout.OnTabSelectedListener {
+        binding.tabLayout.addOnTabSelectedListener(object: TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
-                viewPager.currentItem = tabLayout.selectedTabPosition
+                binding.viewPager.currentItem = binding.tabLayout.selectedTabPosition
             }
 
             override fun onTabReselected(tab: TabLayout.Tab?) {
-                viewPager.currentItem = tabLayout.selectedTabPosition
+                binding.viewPager.currentItem = binding.tabLayout.selectedTabPosition
             }
 
             override fun onTabUnselected(p0: TabLayout.Tab?) {
@@ -42,8 +43,8 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
             }
         })
 
-        viewPager.adapter = OrderViewPagerAdapter(context, activity.module)
-        viewPager.addOnPageChangeListener(TabLayout.TabLayoutOnPageChangeListener(tabLayout))
+        binding.viewPager.adapter = OrderViewPagerAdapter(context, activity.module)
+        binding.viewPager.addOnPageChangeListener(TabLayout.TabLayoutOnPageChangeListener(binding.tabLayout))
     }
 
     override fun onDetachedFromWindow() {
@@ -52,7 +53,7 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
     }
 
     private fun setupStyle() {
-        tabLayout.setTabTextColors(DefaultStyle.darkerAccentColor, DefaultStyle.accentColor)
-        tabLayout.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.tabLayout.setTabTextColors(DefaultStyle.darkerAccentColor, DefaultStyle.accentColor)
+        binding.tabLayout.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }

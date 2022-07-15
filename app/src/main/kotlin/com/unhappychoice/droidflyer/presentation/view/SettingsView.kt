@@ -5,16 +5,17 @@ import android.util.AttributeSet
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
+import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
-import kotlinx.android.synthetic.main.settings_view.view.*
 
 
 class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: SettingsPresenter by instance()
+    private val binding by lazy { SettingsViewBinding.bind(this) }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -22,22 +23,22 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         setupStyle()
 
-        apiTokenTextView.setText(presenter.key.value)
-        apiSecretTextView.setText(presenter.secret.value)
+        binding.apiTokenTextView.setText(presenter.key.value)
+        binding.apiSecretTextView.setText(presenter.secret.value)
 
-        apiTokenTextView.textChanges()
+        binding.apiTokenTextView.textChanges()
             .subscribeNext {
                 presenter.key.value = it.toString()
                 setupStyle()
             }.addTo(bag)
 
-        apiSecretTextView.textChanges()
+        binding.apiSecretTextView.textChanges()
             .subscribeNext {
                 presenter.secret.value = it.toString()
                 setupStyle()
             }.addTo(bag)
 
-        saveButton.clicks()
+        binding.saveButton.clicks()
             .subscribeNext { presenter.save() }
             .addTo(bag)
     }
@@ -48,13 +49,11 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
     }
 
     private fun setupStyle() {
-        apiTokenTextView.setTextColor(DefaultStyle.accentColor)
-        apiTokenTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
-        apiSecretTextView.setTextColor(DefaultStyle.accentColor)
-        apiSecretTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
-        saveButton.setTextColor(DefaultStyle.accentColor)
-        saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.apiTokenTextView.setTextColor(DefaultStyle.accentColor)
+        binding.apiTokenTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
+        binding.apiSecretTextView.setTextColor(DefaultStyle.accentColor)
+        binding.apiSecretTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
+        binding.saveButton.setTextColor(DefaultStyle.accentColor)
+        binding.saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }
-
-// 5f8vGDefZgLa2RUd2vfNzT

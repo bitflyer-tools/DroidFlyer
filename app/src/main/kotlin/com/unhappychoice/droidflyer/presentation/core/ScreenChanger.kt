@@ -11,11 +11,10 @@ import flow.Direction
 import flow.KeyChanger
 import flow.State
 import flow.TraversalCallback
-import kotlinx.android.synthetic.main.activity_main.*
 
 class ScreenChanger(val activity: MainActivity) : KeyChanger {
     private val containerView: ViewGroup
-        get() = activity.containerView
+        get() = activity.binding.containerView
 
     private val contentView: View
         get() = containerView.getChildAt(0)

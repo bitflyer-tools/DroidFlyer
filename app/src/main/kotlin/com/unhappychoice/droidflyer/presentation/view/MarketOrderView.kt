@@ -6,6 +6,7 @@ import androidx.appcompat.app.AlertDialog
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
@@ -17,11 +18,12 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
-import kotlinx.android.synthetic.main.market_order_view.view.*
 
 class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: MarketOrderPresenter by instance()
     val currentStatusService: CurrentStatusService by instance()
+
+    private val binding by lazy { MarketOrderViewBinding.bind(this) }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -30,13 +32,13 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         setupStyle()
 
         currentStatusService.apply {
-            buyPrice.asObservable().subscribeNext { this@MarketOrderView.buyPrice.text = it.splitByComma() }.addTo(bag)
-            sellPrice.asObservable().subscribeNext { this@MarketOrderView.sellPrice.text = it.splitByComma() }.addTo(bag)
+            buyPrice.asObservable().subscribeNext { binding.buyPrice.text = it.splitByComma() }.addTo(bag)
+            sellPrice.asObservable().subscribeNext { binding.sellPrice.text = it.splitByComma() }.addTo(bag)
         }
 
         presenter.apply {
-            amount.asObservable().bindTo(amountSelector.amount).addTo(bag)
-            unitSize.asObservable().bindTo(amountSelector.size).addTo(bag)
+            amount.asObservable().bindTo(binding.amountSelector.amount).addTo(bag)
+            unitSize.asObservable().bindTo(binding.amountSelector.size).addTo(bag)
         }
 
         Observables.combineLatest(
@@ -44,11 +46,11 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             presenter.isLoading.asObservable()
         ) { amount, isLoading -> amount != 0.0 && !isLoading }
             .subscribeNext {
-                buyButton.isEnabled = it
-                sellButton.isEnabled = it
+                binding.buyButton.isEnabled = it
+                binding.sellButton.isEnabled = it
 
-                buyButton.alpha = if (it) 1.0f else 0.4f
-                sellButton.alpha = if (it) 1.0f else 0.4f
+                binding.buyButton.alpha = if (it) 1.0f else 0.4f
+                binding.sellButton.alpha = if (it) 1.0f else 0.4f
             }.addTo(bag)
 
         Observables.combineLatest(
@@ -56,21 +58,21 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             presenter.isLoading.asObservable()
         ) { position: List<Position>, isLoading: Boolean -> position.wholeSize() != 0.0 && !isLoading }
             .subscribeNext {
-                clearButton.isEnabled = it
-                clearButton.alpha = if (it) 1.0f else 0.4f
+                binding.clearButton.isEnabled = it
+                binding.clearButton.alpha = if (it) 1.0f else 0.4f
             }.addTo(bag)
 
-        amountSelector.apply {
+        binding.amountSelector.apply {
             amount.asObservable().distinctUntilChanged().bindTo(presenter.amount).addTo(bag)
             size.asObservable().distinctUntilChanged().bindTo(presenter.unitSize).addTo(bag)
             didIncrement.subscribeNext { presenter.incrementAmountByUnitSize() }.addTo(bag)
             didDecrement.subscribeNext { presenter.decrementAmountByUnitSize() }.addTo(bag)
         }
 
-        buyButton.clicks().subscribeNext { presenter.buy() }.addTo(bag)
-        sellButton.clicks().subscribeNext { presenter.sell() }.addTo(bag)
+        binding.buyButton.clicks().subscribeNext { presenter.buy() }.addTo(bag)
+        binding.sellButton.clicks().subscribeNext { presenter.sell() }.addTo(bag)
 
-        clearButton.clicks()
+        binding.clearButton.clicks()
             .filter { currentStatusService.position.value.wholeSize() != 0.0 }
             .subscribeNext {
                 val size = currentStatusService.position.value.wholeSize()
@@ -90,13 +92,13 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
     }
 
     private fun setupStyle() {
-        buyPrice.setTextColor(DefaultStyle.accentColor)
-        sellPrice.setTextColor(DefaultStyle.accentColor)
-        buyButton.setBackgroundColor(DefaultStyle.buyColor)
-        buyButtonText.setTextColor(DefaultStyle.darkerAccentColor)
-        sellButton.setBackgroundColor(DefaultStyle.sellColor)
-        sellButtonText.setTextColor(DefaultStyle.darkerAccentColor)
-        clearButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
-        clearButton.setTextColor(DefaultStyle.accentColor)
+        binding.buyPrice.setTextColor(DefaultStyle.accentColor)
+        binding.sellPrice.setTextColor(DefaultStyle.accentColor)
+        binding.buyButton.setBackgroundColor(DefaultStyle.buyColor)
+        binding.buyButtonText.setTextColor(DefaultStyle.darkerAccentColor)
+        binding.sellButton.setBackgroundColor(DefaultStyle.sellColor)
+        binding.sellButtonText.setTextColor(DefaultStyle.darkerAccentColor)
+        binding.clearButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.clearButton.setTextColor(DefaultStyle.accentColor)
     }
 }
