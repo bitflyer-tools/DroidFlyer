@@ -61,7 +61,7 @@ jobs:
       - *restore_cache
       - run:
           name: Publish APK
-          command: ./gradlew publishRelease
+          command: ./gradlew publishReleaseApk
 
 workflows:
   version: 2
