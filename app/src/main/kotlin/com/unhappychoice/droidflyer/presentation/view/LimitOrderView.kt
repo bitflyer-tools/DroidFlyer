@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -18,7 +19,6 @@ import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
-import kotlinx.android.synthetic.main.limit_order_view.view.*
 import java.util.concurrent.TimeUnit
 
 class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, attr) {
@@ -27,6 +27,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     private val currentStatusService: CurrentStatusService by instance()
     private val askAdapter by lazy { BoardAdapter(context, BoardType.Ask) }
     private val bidAdapter by lazy { BoardAdapter(context, BoardType.Bid) }
+    private val binding by lazy { LimitOrderViewBinding.bind(this) }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -34,12 +35,12 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
 
         setupStyle()
 
-        askList.apply {
+        binding.askList.apply {
             layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
             adapter = askAdapter
         }
 
-        bidList.apply {
+        binding.bidList.apply {
             layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
             adapter = bidAdapter
         }
@@ -82,26 +83,26 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         presenter.apply {
             groupingSize.asObservable()
                 .subscribeNext {
-                    groupingTextView.text = it.toString()
+                    binding.groupingTextView.text = it.toString()
                     askAdapter.groupSize.value = it
                     bidAdapter.groupSize.value = it
                     askAdapter.notifyDataSetChanged()
                     bidAdapter.notifyDataSetChanged()
                 }.addTo(bag)
 
-            amount.asObservable().distinctUntilChanged().bindTo(amountSelector.amount).addTo(bag)
-            unitSize.asObservable().distinctUntilChanged().bindTo(amountSelector.size).addTo(bag)
+            amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
+            unitSize.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.size).addTo(bag)
         }
 
-        amountSelector.apply {
+        binding.amountSelector.apply {
             amount.asObservable().distinctUntilChanged().bindTo(presenter.amount).addTo(bag)
             size.asObservable().distinctUntilChanged().bindTo(presenter.unitSize).addTo(bag)
             didIncrement.subscribeNext { presenter.incrementAmountByUnitSize() }.addTo(bag)
             didDecrement.subscribeNext { presenter.decrementAmountByUnitSize() }.addTo(bag)
         }
 
-        plusGroupButton.clicks().subscribeNext { presenter.incrementGroupingSize() }.addTo(bag)
-        minusGroupButton.clicks().subscribeNext { presenter.decrementGroupingSize() }.addTo(bag)
+        binding.plusGroupButton.clicks().subscribeNext { presenter.incrementGroupingSize() }.addTo(bag)
+        binding.minusGroupButton.clicks().subscribeNext { presenter.decrementGroupingSize() }.addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
@@ -110,11 +111,11 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     }
 
     private fun setupStyle() {
-        groupingLabel.setTextColor(DefaultStyle.accentColor)
-        groupingTextView.setTextColor(DefaultStyle.accentColor)
-        plusGroupButton.setTextColor(DefaultStyle.accentColor)
-        minusGroupButton.setTextColor(DefaultStyle.accentColor)
-        plusGroupButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
-        minusGroupButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.groupingLabel.setTextColor(DefaultStyle.accentColor)
+        binding.groupingTextView.setTextColor(DefaultStyle.accentColor)
+        binding.plusGroupButton.setTextColor(DefaultStyle.accentColor)
+        binding.minusGroupButton.setTextColor(DefaultStyle.accentColor)
+        binding.plusGroupButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.minusGroupButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }
