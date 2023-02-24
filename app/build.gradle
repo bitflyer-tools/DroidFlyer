@@ -120,7 +120,7 @@ dependencies {
     implementation 'com.jakewharton.rxbinding2:rxbinding-appcompat-v7-kotlin:2.2.0'
     implementation 'com.jakewharton.rxbinding2:rxbinding-design-kotlin:2.2.0'
     implementation 'com.jakewharton.rxbinding2:rxbinding-recyclerview-v7-kotlin:2.2.0'
-    implementation 'com.pubnub:pubnub-gson:6.3.1'
+    implementation 'com.pubnub:pubnub-gson:6.3.2'
     implementation 'com.squareup.flow:flow:1.0.0-alpha3'
     implementation 'com.squareup.mortar:mortar:0.20'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.10.0'
