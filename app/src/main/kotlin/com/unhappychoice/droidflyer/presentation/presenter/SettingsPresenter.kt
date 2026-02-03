@@ -1,7 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
-import com.github.unhappychoice.rxsnackbar.withErrorSnackBar
+import com.unhappychoice.droidflyer.extension.subscribeNextWithSnackBar
+import com.unhappychoice.droidflyer.extension.withErrorSnackBar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI

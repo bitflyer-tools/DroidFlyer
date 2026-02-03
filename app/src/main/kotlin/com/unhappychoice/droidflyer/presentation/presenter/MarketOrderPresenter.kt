@@ -1,6 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.github.unhappychoice.rxsnackbar.withNextSnackBar
+import com.unhappychoice.droidflyer.extension.withNextSnackBar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable

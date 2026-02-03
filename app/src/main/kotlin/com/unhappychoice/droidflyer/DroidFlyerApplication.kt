@@ -1,14 +1,14 @@
 package com.unhappychoice.droidflyer
 
-import androidx.multidex.MultiDexApplication
+import android.app.Application
 import mortar.MortarScope
 
-class DroidFlyerApplication : MultiDexApplication() {
+class DroidFlyerApplication : Application() {
     private val scope by lazy {
         MortarScope.buildRootScope().build("root_scope")
     }
 
-    override fun getSystemService(name: String): Any {
+    override fun getSystemService(name: String): Any? {
         return when (scope.hasService(name)) {
             true -> scope.getService(name)
             false -> super.getSystemService(name)
