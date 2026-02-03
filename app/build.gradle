@@ -101,7 +101,7 @@ dependencies {
     implementation "androidx.recyclerview:recyclerview:1.4.0"
     implementation 'com.github.rahatarmanahmed:circularprogressview:2.5.0'
     implementation 'com.github.salomonbrys.kodein:kodein:4.1.0'
-
+    implementation 'com.github.unhappychoice:rxsnackbar:2.0.1'
     implementation 'com.google.android.material:material:1.13.0'
     implementation 'com.google.code.gson:gson:2.13.2'
     implementation 'com.jakewharton.rxbinding2:rxbinding-kotlin:2.2.0'
