@@ -54,6 +54,7 @@ android {
     }
     lint {
         abortOnError false
+        disable 'DuplicatePlatformClasses'
     }
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
