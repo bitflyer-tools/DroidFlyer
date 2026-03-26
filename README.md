@@ -10,4 +10,4 @@ DroidFlyer is a [bitFlyer Lightning](https://lightning.bitflyer.com) client for 
 
 ## Author
 
-[Yuji Ueki](https://github.com/unhappychoice)
+[@unhappychoice](https://unhappychoice.com)
