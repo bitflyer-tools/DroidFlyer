@@ -159,7 +159,7 @@ task jacoco(type: JacocoReport, dependsOn: "testDebugUnitTest") {
         )
     }
     sourceDirectories.from files('src/main/kotlin')
-    executionData.from files('build/jacoco/testDebugUnitTest.exec')
+    executionData.from files('build/outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec')
 }
 
 static decodeFileFromBase64Env(String name, String fileName, String ext) {
