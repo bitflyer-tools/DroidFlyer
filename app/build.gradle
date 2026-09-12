@@ -49,7 +49,7 @@ android {
         minSdk 23
         targetSdk 36
         versionCode System.getenv("CIRCLE_BUILD_NUM") as Integer ?: 1
-        versionName "2.0.1"
+        versionName "2.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     lint {
