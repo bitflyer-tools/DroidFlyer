@@ -26,4 +26,5 @@
     <string name="sold_coins">\"%f BFX を売りました</string>
     <string name="api_key_not_saved">APIキーが間違っています</string>
     <string name="api_key_saved">APIキーを保存しました</string>
+    <string name="order_executed">約定しました %1$s / %2$f / %3$d</string>
 </resources>
