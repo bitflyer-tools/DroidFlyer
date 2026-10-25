@@ -7,8 +7,10 @@ import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import java.util.concurrent.TimeUnit
 
 class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: RealtimeClient) {
     val currentPrice = Variable(0.0)
@@ -39,6 +41,12 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
                 sellPrice.value = board.value.bids.map { it.price }.maxOrNull() ?: 0
             }.addTo(bag)
 
+        orderEvents()
+            .debounce(1, TimeUnit.SECONDS)
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { updateStatus() }
+            .addTo(bag)
+
         updateStatus()
     }
 
@@ -68,4 +76,9 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
             .bindTo(orders)
             .addTo(bag)
     }
+
+    private fun orderEvents(): Observable<Unit> = Observable.merge(
+        realtimeClient.childOrderEvents.map { Unit },
+        realtimeClient.parentOrderEvents.map { Unit }
+    )
 }

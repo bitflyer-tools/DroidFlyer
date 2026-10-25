@@ -5,6 +5,7 @@ import com.github.unhappychoice.rxsnackbar.withErrorSnackBar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
@@ -15,7 +16,8 @@ import mortar.ViewPresenter
 
 class SettingsPresenter(
     val api: APIClientV1,
-    val preference: APITokenPreference
+    val preference: APITokenPreference,
+    val realtimeClient: RealtimeClient
 ) : ViewPresenter<SettingsView>() {
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
@@ -38,6 +40,7 @@ class SettingsPresenter(
 
         api.getBalance()
             .subscribeOnIoObserveOnUI()
+            .doOnNext { realtimeClient.authenticate() }
             .withErrorSnackBar(view, view.context.getString(R.string.api_key_not_saved))
             .subscribeNextWithSnackBar(view, view.context.getString(R.string.api_key_saved))
             .addTo(bag)
