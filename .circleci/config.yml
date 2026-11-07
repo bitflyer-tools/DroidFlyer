@@ -41,6 +41,7 @@ jobs:
     working_directory: ~/droidFlyer
     docker:
       - image: cimg/android:2026.02.1
+    resource_class: large
     environment:
       JVM_OPTS: -Xmx3200m
     steps:
