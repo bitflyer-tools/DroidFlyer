@@ -59,7 +59,7 @@ interface APIClientV1 {
     @GET("me/getbankaccounts")
     fun getBankAccounts(): Observable<List<Map<String, Any>>>
 
-    @GET("/me/getdeposits")
+    @GET("me/getdeposits")
     fun getDeposits(): Observable<List<Map<String, Any>>>
 
     // @POST("POST /v1/me/withdraw")
