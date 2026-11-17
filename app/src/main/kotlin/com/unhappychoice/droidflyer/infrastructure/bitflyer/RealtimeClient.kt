@@ -68,8 +68,9 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
     }
 
     fun authenticate() {
-        if (preference.key == "" || preference.secret == "") return
-        val params = RealtimeAuthParams.create(preference.key, preference.secret)
+        val credentials = preference.read()
+        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
+        val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
         socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
     }
 
