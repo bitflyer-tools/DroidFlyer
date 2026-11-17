@@ -5,7 +5,6 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.TextView
-import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
@@ -17,6 +16,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
+import org.kodein.di.instance
 
 class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val currentStatusService: CurrentStatusService by instance()
