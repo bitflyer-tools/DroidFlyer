@@ -13,6 +13,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
+import java.math.BigDecimal
 
 class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val size = Variable(1.0)
@@ -29,17 +30,23 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
 
         setupStyle()
 
+        val amountField = binding.amountTextView
+        amountField.setText(formatAmount(amount.value))
+
         size.asObservable()
             .subscribeNext { select(it) }
             .addTo(bag)
 
         amount.asObservable()
             .distinctUntilChanged()
-            .subscribeNext { binding.amountTextView.setText(it.toString()) }
+            .subscribeNext {
+                if (parseAmount(amountField.text) != it) amountField.setText(formatAmount(it))
+            }
             .addTo(bag)
 
-        binding.amountTextView.textChanges()
-            .subscribeNext { amount.value = it.toString().toDouble() }
+        amountField.textChanges()
+            .map(::parseAmount)
+            .subscribeNext { if (amount.value != it) amount.value = it }
             .addTo(bag)
 
         binding.dotOneButton.clicks()
@@ -65,6 +72,15 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         binding.plusButton.clicks().bindTo(didIncrement).addTo(bag)
         binding.minusButton.clicks().bindTo(didDecrement).addTo(bag)
     }
+
+    private fun parseAmount(text: CharSequence): Double = text.map { character ->
+        when (character) {
+            ',', '\u066B' -> '.'
+            else -> character.digitToIntOrNull()?.digitToChar() ?: character
+        }
+    }.joinToString("").toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
+
+    private fun formatAmount(amount: Double): String = BigDecimal.valueOf(amount).toPlainString()
 
     private fun select(size: Double) {
         binding.dotOneButton.alpha = 0.4f
