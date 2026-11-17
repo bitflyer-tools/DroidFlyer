@@ -17,7 +17,7 @@ class OrderPresenter(val currentStatusService: CurrentStatusService) : ViewPrese
         super.onEnterScope(scope)
 
         Observable.interval(6, TimeUnit.SECONDS)
-            .subscribeNext { currentStatusService.updateStatus() }
+            .subscribeNext { currentStatusService.pollStatus() }
             .addTo(bag)
     }
 

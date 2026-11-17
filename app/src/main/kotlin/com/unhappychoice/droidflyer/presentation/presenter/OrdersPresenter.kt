@@ -7,26 +7,15 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
-import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import mortar.MortarScope
 import mortar.ViewPresenter
-import java.util.concurrent.TimeUnit
 
 class OrdersPresenter(
     val api: APIClientV1,
     val currentStatusService: CurrentStatusService
 ) : ViewPresenter<OrdersView>() {
     private val bag = CompositeDisposable()
-
-    override fun onEnterScope(scope: MortarScope?) {
-        super.onEnterScope(scope)
-
-        Observable.interval(6, TimeUnit.SECONDS)
-            .subscribeNext { currentStatusService.updateStatus() }
-            .addTo(bag)
-    }
 
     override fun onExitScope() {
         bag.dispose()

@@ -1,12 +1,12 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
@@ -22,6 +22,7 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
     val orders = Variable<List<ChildOrder>>(listOf())
 
     private val bag = CompositeDisposable()
+    private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
 
     init {
         realtimeClient.executions
@@ -54,28 +55,23 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
     fun spread(): Long = currentPrice.value.toLong() - position.value.average().toLong()
 
-    fun updateStatus() {
-        apiClient.getPositions()
-            .subscribeOnIoObserveOnUI()
-            .bindTo(position)
-            .addTo(bag)
+    fun updateStatus() = statusRefresh.request(followUp = true)
 
-        apiClient.getCollateral()
-            .subscribeOnIoObserveOnUI()
-            .map { it["collateral"] as? Double ?: 0.0 }
-            .bindTo(balance)
-            .addTo(bag)
+    fun pollStatus() = statusRefresh.request(followUp = false)
 
-        apiClient.getBoard("FX_BTC_JPY")
-            .subscribeOnIoObserveOnUI()
-            .bindTo(board)
-            .addTo(bag)
+    private fun refreshStatus(): Completable = Completable.mergeArray(
+        apiClient.getPositions().publishTo(position),
+        apiClient.getCollateral().map { it["collateral"] as? Double ?: 0.0 }.publishTo(balance),
+        apiClient.getBoard("FX_BTC_JPY").publishTo(board),
+        apiClient.getChildOrders("FX_BTC_JPY").publishTo(orders)
+    )
 
-        apiClient.getChildOrders("FX_BTC_JPY")
-            .subscribeOnIoObserveOnUI()
-            .bindTo(orders)
-            .addTo(bag)
-    }
+    private fun <T : Any> Observable<T>.publishTo(variable: Variable<T>): Completable =
+        subscribeOnIoObserveOnUI()
+            .doOnNext { variable.value = it }
+            .ignoreElements()
+            .doOnError { it.printStackTrace() }
+            .onErrorComplete()
 
     private fun orderEvents(): Observable<Unit> = Observable.merge(
         realtimeClient.childOrderEvents.map { Unit },
