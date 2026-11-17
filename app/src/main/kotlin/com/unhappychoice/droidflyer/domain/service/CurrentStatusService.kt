@@ -36,10 +36,8 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
         board.asObservable()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext {
-                buyPrice.value = board.value.asks.map { it.price }.minOrNull() ?: 0
-                sellPrice.value = board.value.bids.map { it.price }.maxOrNull() ?: 0
-            }.addTo(bag)
+            .subscribeNext { it.updateMarketQuotes(buyPrice, sellPrice) }
+            .addTo(bag)
 
         orderEvents()
             .debounce(1, TimeUnit.SECONDS)
@@ -81,4 +79,11 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
         realtimeClient.childOrderEvents.map { Unit },
         realtimeClient.parentOrderEvents.map { Unit }
     )
+}
+
+internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {
+    val bestAsk = asks.minOfOrNull(Order::price) ?: 0L
+    val bestBid = bids.maxOfOrNull(Order::price) ?: 0L
+    if (buyPrice.value != bestAsk) buyPrice.value = bestAsk
+    if (sellPrice.value != bestBid) sellPrice.value = bestBid
 }
