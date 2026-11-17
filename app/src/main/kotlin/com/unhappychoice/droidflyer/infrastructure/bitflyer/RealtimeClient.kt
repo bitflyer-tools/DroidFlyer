@@ -16,19 +16,20 @@ import io.socket.client.Socket
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * ```
- * val client = RealtimeClient()
- * client.connect()
- * client.board.subscribeNext { Log.d("a", it.toString()) }
- * client.boardSnapshot.subscribeNext { Log.d("a", it.toString()) }
- * client.executions.subscribeNext { Log.d("a", it.toString()) }
- * client.ticker.subscribeNext { Log.d("a", it.toString()) }
- * client.childOrderEvents.subscribeNext { Log.d("a", it.toString()) }
- * client.parentOrderEvents.subscribeNext { Log.d("a", it.toString()) }
- * ```
- */
-class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
+class RealtimeClient internal constructor(
+    val gson: Gson,
+    val preference: APITokenPreference,
+    private val socket: Socket
+) {
+    constructor(gson: Gson, preference: APITokenPreference) : this(
+        gson,
+        preference,
+        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
+            transports = arrayOf("websocket")
+            forceNew = true
+        })
+    )
+
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
     val boardSnapshot: PublishSubject<Board> = PublishSubject.create<Board>()
     val ticker: PublishSubject<Ticker> = PublishSubject.create<Ticker>()
@@ -36,7 +37,6 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
     val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
-    private val host = "https://io.lightstream.bitflyer.com"
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
@@ -48,7 +48,7 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
         "parent_order_events"
     )
 
-    private val socket: Socket = IO.socket(host, IO.Options().apply { transports = arrayOf("websocket") })
+    @Volatile private var disconnected = false
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -68,12 +68,20 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
     }
 
     fun authenticate() {
-        if (preference.key == "" || preference.secret == "") return
+        if (disconnected || preference.key == "" || preference.secret == "") return
         val params = RealtimeAuthParams.create(preference.key, preference.secret)
         socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
     }
 
+    fun disconnect() {
+        if (disconnected) return
+        disconnected = true
+        socket.off()
+        socket.disconnect()
+    }
+
     private fun onAuthenticated(args: Array<out Any?>) {
+        if (disconnected) return
         val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
         if (error == null) subscribePrivateChannels() else Log.d("Socket", "Authentication failed: $error")
     }
@@ -82,6 +90,7 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
         privateChannels.forEach { channel -> socket.emit("subscribe", channel) }
 
     private fun publishEvent(channel: String, event: Any?) {
+        if (disconnected) return
         when (event) {
             is JSONObject -> publish(channel, event.toString(4))
             is JSONArray -> publish(channel, event.toString(4))

@@ -54,7 +54,11 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
     fun spread(): Long = currentPrice.value.toLong() - position.value.average().toLong()
 
+    fun dispose() = bag.dispose()
+
     fun updateStatus() {
+        if (bag.isDisposed) return
+
         apiClient.getPositions()
             .subscribeOnIoObserveOnUI()
             .bindTo(position)

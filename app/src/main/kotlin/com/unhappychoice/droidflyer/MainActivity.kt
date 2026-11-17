@@ -13,9 +13,6 @@ import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
 import com.unhappychoice.droidflyer.di.applicationModule
-import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
@@ -26,8 +23,6 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
 import flow.KeyDispatcher
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 
@@ -41,8 +36,7 @@ class MainActivity : AppCompatActivity() {
 
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
 
-    private val realtimeClient by lazy { module.instance<RealtimeClient>() }
-    private val bag = CompositeDisposable()
+    private val realtimeSession = lazy { RealtimeSession(module.instance(), module.instance()) }
 
     private val chartScreen by lazy { ChartScreen() }
     private val orderScreen by lazy { OrderScreen() }
@@ -70,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         BundleServiceRunner.getBundleServiceRunner(this).onCreate(savedInstanceState)
         setContentView(binding.root)
         setupStyle()
-        notifyExecutions()
+        realtimeSession.value.notifyExecutions(::showExecution)
 
         binding.bottomNavigation.setOnNavigationItemSelectedListener {
             when (it.itemId) {
@@ -83,7 +77,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        bag.dispose()
+        if (realtimeSession.isInitialized()) realtimeSession.value.close()
         scope.destroy()
         super.onDestroy()
     }
@@ -126,13 +120,6 @@ class MainActivity : AppCompatActivity() {
         supportActionBar?.setBackgroundDrawable(ColorDrawable(DefaultStyle.darkerPrimaryColor))
         binding.bottomNavigation.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         binding.containerView.setBackgroundColor(DefaultStyle.primaryColor)
-    }
-
-    private fun notifyExecutions() {
-        realtimeClient.childOrderEvents
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { events -> events.filter(ChildOrderEvent::isExecution).forEach(::showExecution) }
-            .addTo(bag)
     }
 
     private fun showExecution(event: ChildOrderEvent) {
