@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -9,6 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
 
@@ -57,28 +57,34 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
     fun updateStatus() {
         apiClient.getPositions()
             .subscribeOnIoObserveOnUI()
-            .bindTo(position)
-            .addTo(bag)
+            .subscribeRefresh(bag) { position.value = it }
 
         apiClient.getCollateral()
             .subscribeOnIoObserveOnUI()
             .map { it["collateral"] as? Double ?: 0.0 }
-            .bindTo(balance)
-            .addTo(bag)
+            .subscribeRefresh(bag) { balance.value = it }
 
         apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .bindTo(board)
-            .addTo(bag)
+            .subscribeRefresh(bag) { board.value = it }
 
         apiClient.getChildOrders("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .bindTo(orders)
-            .addTo(bag)
+            .subscribeRefresh(bag) { orders.value = it }
     }
 
     private fun orderEvents(): Observable<Unit> = Observable.merge(
         realtimeClient.childOrderEvents.map { Unit },
         realtimeClient.parentOrderEvents.map { Unit }
     )
+}
+
+internal fun <T : Any> Observable<T>.subscribeRefresh(bag: CompositeDisposable, onNext: (T) -> Unit) {
+    lateinit var subscription: Disposable
+    doFinally { bag.delete(subscription) }
+        .doOnSubscribe {
+            subscription = it
+            bag.add(it)
+        }
+        .subscribeNext(onNext)
 }
