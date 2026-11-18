@@ -3,11 +3,11 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import android.webkit.WebViewClient
-import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.databinding.ChartViewBinding
 import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import org.kodein.di.instance
 
 
 class ChartView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
