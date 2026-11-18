@@ -19,6 +19,9 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
     val sellPrice = Variable(0L)
     val position = Variable<List<Position>>(listOf())
     val balance = Variable(0.0)
+    val tradingTotals = observeTradingTotals(
+        currentPrice.asObservable(), position.asObservable(), balance.asObservable()
+    )
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = Variable<List<ChildOrder>>(listOf())
 
@@ -50,10 +53,6 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
 
         updateStatus()
     }
-
-    fun profit(): Long = position.value.profit(currentPrice.value.toLong()).toLong()
-
-    fun spread(): Long = currentPrice.value.toLong() - position.value.average().toLong()
 
     fun updateStatus() {
         apiClient.getPositions()
