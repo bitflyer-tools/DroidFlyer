@@ -8,7 +8,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
@@ -29,14 +28,12 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         }
 
         presenter.currentStatusService.orders.asObservable()
-            .subscribeOnIoObserveOnUI()
             .subscribeNext {
                 orderAdapter.items.value = it
                 orderAdapter.notifyDataSetChanged()
             }.addTo(bag)
 
         orderAdapter.clickCancel
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { presenter.cancelOrder(it) }
             .addTo(bag)
     }

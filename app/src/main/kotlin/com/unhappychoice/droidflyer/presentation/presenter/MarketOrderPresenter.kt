@@ -3,12 +3,12 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.github.unhappychoice.rxsnackbar.withNextSnackBar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
@@ -53,12 +53,9 @@ class MarketOrderPresenter(
             .addTo(bag)
     }
 
-    fun clearPosition() {
-        val size = currentStatusService.position.value.wholeSize()
-        if (size == 0.0) return
-        val side = if (size > 0.0) "SELL" else "BUY"
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
-        apiClient.sendChildOrder(request)
+    internal fun clearPosition(confirmation: CloseConfirmation) {
+        val order = currentStatusService.privateState.closePosition(confirmation) ?: return
+        order
             .subscribeOnIoObserveOnUI()
             .startLoading()
             .withNextSnackBar(view, view.context.getString(R.string.cleared_all_positions))

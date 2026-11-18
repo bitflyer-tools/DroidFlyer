@@ -15,6 +15,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import io.reactivex.Observable
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
 
@@ -36,18 +37,23 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .subscribeNext { binding.currentPrice.text = "${it.toLong().splitByComma()} JPY" }
             .addTo(bag)
 
-        currentStatusService.currentPrice.asObservable()
-            .throttleLast(100, TimeUnit.MILLISECONDS)
-            .subscribeOnComputationObserveOnUI()
-            .subscribeNext {
-                binding.profit.text = currentStatusService.profit().splitByComma()
-                binding.profit.setCoefficientColor(currentStatusService.profit())
-
-                binding.spread.text = currentStatusService.spread().splitByComma()
-                binding.spread.setCoefficientColor(currentStatusService.spread())
-
-                binding.balance.text = "${(currentStatusService.balance.value.toLong() + currentStatusService.profit()).splitByComma()} JPY"
-            }.addTo(bag)
+        Observable.mergeArray(
+            currentStatusService.currentPrice.asObservable()
+                .throttleLast(100, TimeUnit.MILLISECONDS)
+                .subscribeOnComputationObserveOnUI()
+                .map { Unit },
+            currentStatusService.position.asObservable().map { Unit },
+            currentStatusService.balance.asObservable().map { Unit }
+        ).subscribeNext {
+            val profit = currentStatusService.profit()
+            val spread = currentStatusService.spread()
+            binding.profit.text = profit.splitByComma()
+            binding.profit.setCoefficientColor(profit)
+            binding.spread.text = spread.splitByComma()
+            binding.spread.setCoefficientColor(spread)
+            val balance = currentStatusService.balance.value.toLong() + profit
+            binding.balance.text = "${balance.splitByComma()} JPY"
+        }.addTo(bag)
 
         currentStatusService.position.asObservable()
             .subscribeNext {
