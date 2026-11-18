@@ -168,6 +168,7 @@ dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-reflect:2.4.21'
 
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.squareup.okhttp3:mockwebserver3:5.5.1'
     testImplementation('com.nhaarman:mockito-kotlin:1.6.0') { exclude group: 'org.jetbrains.kotlin' }
     testImplementation('com.winterbe:expekt:0.5.0') { exclude group: 'org.jetbrains.kotlin' }
     testImplementation 'org.robolectric:robolectric:4.18'
