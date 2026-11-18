@@ -9,7 +9,7 @@ import org.kodein.di.instance
 
 fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindProvider<MainActivity> { activity }
-    bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance()) }
+    bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), realtimeClient = instance()) }
     bindSingleton<ChartPresenter> { ChartPresenter() }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
     bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
