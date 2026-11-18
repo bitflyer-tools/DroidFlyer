@@ -2,7 +2,6 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
-import com.github.salomonbrys.kodein.instance
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.R
@@ -11,6 +10,7 @@ import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import org.kodein.di.instance
 
 class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val activity: MainActivity by instance()

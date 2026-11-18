@@ -7,8 +7,6 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
-import com.github.salomonbrys.kodein.Kodein
-import com.github.salomonbrys.kodein.instance
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
@@ -30,10 +28,13 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
+import org.kodein.di.DI
+import org.kodein.di.direct
+import org.kodein.di.instance
 
 class MainActivity : AppCompatActivity() {
     val module by lazy {
-        Kodein {
+        DI {
             import(applicationModule(application as DroidFlyerApplication))
             import(activityModule(this@MainActivity))
         }
@@ -41,7 +42,7 @@ class MainActivity : AppCompatActivity() {
 
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
 
-    private val realtimeClient by lazy { module.instance<RealtimeClient>() }
+    private val realtimeClient by lazy { module.direct.instance<RealtimeClient>() }
     private val bag = CompositeDisposable()
 
     private val chartScreen by lazy { ChartScreen() }
