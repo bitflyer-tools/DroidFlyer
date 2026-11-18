@@ -5,11 +5,13 @@ import android.util.AttributeSet
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.FillAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.FillHistory
@@ -37,9 +39,13 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             adapter = orderAdapter
         }
 
-        presenter.currentStatusService.orders.asObservable()
+        presenter.orders
             .subscribeOnIoObserveOnUI()
             .subscribeNext { orderAdapter.updateOrders(it) }
+            .addTo(subscriptions)
+
+        presenter.cancellationFailures
+            .subscribeNext(::showCancellationFailure)
             .addTo(subscriptions)
 
         orderAdapter.clickCancel
@@ -102,5 +108,10 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         override fun onTabSelected(tab: TabLayout.Tab) = showFills(tab.position == 1)
         override fun onTabUnselected(tab: TabLayout.Tab) = Unit
         override fun onTabReselected(tab: TabLayout.Tab) = Unit
+    }
+
+    private fun showCancellationFailure(order: ChildOrder) {
+        val message = context.getString(R.string.order_cancellation_failed, order.childOrderAcceptanceId)
+        Snackbar.make(this, message, Snackbar.LENGTH_LONG).show()
     }
 }

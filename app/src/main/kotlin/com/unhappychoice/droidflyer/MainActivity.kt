@@ -20,6 +20,7 @@ import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
 import com.unhappychoice.droidflyer.presentation.screen.OrderScreen
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
+import com.unhappychoice.droidflyer.presentation.screen.core.Screen
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
@@ -46,8 +47,13 @@ class MainActivity : AppCompatActivity() {
     private val bag = CompositeDisposable()
 
     private val chartScreen by lazy { ChartScreen() }
-    private val orderScreen by lazy { OrderScreen() }
-    private val settingsScreen by lazy { SettingsScreen() }
+    private val bottomNavigationScreens by lazy {
+        mapOf(
+            R.id.chartIcon to chartScreen,
+            R.id.orderIcon to OrderScreen(),
+            R.id.settingsIcon to SettingsScreen()
+        )
+    }
 
     private val scope: MortarScope by lazy {
         MortarScope.buildChild(applicationContext)
@@ -69,18 +75,22 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         BundleServiceRunner.getBundleServiceRunner(this).onCreate(savedInstanceState)
+        // Flow restores the destination and its checked item together.
+        binding.bottomNavigation.isSaveFromParentEnabled = false
         setContentView(binding.root)
         setupStyle()
         notifyExecutions()
 
-        binding.bottomNavigation.setOnNavigationItemSelectedListener {
-            when (it.itemId) {
-                R.id.chartIcon -> Flow.get(this).set(chartScreen)
-                R.id.orderIcon -> Flow.get(this).set(orderScreen)
-                R.id.settingsIcon -> Flow.get(this).set(settingsScreen)
-            }
-            true
+        binding.bottomNavigation.setOnItemSelectedListener {
+            bottomNavigationScreens[it.itemId]?.let { screen -> Flow.get(this).set(screen) }
+            // The Flow traversal checks the item when its screen is rendered.
+            false
         }
+    }
+
+    internal fun updateBottomNavigation(screen: Screen) {
+        val itemId = bottomNavigationScreens.entries.firstOrNull { it.value == screen }?.key ?: return
+        binding.bottomNavigation.menu.findItem(itemId).isChecked = true
     }
 
     override fun onDestroy() {
