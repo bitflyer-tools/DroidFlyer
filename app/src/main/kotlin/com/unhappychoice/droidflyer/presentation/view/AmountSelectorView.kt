@@ -35,11 +35,14 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
 
         amount.asObservable()
             .distinctUntilChanged()
+            .filter { it != binding.amountTextView.text.toOrderAmount() }
             .subscribeNext { binding.amountTextView.setText(it.toString()) }
             .addTo(bag)
 
         binding.amountTextView.textChanges()
-            .subscribeNext { amount.value = it.toString().toDouble() }
+            .orderAmounts()
+            .filter { it != amount.value }
+            .bindTo(amount)
             .addTo(bag)
 
         binding.dotOneButton.clicks()

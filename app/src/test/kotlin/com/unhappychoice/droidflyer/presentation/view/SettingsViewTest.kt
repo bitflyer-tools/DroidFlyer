@@ -11,13 +11,12 @@ import com.github.salomonbrys.kodein.instance
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
-import io.socket.client.Socket
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import org.junit.Assert.assertEquals
@@ -28,16 +27,9 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.Implementation
-import org.robolectric.annotation.Implements
-import org.robolectric.annotation.RealObject
 
 @RunWith(RobolectricTestRunner::class)
-@Config(
-    sdk = [36],
-    instrumentedPackages = ["io.socket.client"],
-    shadows = [SettingsViewTest.OfflineSocket::class]
-)
+@Config(sdk = [36])
 class SettingsViewTest {
     @Test
     fun credentialsAreOmittedFromActivityAndFlowStateAndReloadedOnReopen() {
@@ -54,10 +46,11 @@ class SettingsViewTest {
             assertCredentialsOmitted(settings, Bundle().also { controller.saveInstanceState(it) }, flowState)
 
             activity.setContentView(LinearLayout(activity))
+            APITokenPreference(activity).save(APICredentials("updated-key", "updated-secret"))
             val reopened = activity.openSettings()
             flowState.restore(reopened.root)
-            assertEquals("stored-key", reopened.apiTokenTextView.text.toString())
-            assertEquals("stored-secret", reopened.apiSecretTextView.text.toString())
+            assertEquals("updated-key", reopened.apiTokenTextView.text.toString())
+            assertEquals("updated-secret", reopened.apiSecretTextView.text.toString())
         }
     }
 
@@ -88,15 +81,9 @@ class SettingsViewTest {
         }
         private val module by lazy {
             val preference = APITokenPreference(this).apply {
-                key = "stored-key"
-                secret = "stored-secret"
+                save(APICredentials("stored-key", "stored-secret"))
             }
-            val gson = Gson()
-            val presenter = SettingsPresenter(
-                APIClient(gson, preference).client(),
-                preference,
-                RealtimeClient(gson, preference)
-            )
+            val presenter = SettingsPresenter(APIClient(Gson(), preference).client(), preference) {}
             Kodein { bind<SettingsPresenter>() with instance(presenter) }
         }
 
@@ -107,13 +94,5 @@ class SettingsViewTest {
             it.root.inject(module)
             setContentView(it.root)
         }
-    }
-
-    @Implements(Socket::class)
-    class OfflineSocket {
-        @RealObject private lateinit var socket: Socket
-
-        @Implementation
-        fun connect(): Socket = socket
     }
 }

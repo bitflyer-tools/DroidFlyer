@@ -46,7 +46,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         }
 
         askAdapter.clickItems
-            .filter { presenter.amount.value != 0.0 }
+            .filter { presenter.canSubmitOrder }
             .subscribeNext {
                 AlertDialog.Builder(context, R.style.DialogStyle)
                     .setTitle(R.string.create_limit_order)
@@ -57,7 +57,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             }.addTo(bag)
 
         bidAdapter.clickItems
-            .filter { presenter.amount.value != 0.0 }
+            .filter { presenter.canSubmitOrder }
             .subscribeNext {
                 AlertDialog.Builder(context, R.style.DialogStyle)
                     .setTitle(R.string.create_limit_order)
