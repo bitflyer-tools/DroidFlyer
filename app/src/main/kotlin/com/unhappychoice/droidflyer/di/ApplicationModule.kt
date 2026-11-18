@@ -14,14 +14,18 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.style.Style
 
 fun applicationModule(application: DroidFlyerApplication) = Kodein.Module {
-    bind<Gson>() with singleton { createGson() }
-    bind<APIClientV1>() with provider { APIClient(instance(), instance()).client() }
+    import(restModule(application))
     bind<RealtimeClient>() with singleton { RealtimeClient(instance(), instance()) }
-    bind<APITokenPreference>() with provider { APITokenPreference(application) }
 
     bind<CurrentStatusService>() with eagerSingleton { CurrentStatusService(instance(), instance()) }
 
     bind<Style>() with provider { DefaultStyle }
+}
+
+internal fun restModule(application: DroidFlyerApplication) = Kodein.Module {
+    bind<Gson>() with singleton { createGson() }
+    bind<APIClientV1>() with singleton { APIClient(instance(), instance()).client() }
+    bind<APITokenPreference>() with provider { APITokenPreference(application) }
 }
 
 private fun createGson() = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()

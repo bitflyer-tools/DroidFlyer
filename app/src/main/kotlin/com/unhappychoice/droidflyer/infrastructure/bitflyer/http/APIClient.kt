@@ -11,7 +11,13 @@ import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
 
-class APIClient(val gson: Gson, val preference: APITokenPreference) {
+class APIClient internal constructor(
+    val gson: Gson,
+    val preference: APITokenPreference,
+    private val baseUrl: String
+) {
+    constructor(gson: Gson, preference: APITokenPreference) :
+        this(gson, preference, "https://api.bitflyer.jp/v1/")
 
     private val key: String
         get() = preference.key
@@ -20,8 +26,6 @@ class APIClient(val gson: Gson, val preference: APITokenPreference) {
         get() = preference.secret
 
     fun client(): APIClientV1 = retrofit().create(APIClientV1::class.java)
-
-    private val baseUrl = "https://api.bitflyer.jp/v1/"
 
     private val okHttp = OkHttpClient.Builder()
         .addInterceptor {
