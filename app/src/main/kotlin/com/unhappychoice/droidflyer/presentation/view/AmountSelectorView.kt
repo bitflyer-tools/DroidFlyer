@@ -1,6 +1,10 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
+import android.os.Build
+import android.text.InputType
+import android.text.Spanned
+import android.text.method.NumberKeyListener
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import com.jakewharton.rxbinding2.view.clicks
@@ -13,6 +17,9 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
+import java.math.BigDecimal
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 
 class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val size = Variable(1.0)
@@ -23,11 +30,21 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
     private val binding by lazy {
         AmountSelectorViewBinding.inflate(LayoutInflater.from(context), this, true)
     }
+    private var amountSymbols = DecimalFormatSymbols.getInstance(Locale.US)
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
 
         setupStyle()
+
+        val amountField = binding.amountTextView
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val locales = resources.configuration.locales
+            amountField.imeHintLocales = locales
+            amountSymbols = DecimalFormatSymbols.getInstance(locales[0])
+        }
+        amountField.keyListener = AmountKeyListener(amountSymbols)
+        amountField.setText(formatAmount(amount.value))
 
         size.asObservable()
             .subscribeNext { select(it) }
@@ -35,12 +52,12 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
 
         amount.asObservable()
             .distinctUntilChanged()
-            .filter { it != binding.amountTextView.text.toOrderAmount() }
-            .subscribeNext { binding.amountTextView.setText(it.toString()) }
+            .filter { it != parseAmount(amountField.text) }
+            .subscribeNext { amountField.setText(formatAmount(it)) }
             .addTo(bag)
 
-        binding.amountTextView.textChanges()
-            .orderAmounts()
+        amountField.textChanges()
+            .map(::parseAmount)
             .filter { it != amount.value }
             .bindTo(amount)
             .addTo(bag)
@@ -68,6 +85,25 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         binding.plusButton.clicks().bindTo(didIncrement).addTo(bag)
         binding.minusButton.clicks().bindTo(didDecrement).addTo(bag)
     }
+
+    private fun parseAmount(text: CharSequence): Double {
+        val separators = decimalSeparators(amountSymbols)
+        return text.map { character ->
+            when (character) {
+                in separators -> '.'
+                else -> character.digitToIntOrNull()?.digitToChar() ?: character
+            }
+        }.joinToString("").toOrderAmount()
+    }
+
+    private fun formatAmount(amount: Double): String =
+        BigDecimal.valueOf(amount).toPlainString().map { character ->
+            when (character) {
+                '.' -> amountSymbols.decimalSeparator
+                in '0'..'9' -> amountSymbols.zeroDigit + (character - '0')
+                else -> character
+            }
+        }.joinToString("")
 
     private fun select(size: Double) {
         binding.dotOneButton.alpha = 0.4f
@@ -98,5 +134,29 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         binding.plusButton.setTextColor(DefaultStyle.accentColor)
         binding.minusButton.setBackgroundColor(DefaultStyle.primaryColor)
         binding.minusButton.setTextColor(DefaultStyle.accentColor)
+    }
+}
+
+private fun decimalSeparators(symbols: DecimalFormatSymbols): String = ".,\u066B${symbols.decimalSeparator}"
+
+private class AmountKeyListener(symbols: DecimalFormatSymbols) : NumberKeyListener() {
+    private val separators = decimalSeparators(symbols)
+    private val acceptedChars = ("0123456789" + (0..9).map { symbols.zeroDigit + it }.joinToString("") +
+        separators).toCharArray()
+
+    override fun getAcceptedChars(): CharArray = acceptedChars
+
+    override fun getInputType(): Int = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+
+    override fun filter(
+        source: CharSequence, start: Int, end: Int, dest: Spanned, dstart: Int, dend: Int
+    ): CharSequence? {
+        if (start == end) return null
+
+        val insertion = source.subSequence(start, end)
+        val result = dest.replaceRange(dstart, dend, insertion)
+        val valid = insertion.all { it.isDigit() || it in separators } &&
+            result.count { it in separators } <= 1
+        return if (valid) null else dest.subSequence(dstart, dend)
     }
 }
