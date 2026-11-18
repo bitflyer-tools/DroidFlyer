@@ -2,11 +2,14 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.app.Activity
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.view.View
 import android.widget.EditText
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,6 +62,20 @@ class AmountSelectorViewTest {
     }
 
     @Test
+    @Config(sdk = [24, 25], qualifiers = "de-rDE")
+    fun pastingLocalizedFractionsPreservesTheirSeparatorsOnLegacyAndroid() {
+        val clipboard = requireNotNull(field.context.getSystemService(ClipboardManager::class.java))
+        listOf("0,015" to 0.015, "0.025" to 0.025, "\u0660\u066B\u0660\u0663\u0665" to 0.035)
+            .forEach { (text, amount) ->
+                clipboard.setPrimaryClip(ClipData.newPlainText("Amount", text))
+                field.selectAll()
+                assertTrue(field.onTextContextMenuItem(android.R.id.paste))
+                assertEquals(text, field.text.toString())
+                assertEquals(amount, selector.amount.value, 0.0)
+            }
+    }
+
+    @Test
     fun fractionalPresetsSetTheStepUsedByBothButtons() {
         connectAmountButtons()
         field.text.replace(0, field.length(), "0.015")
@@ -86,7 +103,7 @@ class AmountSelectorViewTest {
         selector.findViewById<View>(R.id.plusButton).performClick()
         assertEquals("0,025", field.text.toString())
 
-        field.text.append(',')
+        field.text.append('.')
         field.text.append('5')
         assertEquals("0,0255", field.text.toString())
         assertEquals(0.0255, selector.amount.value, 0.0)
