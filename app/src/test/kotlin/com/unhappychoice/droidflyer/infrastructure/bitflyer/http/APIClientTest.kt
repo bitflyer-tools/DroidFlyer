@@ -1,52 +1,128 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
-import com.google.gson.Gson
+import com.google.gson.FieldNamingPolicy
+import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.Observable
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import retrofit2.HttpException
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE, sdk = [30])
+@Config(manifest = Config.NONE, sdk = [29])
 class APIClientTest {
-    @Test
-    fun sharedClientSignsRequestsWithUpdatedCredentials() {
-        val application = RuntimeEnvironment.getApplication()
-        val settings = APITokenPreference(application)
-        val first = APICredentials("first-key", "first-secret")
-        val updated = APICredentials("updated-key", "updated-secret")
-        settings.save(first)
-        val client = APIClient(Gson(), APITokenPreference(application), echoSignedHeaders()).client()
+    private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+    private val credentials = APICredentials("dummy-key", "dummy-secret")
+    private val order = SendChildOrderRequest(childOrderType = "LIMIT", side = "BUY", price = 100L, size = 0.01)
 
-        assertCredentials(client, first)
-        settings.save(updated)
-        assertCredentials(client, updated)
+    @Test
+    fun authenticatedGetDoesNotFollowCrossOriginRedirect() {
+        assertRedirectBlocked(302, "[]") { it.getPositions() }
     }
 
-    private fun echoSignedHeaders(): OkHttpClient = OkHttpClient.Builder().addInterceptor { chain ->
-        val request = chain.request()
-        val headers = listOf("Access-Key", "Access-Timestamp", "Access-Sign").map(request::header)
-        Response.Builder()
-            .request(request)
-            .protocol(Protocol.HTTP_1_1)
-            .code(200)
-            .message("OK")
-            .body(Gson().toJson(headers).toResponseBody())
-            .build()
-    }.build()
+    @Test
+    fun orderPostDoesNotFollowCrossOriginRedirects() {
+        listOf(307, 308).forEach { status ->
+            assertRedirectBlocked(status, "{}") { it.sendChildOrder(order) }
+        }
+    }
 
-    private fun assertCredentials(client: APIClientV1, expected: APICredentials) {
-        val (key, timestamp, signature) = client.getPermissions().blockingFirst()
-        assertEquals(expected.key, key)
-        assertEquals("${timestamp}GET/v1/me/getpermissions".toHmacSHA256(expected.secret), signature)
+    @Test
+    fun directRequestsCarrySignedAccessHeaders() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            origin.enqueue(MockResponse.Builder().body("{}").build())
+
+            val client = client(origin)
+            client.getPositions().test().assertComplete().assertNoErrors()
+            client.sendChildOrder(order).test().assertComplete().assertNoErrors()
+
+            assertSignedRequest(origin, "GET", "/v1/me/getpositions?product_code=FX_BTC_JPY", "")
+            assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+        }
+    }
+
+    @Test
+    fun sharedClientSignsRequestsWithUpdatedCredentials() {
+        MockWebServer().use { origin ->
+            origin.start()
+            repeat(2) { origin.enqueue(MockResponse.Builder().body("[]").build()) }
+            val client = client(origin)
+            val target = "/v1/me/getpermissions"
+
+            client.getPermissions().test().assertComplete().assertNoErrors()
+            assertSignedRequest(origin, "GET", target, "")
+
+            val updated = APICredentials("updated-key", "updated-secret")
+            APITokenPreference(RuntimeEnvironment.getApplication()).save(updated)
+            client.getPermissions().test().assertComplete().assertNoErrors()
+            assertSignedRequest(origin, "GET", target, "", updated)
+        }
+    }
+
+    private fun assertRedirectBlocked(
+        status: Int,
+        responseBody: String,
+        request: (APIClientV1) -> Observable<*>
+    ) {
+        MockWebServer().use { origin ->
+            MockWebServer().use { destination ->
+                origin.start()
+                destination.start()
+                destination.enqueue(MockResponse.Builder().body(responseBody).build())
+                origin.enqueue(
+                    MockResponse.Builder()
+                        .code(status)
+                        .addHeader("Location", destination.url("/redirect"))
+                        .build()
+                )
+
+                val result = request(client(origin)).test()
+                assertEquals(0, destination.requestCount)
+                result.assertError { it is HttpException && it.code() == status }
+                assertEquals(1, origin.requestCount)
+            }
+        }
+    }
+
+    private fun client(origin: MockWebServer): APIClientV1 {
+        val preference = APITokenPreference(RuntimeEnvironment.getApplication()).apply {
+            save(credentials)
+        }
+        val transport = OkHttpClient.Builder().followRedirects(true).build()
+        return APIClient(gson, preference, transport, origin.url("/v1/").toString()).client()
+    }
+
+    private fun assertSignedRequest(
+        origin: MockWebServer,
+        method: String,
+        target: String,
+        body: String,
+        expected: APICredentials = credentials
+    ) {
+        val request = checkNotNull(origin.takeRequest(5, TimeUnit.SECONDS))
+        assertEquals(method, request.method)
+        assertEquals(target, request.target)
+        assertEquals(body, request.body?.utf8().orEmpty())
+        assertEquals(expected.key, request.headers["Access-Key"])
+        val timestamp = request.headers["Access-Timestamp"]
+        assertNotNull(timestamp?.toLongOrNull())
+        assertEquals(
+            (timestamp + method + target + body).toHmacSHA256(expected.secret),
+            request.headers["Access-Sign"]
+        )
     }
 }
