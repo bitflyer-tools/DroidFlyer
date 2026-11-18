@@ -51,8 +51,11 @@ jobs:
           name: Run Tests
           command: ./gradlew jacoco
       - run:
-          name: Send coverage
-          command: ./scripts/ci/send-coverage-info.sh
+          name: Report line coverage
+          command: python3 scripts/ci/report-coverage.py app/build/reports/jacoco/jacoco/jacoco.xml
+      - store_artifacts:
+          path: app/build/reports/jacoco/jacoco
+          destination: coverage
   deploy:
     working_directory: ~/droidFlyer
     docker:
@@ -74,7 +77,5 @@ workflows:
       - build
       - test: { requires: [build] }
       - deploy:
-          filters:
-            branches:
-              only: master
+          filters: pipeline.git.branch == "master"
           requires: [test]
