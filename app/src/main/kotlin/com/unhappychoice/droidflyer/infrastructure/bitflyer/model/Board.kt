@@ -11,9 +11,8 @@ data class Board(
     )
 
     private fun List<Order>.merge(orders: List<Order>): List<Order> {
-        val pricesToRemove = orders.filter { it.size == 0.0 }.map(Order::price)
-        val ordersToAppend = orders.filter { it.size != 0.0 }
+        val updatesByPrice = orders.associateBy(Order::price)
 
-        return filterNot { pricesToRemove.contains(it.price) } + ordersToAppend
+        return filterNot { it.price in updatesByPrice } + updatesByPrice.values.filter { it.size != 0.0 }
     }
 }

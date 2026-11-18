@@ -69,7 +69,7 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         accountB.positions.onNext(listOf(position))
         scheduler.triggerActions()
-        assertNull(state.closePosition(oldConfirmation))
+        assertNull(state.closePosition(oldConfirmation) { error("Reconfirmed on another account") })
 
         val confirmation = checkNotNull(state.closeConfirmation())
         checkNotNull(state.closePosition(confirmation)).test().assertComplete()
@@ -78,6 +78,23 @@ class PrivateTradingStateTest {
             listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)),
             accountB.sent
         )
+    }
+
+    @Test
+    fun changingPositionWithinTheSameAccountRequiresFreshConfirmation() {
+        state.refresh()
+        scheduler.triggerActions()
+        accountA.positions.onNext(listOf(position))
+        scheduler.triggerActions()
+        val original = checkNotNull(state.closeConfirmation())
+
+        state.position.value = listOf(position.copy(side = "SELL", size = 1.0))
+        var updated: PrivateTradingState.CloseConfirmation? = null
+        assertNull(state.closePosition(original) { updated = it })
+        assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
+
+        checkNotNull(state.closePosition(checkNotNull(updated))).test().assertComplete()
+        assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0)), accountA.sent)
     }
 
     private fun assertPrivateData(positions: List<Position>, balance: Double, orders: List<ChildOrder>) {

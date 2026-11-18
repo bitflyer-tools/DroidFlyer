@@ -21,7 +21,7 @@ fun applicationModule(application: DroidFlyerApplication) = Kodein.Module {
     bind<APITokenPreference>() with singleton { APITokenPreference(application) }
 
     bind<CurrentStatusService>() with eagerSingleton {
-        val credentials = instance<APITokenPreference>().credentials()
+        val credentials = instance<APITokenPreference>().read()
         CurrentStatusService(instance(), instance(), instance<APIClient>().client(credentials))
     }
 

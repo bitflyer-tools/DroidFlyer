@@ -53,8 +53,14 @@ class MarketOrderPresenter(
             .addTo(bag)
     }
 
-    internal fun clearPosition(confirmation: CloseConfirmation) {
-        val order = currentStatusService.privateState.closePosition(confirmation) ?: return
+    internal fun positionCloseOrder(): CloseConfirmation? =
+        currentStatusService.privateState.closeConfirmation()
+
+    internal fun clearPosition(
+        confirmed: CloseConfirmation,
+        reconfirm: (CloseConfirmation) -> Unit
+    ) {
+        val order = currentStatusService.privateState.closePosition(confirmed, reconfirm) ?: return
         order
             .subscribeOnIoObserveOnUI()
             .startLoading()

@@ -41,15 +41,23 @@ internal class PrivateTradingState(
     }
 
     fun closeConfirmation(): CloseConfirmation? {
-        val size = position.value.wholeSize()
-        return if (size == 0.0) null else CloseConfirmation(session, size)
+        return PositionCloseOrder.from(position.value.wholeSize())?.let { CloseConfirmation(session, it) }
     }
 
-    fun closePosition(confirmation: CloseConfirmation): Observable<Map<String, Any>>? {
-        if (confirmation.session !== session || confirmation.size != position.value.wholeSize()) return null
-        val side = if (confirmation.size > 0.0) "SELL" else "BUY"
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(confirmation.size))
-        return session.client.sendChildOrder(request)
+    fun closePosition(
+        confirmation: CloseConfirmation,
+        reconfirm: (CloseConfirmation) -> Unit = {}
+    ): Observable<Map<String, Any>>? {
+        val current = session
+        if (confirmation.session !== current) return null
+        return confirmation.order.confirm(
+            PositionCloseOrder.from(position.value.wholeSize()),
+            submit = {
+                val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", it.side, null, it.size)
+                current.client.sendChildOrder(request)
+            },
+            reconfirm = { reconfirm(CloseConfirmation(current, it)) }
+        )
     }
 
     fun cancelOrder(order: ChildOrder): Observable<String>? {
@@ -64,6 +72,6 @@ internal class PrivateTradingState(
             .subscribeNext { if (current === session) target.value = it }
     }
 
-    class CloseConfirmation internal constructor(internal val session: Session, val size: Double)
+    class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1)
 }

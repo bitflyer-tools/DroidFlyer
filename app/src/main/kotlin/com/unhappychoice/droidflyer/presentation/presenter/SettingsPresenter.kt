@@ -8,51 +8,64 @@ import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference.Credentials
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.ViewPresenter
 
-class SettingsPresenter(
-    val api: APIClient,
-    val preference: APITokenPreference,
-    val realtimeClient: RealtimeClient,
-    val currentStatusService: CurrentStatusService
+class SettingsPresenter internal constructor(
+    private val api: APIClient,
+    private val preference: APITokenPreference,
+    private val switchAccount: (APIClientV1) -> Unit,
+    private val authenticate: () -> Unit
 ) : ViewPresenter<SettingsView>() {
+    constructor(
+        api: APIClient,
+        preference: APITokenPreference,
+        currentStatusService: CurrentStatusService,
+        realtimeClient: RealtimeClient
+    ) : this(api, preference, currentStatusService.privateState::switchAccount, realtimeClient::authenticate)
+
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
     private val bag = CompositeDisposable()
 
     override fun onEnterScope(scope: MortarScope?) {
         super.onEnterScope(scope)
-        val token = preference.credentials()
-        key.value = token.key
-        secret.value = token.secret
+        val credentials = preference.read()
+        key.value = credentials.key
+        secret.value = credentials.secret
     }
 
     override fun onExitScope() {
-        bag.clear()
+        bag.dispose()
         super.onExitScope()
     }
 
     fun save() {
         bag.clear()
-        val candidate = Credentials(key.value, secret.value)
-        val candidateClient = api.client(candidate)
-        candidateClient.getBalance()
-            .subscribeOnIoObserveOnUI()
-            .doOnNext {
-                if (!candidate.matches(preference.credentials())) {
-                    preference.save(candidate)
-                    currentStatusService.privateState.switchAccount(candidateClient)
-                }
-                realtimeClient.authenticate()
-            }
+        saveCredentials()
             .withErrorSnackBar(view, view.context.getString(R.string.api_key_not_saved))
             .subscribeNextWithSnackBar(view, view.context.getString(R.string.api_key_saved))
             .addTo(bag)
+    }
+
+    internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
+        val submitted = APICredentials(key.value, secret.value)
+        return api.client().getBalance(submitted)
+            .subscribeOnIoObserveOnUI()
+            .doOnNext {
+                val saved = preference.read()
+                if (saved.key != submitted.key || saved.secret != submitted.secret) {
+                    preference.save(submitted)
+                    switchAccount(api.client(submitted))
+                }
+                authenticate()
+            }
     }
 }

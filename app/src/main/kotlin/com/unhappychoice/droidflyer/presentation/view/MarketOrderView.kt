@@ -8,6 +8,7 @@ import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -73,22 +74,26 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         binding.sellButton.clicks().subscribeNext { presenter.sell() }.addTo(bag)
 
         binding.clearButton.clicks()
-            .subscribeNext {
-                val confirmation = currentStatusService.privateState.closeConfirmation() ?: return@subscribeNext
-                val size = confirmation.size
-                val side = if (size > 0.0) context.getString(R.string.sell) else context.getString(R.string.buy)
-                AlertDialog.Builder(context, R.style.DialogStyle)
-                    .setTitle(R.string.clear_all_positions)
-                    .setMessage("$side / ${Math.abs(size)}")
-                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.clearPosition(confirmation) }
-                    .setNegativeButton(context.getString(R.string.cancel), null)
-                    .show()
-            }.addTo(bag)
+            .subscribeNext { presenter.positionCloseOrder()?.let(::showCloseConfirmation) }
+            .addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun showCloseConfirmation(confirmation: CloseConfirmation) {
+        val order = confirmation.order
+        val side = context.getString(if (order.side == "SELL") R.string.sell else R.string.buy)
+        AlertDialog.Builder(context, R.style.DialogStyle)
+            .setTitle(R.string.clear_all_positions)
+            .setMessage("$side / ${order.size}")
+            .setPositiveButton(R.string.ok) { _, _ ->
+                presenter.clearPosition(confirmation, ::showCloseConfirmation)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun setupStyle() {
