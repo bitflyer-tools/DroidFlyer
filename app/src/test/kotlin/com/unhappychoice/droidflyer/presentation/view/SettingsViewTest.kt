@@ -5,9 +5,6 @@ import android.os.Bundle
 import android.os.Parcelable
 import android.widget.EditText
 import android.widget.LinearLayout
-import com.github.salomonbrys.kodein.Kodein
-import com.github.salomonbrys.kodein.bind
-import com.github.salomonbrys.kodein.instance
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
@@ -24,6 +21,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.kodein.di.DI
+import org.kodein.di.bindSingleton
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -83,8 +82,8 @@ class SettingsViewTest {
             val preference = APITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
-            val presenter = SettingsPresenter(APIClient(Gson(), preference).client(), preference) {}
-            Kodein { bind<SettingsPresenter>() with instance(presenter) }
+            val presenter = SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {}
+            DI { bindSingleton<SettingsPresenter> { presenter } }
         }
 
         override fun getSystemService(name: String): Any? =
