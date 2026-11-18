@@ -9,8 +9,8 @@ android {
     namespace 'com.unhappychoice.droidflyer'
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
     kotlin {
         jvmToolchain(21)
@@ -102,7 +102,7 @@ dependencies {
 
     implementation "androidx.recyclerview:recyclerview:1.4.0"
     implementation 'com.github.rahatarmanahmed:circularprogressview:2.5.0'
-    implementation 'com.github.salomonbrys.kodein:kodein:4.1.0'
+    implementation 'org.kodein.di:kodein-di:7.33.0'
     implementation 'com.github.unhappychoice:rxsnackbar:2.0.1'
     implementation 'com.google.android.material:material:1.14.0'
     implementation 'com.google.code.gson:gson:2.15.0'

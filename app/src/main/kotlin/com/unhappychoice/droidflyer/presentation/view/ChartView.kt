@@ -3,7 +3,6 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import androidx.core.view.isVisible
-import com.github.salomonbrys.kodein.instance
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.ChartViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
@@ -11,6 +10,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.disposables.SerialDisposable
 import java.text.NumberFormat
+import org.kodein.di.instance
 
 class ChartView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: ChartPresenter by instance()
