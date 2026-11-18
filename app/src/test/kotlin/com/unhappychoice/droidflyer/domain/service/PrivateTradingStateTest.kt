@@ -5,6 +5,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelC
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
@@ -148,9 +149,8 @@ class PrivateTradingStateTest {
                     sent.add(args[0] as SendChildOrderRequest)
                     emptyMap<String, Any>()
                 }
-                "cancelChildOrder" -> Observable.fromCallable {
+                "cancelChildOrder" -> Completable.fromAction {
                     cancelled.add(args[0] as CancelChildOrderRequest)
-                    ""
                 }
                 else -> error("Unexpected API call: ${method.name}")
             }

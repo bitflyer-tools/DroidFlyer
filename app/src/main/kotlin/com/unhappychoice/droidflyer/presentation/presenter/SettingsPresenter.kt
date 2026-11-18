@@ -15,7 +15,6 @@ import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import mortar.MortarScope
 import mortar.ViewPresenter
 
 class SettingsPresenter internal constructor(
@@ -35,8 +34,7 @@ class SettingsPresenter internal constructor(
     val secret: Variable<String> = Variable("")
     private val bag = CompositeDisposable()
 
-    override fun onEnterScope(scope: MortarScope?) {
-        super.onEnterScope(scope)
+    fun loadCredentials() {
         val credentials = preference.read()
         key.value = credentials.key
         secret.value = credentials.secret

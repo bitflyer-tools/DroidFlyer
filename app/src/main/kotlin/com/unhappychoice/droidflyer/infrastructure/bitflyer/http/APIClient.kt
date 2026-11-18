@@ -16,7 +16,8 @@ import retrofit2.converter.gson.GsonConverterFactory
 class APIClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
-    transport: OkHttpClient
+    transport: OkHttpClient,
+    private val baseUrl: String = "https://api.bitflyer.jp/v1/"
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, OkHttpClient())
 
@@ -24,9 +25,8 @@ class APIClient internal constructor(
 
     fun client(credentials: APICredentials): APIClientV1 = createClient(credentials)
 
-    private val baseUrl = "https://api.bitflyer.jp/v1/"
-
     private val okHttp = transport.newBuilder()
+        .followRedirects(false)
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
 
