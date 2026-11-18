@@ -8,6 +8,7 @@ import com.nhaarman.mockito_kotlin.whenever
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -36,8 +37,7 @@ class RealtimeClientTest {
 
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
-        preference.key = "key"
-        preference.secret = "secret"
+        preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         socket.receive(Socket.EVENT_CONNECT)
         assertEquals(
