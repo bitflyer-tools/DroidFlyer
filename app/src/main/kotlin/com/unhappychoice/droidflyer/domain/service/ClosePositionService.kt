@@ -25,9 +25,14 @@ internal class ClosePositionService(
             return Single.error(IllegalStateException("Position changed since confirmation"))
         }
 
+        val quantity = abs(size)
+        if (quantity < MIN_ORDER_SIZE) {
+            return Single.error(IllegalStateException("Position is below the minimum close order size"))
+        }
+
         val side = if (size > 0.0) "SELL" else "BUY"
         val request = SendChildOrderRequest(
-            PRODUCT_CODE, "MARKET", side, null, abs(size).coerceAtMost(ORDER_SIZE_LIMIT), timeInForce = "IOC"
+            PRODUCT_CODE, "MARKET", side, null, nextOrderSize(quantity), timeInForce = "IOC"
         )
         return apiClient.sendChildOrder(request).singleOrError()
             .flatMap { response ->
@@ -42,6 +47,12 @@ internal class ClosePositionService(
                     abs(it) <= expected || it.sign != size.sign
                 }.flatMap { remaining -> closeRemaining(remaining, size) }
             }
+    }
+
+    private fun nextOrderSize(quantity: Double): Double {
+        if (quantity <= ORDER_SIZE_LIMIT) return quantity
+        val remainder = (quantity - ORDER_SIZE_LIMIT).round(8)
+        return if (remainder < MIN_ORDER_SIZE) (quantity - MIN_ORDER_SIZE).round(8) else ORDER_SIZE_LIMIT
     }
 
     private fun executedSize(acceptanceId: String): Single<Double> =
@@ -63,6 +74,7 @@ internal class ClosePositionService(
     companion object {
         const val ORDER_SIZE_LIMIT = 10.0
 
+        private const val MIN_ORDER_SIZE = 0.001
         private const val PRODUCT_CODE = "FX_BTC_JPY"
         private val finalOrderStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
     }

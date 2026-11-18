@@ -48,6 +48,45 @@ class ClosePositionServiceTest {
     }
 
     @Test
+    fun `reduces the first order when the capped order would leave less than the minimum`() {
+        positions.addAll(listOf(10.0005, 0.001, 0.0))
+        orderUpdates.addAll(listOf("COMPLETED" to 9.9995, "COMPLETED" to 0.001))
+
+        service.close(10.0005).test().assertResult(Unit)
+
+        assertOrders("SELL", 9.9995, 0.001)
+    }
+
+    @Test
+    fun `keeps the capped order when it leaves exactly the minimum`() {
+        positions.addAll(listOf(-10.001, -0.001, 0.0))
+        orderUpdates.addAll(listOf("COMPLETED" to 10.0, "COMPLETED" to 0.001))
+
+        service.close(-10.001).test().assertResult(Unit)
+
+        assertOrders("BUY", 10.0, 0.001)
+    }
+
+    @Test
+    fun `rejects an initial position below the minimum without submitting an order`() {
+        positions.add(0.00099999)
+
+        service.close(0.00099999).test().assertError(IllegalStateException::class.java)
+
+        assertOrders("SELL")
+    }
+
+    @Test
+    fun `does not submit an undersized order after a partial fill`() {
+        positions.addAll(listOf(10.0, 0.0005))
+        orderUpdates.add("CANCELED" to 9.9995)
+
+        service.close(10.0).test().assertError(IllegalStateException::class.java)
+
+        assertOrders("SELL", 10.0)
+    }
+
+    @Test
     fun `waits for a partial fill to settle and for the position to reflect it`() {
         positions.addAll(listOf(-12.0, -12.0, -5.0, 0.0))
         orderUpdates.addAll(listOf("ACTIVE" to 7.0, "CANCELED" to 7.0, "COMPLETED" to 5.0))
