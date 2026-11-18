@@ -45,7 +45,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         }
 
         askAdapter.clickItems
-            .filter { presenter.amount.value != 0.0 }
+            .filter { presenter.canSubmitOrder }
             .subscribeNext {
                 AlertDialog.Builder(context, R.style.DialogStyle)
                     .setTitle(R.string.create_limit_order)
@@ -56,7 +56,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             }.addTo(bag)
 
         bidAdapter.clickItems
-            .filter { presenter.amount.value != 0.0 }
+            .filter { presenter.canSubmitOrder }
             .subscribeNext {
                 AlertDialog.Builder(context, R.style.DialogStyle)
                     .setTitle(R.string.create_limit_order)
@@ -71,17 +71,13 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             .subscribeNext {
                 askAdapter.applyRows(it.asks, it.groupingSize)
                 bidAdapter.applyRows(it.bids, it.groupingSize)
+                binding.groupingTextView.text = it.groupingSize.toString()
             }.addTo(bag)
 
         currentStatusService.orders.asObservable().bindTo(askAdapter.myOrders).addTo(bag)
         currentStatusService.orders.asObservable().bindTo(bidAdapter.myOrders).addTo(bag)
 
         presenter.apply {
-            groupingSize.asObservable()
-                .subscribeNext {
-                    binding.groupingTextView.text = it.toString()
-                }.addTo(bag)
-
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
             unitSize.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.size).addTo(bag)
         }

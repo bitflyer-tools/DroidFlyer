@@ -2,8 +2,7 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.floorBySize
+import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.rxkotlin.Observables
@@ -24,8 +23,8 @@ internal fun observeLimitOrderRows(
         .observeOn(scheduler)
         .map { (board, size) ->
             LimitOrderRows(
-                asks = board.asks.sortedBy { it.price }.ceilBySize(size).take(50),
-                bids = board.bids.sortedByDescending { it.price }.floorBySize(size).take(50),
+                asks = BoardType.Ask.groupBySize(board.asks.sortedBy { it.price }, size).take(50),
+                bids = BoardType.Bid.groupBySize(board.bids.sortedByDescending { it.price }, size).take(50),
                 groupingSize = size
             )
         }

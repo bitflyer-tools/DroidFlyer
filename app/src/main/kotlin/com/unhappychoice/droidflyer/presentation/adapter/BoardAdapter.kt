@@ -13,6 +13,8 @@ import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.floorBySize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import io.reactivex.subjects.PublishSubject
 
@@ -58,9 +60,9 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val myOrders = myOrders.value.filter { type.groupedPrice(it, groupingSize) == order.price }
-            mineSizeTextView.visibility = if (myOrders.isEmpty()) View.GONE else View.VISIBLE
-            mineSizeTextView.text = myOrders.map { it.size }.sum().toString()
+            val outstandingSize = type.personalOutstandingSize(myOrders.value, order.price, groupingSize)
+            mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
+            mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
         }
 
@@ -81,21 +83,29 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     }
 }
 
-sealed class BoardType {
+sealed class BoardType(private val side: String) {
+    internal fun personalOutstandingSize(orders: List<ChildOrder>, price: Long, groupSize: Long): Double? =
+        orders.filter { it.side == side && groupedPrice(it, groupSize) == price }
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { it.outstandingSize }
+
     abstract fun groupedPrice(order: ChildOrder, size: Long): Long
+    abstract fun groupBySize(orders: List<Order>, size: Long): List<Order>
     abstract fun sizeDirection(): Int
     abstract fun priceDirection(): Int
     abstract fun color(): Int
 
-    object Ask : BoardType() {
+    object Ask : BoardType("SELL") {
         override fun groupedPrice(order: ChildOrder, size: Long) = order.ceiledPrice(size)
+        override fun groupBySize(orders: List<Order>, size: Long) = orders.ceilBySize(size)
         override fun color() = DefaultStyle.sellColor
         override fun priceDirection() = RelativeLayout.ALIGN_PARENT_RIGHT
         override fun sizeDirection() = RelativeLayout.ALIGN_PARENT_LEFT
     }
 
-    object Bid : BoardType() {
+    object Bid : BoardType("BUY") {
         override fun groupedPrice(order: ChildOrder, size: Long) = order.flooredPrice(size)
+        override fun groupBySize(orders: List<Order>, size: Long) = orders.floorBySize(size)
         override fun color() = DefaultStyle.buyColor
         override fun priceDirection() = RelativeLayout.ALIGN_PARENT_LEFT
         override fun sizeDirection() = RelativeLayout.ALIGN_PARENT_RIGHT

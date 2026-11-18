@@ -26,7 +26,7 @@ class LimitOrderRowsTest {
         scheduler.advanceTimeBy(1, MILLISECONDS)
         rows.assertValue(
             LimitOrderRows(
-                asks = levels.take(50).map { it.copy(price = it.price + 1) },
+                asks = levels.take(50),
                 bids = levels.reversed().take(50),
                 groupingSize = 1L
             )
@@ -38,7 +38,7 @@ class LimitOrderRowsTest {
         rows.assertValueCount(2).assertValueAt(
             1,
             LimitOrderRows(
-                asks = (1L..50L).map { Order((it + 1) * 10, it + 0.5) },
+                asks = listOf(Order(10L, 1.0)) + (2L..50L).map { Order(it * 10, it + 0.5) },
                 bids = (60L downTo 11L).map { Order(it * 10, it + 0.5) },
                 groupingSize = 10L
             )
