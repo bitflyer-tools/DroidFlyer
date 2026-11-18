@@ -4,6 +4,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelC
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import io.reactivex.Completable
 import io.reactivex.Observable
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -31,6 +32,12 @@ interface APIClientV1 {
     fun getExecutions(
         @Query("product_code") productCode: String = "BTC_JPY"
     ): Observable<List<Execution>>
+
+    @GET("executions")
+    fun getExecutionPrices(
+        @Query("product_code") productCode: String,
+        @Query("count") count: Int
+    ): Observable<List<ExecutionPrice>>
 
     @GET("gethealth")
     fun getHealth(): Observable<Map<String, Any>>
@@ -74,7 +81,7 @@ interface APIClientV1 {
     fun sendChildOrder(@Body request: SendChildOrderRequest): Observable<Map<String, Any>>
 
     @POST("me/cancelchildorder")
-    fun cancelChildOrder(@Body request: CancelChildOrderRequest): Observable<String>
+    fun cancelChildOrder(@Body request: CancelChildOrderRequest): Completable
 
     // @POST("me/sendparentorder")
     // fun sendParentOrder()

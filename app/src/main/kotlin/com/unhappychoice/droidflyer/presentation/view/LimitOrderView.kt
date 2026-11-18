@@ -5,7 +5,6 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
@@ -20,6 +19,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
+import org.kodein.di.instance
 
 class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: LimitOrderPresenter by instance()

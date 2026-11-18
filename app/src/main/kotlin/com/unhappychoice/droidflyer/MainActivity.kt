@@ -7,8 +7,6 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
-import com.github.salomonbrys.kodein.Kodein
-import com.github.salomonbrys.kodein.instance
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
@@ -22,6 +20,7 @@ import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
 import com.unhappychoice.droidflyer.presentation.screen.OrderScreen
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
+import com.unhappychoice.droidflyer.presentation.screen.core.Screen
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
@@ -30,10 +29,13 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
+import org.kodein.di.DI
+import org.kodein.di.direct
+import org.kodein.di.instance
 
 class MainActivity : AppCompatActivity() {
     val module by lazy {
-        Kodein {
+        DI {
             import(applicationModule(application as DroidFlyerApplication))
             import(activityModule(this@MainActivity))
         }
@@ -41,12 +43,17 @@ class MainActivity : AppCompatActivity() {
 
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
 
-    private val realtimeClient by lazy { module.instance<RealtimeClient>() }
+    private val realtimeClient by lazy { module.direct.instance<RealtimeClient>() }
     private val bag = CompositeDisposable()
 
     private val chartScreen by lazy { ChartScreen() }
-    private val orderScreen by lazy { OrderScreen() }
-    private val settingsScreen by lazy { SettingsScreen() }
+    private val bottomNavigationScreens by lazy {
+        mapOf(
+            R.id.chartIcon to chartScreen,
+            R.id.orderIcon to OrderScreen(),
+            R.id.settingsIcon to SettingsScreen()
+        )
+    }
 
     private val scope: MortarScope by lazy {
         MortarScope.buildChild(applicationContext)
@@ -68,18 +75,22 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         BundleServiceRunner.getBundleServiceRunner(this).onCreate(savedInstanceState)
+        // Flow restores the destination and its checked item together.
+        binding.bottomNavigation.isSaveFromParentEnabled = false
         setContentView(binding.root)
         setupStyle()
         notifyExecutions()
 
-        binding.bottomNavigation.setOnNavigationItemSelectedListener {
-            when (it.itemId) {
-                R.id.chartIcon -> Flow.get(this).set(chartScreen)
-                R.id.orderIcon -> Flow.get(this).set(orderScreen)
-                R.id.settingsIcon -> Flow.get(this).set(settingsScreen)
-            }
-            true
+        binding.bottomNavigation.setOnItemSelectedListener {
+            bottomNavigationScreens[it.itemId]?.let { screen -> Flow.get(this).set(screen) }
+            // The Flow traversal checks the item when its screen is rendered.
+            false
         }
+    }
+
+    internal fun updateBottomNavigation(screen: Screen) {
+        val itemId = bottomNavigationScreens.entries.firstOrNull { it.value == screen }?.key ?: return
+        binding.bottomNavigation.menu.findItem(itemId).isChecked = true
     }
 
     override fun onDestroy() {

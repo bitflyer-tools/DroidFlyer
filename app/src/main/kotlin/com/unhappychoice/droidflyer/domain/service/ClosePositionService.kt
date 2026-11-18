@@ -16,13 +16,17 @@ internal class ClosePositionService(
     private val apiClient: APIClientV1,
     private val scheduler: Scheduler = Schedulers.io()
 ) {
-    fun close(confirmedSize: Double): Single<Unit> =
+    fun close(confirmedSize: Double, onAccepted: () -> Unit = {}): Single<Unit> =
         positionSize().flatMap { size ->
             check(size == 0.0 || size == confirmedSize) { "Position changed since confirmation" }
-            closeRemaining(size, confirmedSize)
+            closeRemaining(size, confirmedSize, onAccepted)
         }
 
-    private fun closeRemaining(size: Double, confirmedSize: Double): Single<Unit> {
+    private fun closeRemaining(
+        size: Double,
+        confirmedSize: Double,
+        onAccepted: () -> Unit = {}
+    ): Single<Unit> {
         if (size == 0.0) return Single.just(Unit)
         if (size.sign != confirmedSize.sign || abs(size) > abs(confirmedSize)) {
             return Single.error(IllegalStateException("Position changed since confirmation"))
@@ -41,6 +45,7 @@ internal class ClosePositionService(
             .flatMap { response ->
                 val acceptanceId = response["child_order_acceptance_id"] as? String
                 check(!acceptanceId.isNullOrBlank()) { "Missing close order acceptance ID" }
+                onAccepted()
                 executedSize(acceptanceId)
             }
             .flatMap { filled ->
@@ -65,7 +70,11 @@ internal class ClosePositionService(
         }.map { it.executedSize }
 
     private fun positionSize(): Single<Double> =
-        apiClient.getPositions(PRODUCT_CODE).singleOrError().map { it.wholeSize() }
+        apiClient.getPositions(PRODUCT_CODE).singleOrError().map { positions ->
+            val size = positions.wholeSize()
+            check(size != 0.0 || positions.isEmpty()) { "Offsetting positions remain open" }
+            size
+        }
 
     private fun <T : Any> poll(read: () -> Observable<T>, ready: (T) -> Boolean): Single<T> =
         Observable.defer(read)

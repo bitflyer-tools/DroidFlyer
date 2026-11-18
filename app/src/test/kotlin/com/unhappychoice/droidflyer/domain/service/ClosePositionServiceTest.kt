@@ -42,8 +42,10 @@ class ClosePositionServiceTest {
         positions.addAll(listOf(12.0, 2.0, 0.0))
         orderUpdates.addAll(listOf("COMPLETED" to 10.0, "COMPLETED" to 2.0))
 
-        service.close(12.0).test().assertResult(Unit)
+        val acceptedAfter = mutableListOf<Int>()
+        service.close(12.0) { acceptedAfter.add(orders.size) }.test().assertResult(Unit)
 
+        assertEquals(listOf(1), acceptedAfter)
         assertOrders("SELL", 10.0, 2.0)
     }
 
