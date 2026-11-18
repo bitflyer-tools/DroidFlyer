@@ -32,6 +32,12 @@ interface APIClientV1 {
         @Query("product_code") productCode: String = "BTC_JPY"
     ): Observable<List<Execution>>
 
+    @GET("executions")
+    fun getExecutionPrices(
+        @Query("product_code") productCode: String,
+        @Query("count") count: Int
+    ): Observable<List<ExecutionPrice>>
+
     @GET("gethealth")
     fun getHealth(): Observable<Map<String, Any>>
 
