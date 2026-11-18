@@ -37,7 +37,11 @@ internal class PrivateTradingState(
         val current = session
         bind(current, current.client.getPositions(), position)
         bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
-        bind(current, current.client.getChildOrders("FX_BTC_JPY"), orders)
+        // Unchanged rows keep their order references for cancellation.
+        current.client.getChildOrders("FX_BTC_JPY")
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .subscribeNext { if (current === session && orders.value != it) orders.value = it }
     }
 
     fun closeConfirmation(): CloseConfirmation? {

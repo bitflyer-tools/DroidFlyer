@@ -16,22 +16,20 @@ import io.reactivex.rxkotlin.addTo
 class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: OrdersPresenter by instance()
     private val binding by lazy { OrdersViewBinding.bind(this) }
-    private val orderAdapter by lazy { OrderAdapter(context) }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
 
+        val orderAdapter = OrderAdapter(context)
         binding.orderList.apply {
             layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
             adapter = orderAdapter
         }
 
         presenter.currentStatusService.orders.asObservable()
-            .subscribeNext {
-                orderAdapter.items.value = it
-                orderAdapter.notifyDataSetChanged()
-            }.addTo(bag)
+            .subscribeNext { orderAdapter.updateOrders(it) }
+            .addTo(bag)
 
         orderAdapter.clickCancel
             .subscribeNext { presenter.cancelOrder(it) }

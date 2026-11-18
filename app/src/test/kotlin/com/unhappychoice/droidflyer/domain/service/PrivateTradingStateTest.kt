@@ -10,6 +10,7 @@ import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 import java.lang.reflect.Proxy
 
@@ -50,6 +51,32 @@ class PrivateTradingStateTest {
         assertPrivateData(listOf(newPosition), 20.0, listOf(newOrder))
         assertNull(state.cancelOrder(order))
         checkNotNull(state.cancelOrder(newOrder)).test().assertComplete()
+        assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
+        assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
+    }
+
+    @Test
+    fun equalOrderRefreshKeepsDisplayedCancellationValidOnlyForTheCurrentAccount() {
+        state.refresh()
+        scheduler.triggerActions()
+        accountA.orders.onNext(listOf(order))
+        scheduler.triggerActions()
+        val previousAccountOrder = state.orders.value.single()
+
+        state.switchAccount(accountB.client)
+        scheduler.triggerActions()
+        accountB.orders.onNext(listOf(order.copy()))
+        scheduler.triggerActions()
+        val displayedOrder = state.orders.value.single()
+
+        state.refresh()
+        scheduler.triggerActions()
+        accountB.orders.onNext(listOf(order.copy()))
+        scheduler.triggerActions()
+
+        assertSame(displayedOrder, state.orders.value.single())
+        assertNull(state.cancelOrder(previousAccountOrder))
+        checkNotNull(state.cancelOrder(displayedOrder)).test().assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
     }
