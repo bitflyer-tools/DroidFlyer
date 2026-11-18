@@ -7,7 +7,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Ticker
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
@@ -23,32 +22,36 @@ import org.json.JSONObject
  * client.board.subscribeNext { Log.d("a", it.toString()) }
  * client.boardSnapshot.subscribeNext { Log.d("a", it.toString()) }
  * client.executions.subscribeNext { Log.d("a", it.toString()) }
- * client.ticker.subscribeNext { Log.d("a", it.toString()) }
  * client.childOrderEvents.subscribeNext { Log.d("a", it.toString()) }
  * client.parentOrderEvents.subscribeNext { Log.d("a", it.toString()) }
  * ```
  */
-class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
+class RealtimeClient internal constructor(
+    val gson: Gson,
+    val preference: APITokenPreference,
+    private val socket: Socket
+) {
+    constructor(gson: Gson, preference: APITokenPreference) : this(
+        gson,
+        preference,
+        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply { transports = arrayOf("websocket") })
+    )
+
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
     val boardSnapshot: PublishSubject<Board> = PublishSubject.create<Board>()
-    val ticker: PublishSubject<Ticker> = PublishSubject.create<Ticker>()
     val executions: PublishSubject<List<Execution>> = PublishSubject.create<List<Execution>>()
     val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
-    private val host = "https://io.lightstream.bitflyer.com"
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
-        "lightning_ticker_FX_BTC_JPY",
         "lightning_executions_FX_BTC_JPY"
     )
     private val privateChannels = listOf(
         "child_order_events",
         "parent_order_events"
     )
-
-    private val socket: Socket = IO.socket(host, IO.Options().apply { transports = arrayOf("websocket") })
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -95,8 +98,6 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
                 board.onNext(gson.fromJson(body, Board::class.java))
             "lightning_board_snapshot_FX_BTC_JPY" ->
                 boardSnapshot.onNext(gson.fromJson(body, Board::class.java))
-            "lightning_ticker_FX_BTC_JPY" ->
-                ticker.onNext(gson.fromJson(body, Ticker::class.java))
             "lightning_executions_FX_BTC_JPY" ->
                 executions.onNext(gson.fromJson(body, object : TypeToken<List<Execution>>() {}.type))
             "child_order_events" ->
