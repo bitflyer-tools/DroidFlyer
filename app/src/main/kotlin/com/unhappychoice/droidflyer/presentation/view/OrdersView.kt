@@ -5,7 +5,6 @@ import android.content.Context
 import android.util.AttributeSet
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.github.salomonbrys.kodein.instance
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
@@ -16,6 +15,7 @@ import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
+import org.kodein.di.instance
 
 class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: OrdersPresenter by instance()
@@ -33,10 +33,8 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
 
         presenter.orders
             .subscribeOnIoObserveOnUI()
-            .subscribeNext {
-                orderAdapter.items.value = it
-                orderAdapter.notifyDataSetChanged()
-            }.addTo(bag)
+            .subscribeNext { orderAdapter.updateOrders(it) }
+            .addTo(bag)
 
         presenter.cancellationFailures
             .subscribeNext(::showCancellationFailure)
