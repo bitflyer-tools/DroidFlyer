@@ -86,7 +86,8 @@ interface APIClientV1 {
     @GET("me/getchildorders")
     fun getChildOrders(
         @Query("product_code") productCode: String = "BTC_JPY",
-        @Query("child_order_state") orderState: String = "ACTIVE"
+        @Query("child_order_state") orderState: String? = "ACTIVE",
+        @Query("child_order_acceptance_id") acceptanceId: String? = null
     ): Observable<List<ChildOrder>>
 
     // @GET("me/getparentorders")

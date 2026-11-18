@@ -1,14 +1,15 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.github.unhappychoice.rxsnackbar.withNextSnackBar
+import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
@@ -24,6 +25,7 @@ class MarketOrderPresenter(
     override val unitSize = Variable(1.0)
     override val amount = Variable(0.0)
 
+    private val closePositionService = ClosePositionService(apiClient)
     private val bag = CompositeDisposable()
 
     override fun onExitScope() {
@@ -32,7 +34,7 @@ class MarketOrderPresenter(
     }
 
     fun buy() {
-        if (amount.value == 0.0) return
+        if (isLoading.value || amount.value == 0.0) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, Math.abs(amount.value))
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
@@ -43,7 +45,7 @@ class MarketOrderPresenter(
     }
 
     fun sell() {
-        if (amount.value == 0.0) return
+        if (isLoading.value || amount.value == 0.0) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, Math.abs(amount.value))
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
@@ -53,16 +55,18 @@ class MarketOrderPresenter(
             .addTo(bag)
     }
 
-    fun clearPosition() {
-        val size = currentStatusService.position.value.wholeSize()
-        if (size == 0.0) return
-        val side = if (size > 0.0) "SELL" else "BUY"
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
-        apiClient.sendChildOrder(request)
+    fun clearPosition(confirmedSize: Double) {
+        if (isLoading.value || confirmedSize == 0.0) return
+        closePositionService.close(confirmedSize)
+            .map { R.string.cleared_all_positions }
+            .onErrorReturn { R.string.close_positions_incomplete }
+            .toObservable()
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .withNextSnackBar(view, view.context.getString(R.string.cleared_all_positions))
-            .subscribeNext { currentStatusService.updateStatus() }
+            .subscribeNext { message ->
+                currentStatusService.updateStatus()
+                view?.let { Snackbar.make(it, message, Snackbar.LENGTH_LONG).show() }
+            }
             .addTo(bag)
     }
 }

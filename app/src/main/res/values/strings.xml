@@ -22,6 +22,8 @@
     <string name="clear_all_positions">Clear all positions?</string>
     <string name="create_limit_order">Create limit order?</string>
 
+    <string name="close_positions_multiple_orders">This will submit multiple market orders, checking the remaining position after each order.</string>
+    <string name="close_positions_incomplete">Could not confirm that all positions were closed. Check your positions and orders.</string>
     <string name="cleared_all_positions">Cleared all positions</string>
     <string name="bought_coins">Bought %f BFX</string>
     <string name="sold_coins">Sold %f BFX</string>

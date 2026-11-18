@@ -7,6 +7,7 @@ import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
@@ -77,10 +78,17 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             .subscribeNext {
                 val size = currentStatusService.position.value.wholeSize()
                 val side = if (size > 0.0) context.getString(R.string.sell) else context.getString(R.string.buy)
+                val quantity = Math.abs(size)
+                val summary = "$side / $quantity"
+                val message = if (quantity > ClosePositionService.ORDER_SIZE_LIMIT) {
+                    "$summary\n\n" + context.getString(R.string.close_positions_multiple_orders)
+                } else {
+                    summary
+                }
                 AlertDialog.Builder(context, R.style.DialogStyle)
                     .setTitle(R.string.clear_all_positions)
-                    .setMessage("$side / ${Math.abs(size)}")
-                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.clearPosition() }
+                    .setMessage(message)
+                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.clearPosition(size) }
                     .setNegativeButton(context.getString(R.string.cancel), null)
                     .show()
             }.addTo(bag)
