@@ -59,10 +59,8 @@ class CurrentStatusService internal constructor(
 
         board.asObservable()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { book ->
-                buyPrice.value = book.asks.map { it.price }.minOrNull() ?: 0
-                sellPrice.value = book.bids.map { it.price }.maxOrNull() ?: 0
-            }.addTo(bag)
+            .subscribeNext { it.updateMarketQuotes(buyPrice, sellPrice) }
+            .addTo(bag)
 
         orderEvents
             .debounce(1, TimeUnit.SECONDS)
@@ -106,6 +104,13 @@ class CurrentStatusService internal constructor(
             .bindTo(orders)
             .addTo(bag)
     }
+}
+
+internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {
+    val bestAsk = asks.minOfOrNull(Order::price) ?: 0L
+    val bestBid = bids.maxOfOrNull(Order::price) ?: 0L
+    if (buyPrice.value != bestAsk) buyPrice.value = bestAsk
+    if (sellPrice.value != bestBid) sellPrice.value = bestBid
 }
 
 internal fun boardUpdates(
