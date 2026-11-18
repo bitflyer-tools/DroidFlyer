@@ -4,7 +4,7 @@
     <string name="api_key">APIキー</string>
     <string name="api_secret">APIシークレット</string>
     <string name="apply">適用</string>
-    <string name="bought_coins">%f BFX を買いました</string>
+    <string name="market_order_accepted">成行注文を受け付けました</string>
     <string name="buy">買い</string>
     <string name="cancel">キャンセル</string>
     <string name="chart">チャート</string>
@@ -23,7 +23,6 @@
     <string name="orders">注文</string>
     <string name="sell">売り</string>
     <string name="setting">設定</string>
-    <string name="sold_coins">\"%f BFX を売りました</string>
     <string name="api_key_not_saved">APIキーが間違っています</string>
     <string name="api_key_saved">APIキーを保存しました</string>
     <string name="order_executed">約定しました %1$s / %2$f / %3$d</string>
