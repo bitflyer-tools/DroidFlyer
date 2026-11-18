@@ -3,7 +3,6 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
-import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.winterbe.expekt.should
 import org.junit.Test
 
@@ -13,7 +12,7 @@ class RealtimeAuthParamsTest {
     @Test
     fun createSignsTimestampAndNonce() {
         val params = RealtimeAuthParams.create("key", "secret", 1500000000000L, "0123456789abcdef")
-        params.signature.should.equal("15000000000000123456789abcdef".toHmacSHA256("secret"))
+        params.signature.should.equal("a0424aa3706c1d159bf35cb70771cc6c0855dae953b1841dbd83e596fbfdd0ad")
     }
 
     @Test

@@ -43,6 +43,9 @@ class AmountSelectorViewTest {
         assertEquals(0.015, selector.amount.value, 0.0)
 
         field.text.clear()
+        assertEquals("", field.text.toString())
+        assertEquals(0.0, selector.amount.value, 0.0)
+
         field.text.append('.')
         assertEquals(".", field.text.toString())
         assertEquals(0.0, selector.amount.value, 0.0)

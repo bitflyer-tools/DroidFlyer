@@ -53,11 +53,18 @@ class MarketOrderPresenter(
             .addTo(bag)
     }
 
-    fun clearPosition() {
-        val size = currentStatusService.position.value.wholeSize()
-        if (size == 0.0) return
-        val side = if (size > 0.0) "SELL" else "BUY"
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
+    internal fun positionCloseOrder(): PositionCloseOrder? =
+        PositionCloseOrder.from(currentStatusService.position.value.wholeSize())
+
+    internal fun clearPosition(
+        confirmed: PositionCloseOrder,
+        reconfirm: (PositionCloseOrder) -> Unit
+    ) {
+        confirmed.confirm(positionCloseOrder(), ::submitPositionClose, reconfirm)
+    }
+
+    private fun submitPositionClose(order: PositionCloseOrder) {
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", order.side, null, order.size)
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()

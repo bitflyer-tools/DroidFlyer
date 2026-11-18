@@ -144,21 +144,14 @@ tasks.withType(Test) {
 
 task jacoco(type: JacocoReport, dependsOn: "testDebugUnitTest") {
     description = "Generate Jacoco coverage reports after running tests."
+    def kotlinClasses = providers.provider {
+        tasks.named('compileDebugKotlin').get().destinationDirectory.get().asFile
+    }
     reports {
         xml.required = true
         html.required = true
-        classDirectories.setFrom(
-                files(
-                        fileTree(
-                                dir: './build/intermediates/javac/debug/compileDebugJavaWithJavac/classes',
-                                excludes: ['**/R.class', '**/R$*.class', '**/BuildConfig.class', '**/Manifest*.*', '**/*$inlined$*.*']
-                        ) + fileTree(
-                                dir: './build/tmp/kotlin-classes/debug',
-                                excludes: ['**/R.class', '**/R$*.class', '**/BuildConfig.class', '**/Manifest*.*', '**/*$inlined$*.*']
-                        )
-                )
-        )
     }
+    classDirectories.setFrom(fileTree(dir: kotlinClasses, excludes: ['**/*$inlined$*.*']))
     sourceDirectories.from files('src/main/kotlin')
     executionData.from files('build/outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec')
 }

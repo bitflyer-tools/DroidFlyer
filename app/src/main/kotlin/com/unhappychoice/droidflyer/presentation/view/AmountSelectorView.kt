@@ -52,14 +52,14 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
 
         amount.asObservable()
             .distinctUntilChanged()
-            .subscribeNext {
-                if (parseAmount(amountField.text) != it) amountField.setText(formatAmount(it))
-            }
+            .filter { it != parseAmount(amountField.text) }
+            .subscribeNext { amountField.setText(formatAmount(it)) }
             .addTo(bag)
 
         amountField.textChanges()
             .map(::parseAmount)
-            .subscribeNext { if (amount.value != it) amount.value = it }
+            .filter { it != amount.value }
+            .bindTo(amount)
             .addTo(bag)
 
         binding.dotOneButton.clicks()
@@ -93,7 +93,7 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
                 in separators -> '.'
                 else -> character.digitToIntOrNull()?.digitToChar() ?: character
             }
-        }.joinToString("").toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
+        }.joinToString("").toOrderAmount()
     }
 
     private fun formatAmount(amount: Double): String =
