@@ -15,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], application = Application::class)
+@Config(sdk = [28], application = Application::class, qualifiers = "en-rUS")
 class AmountSelectorViewTest {
     private lateinit var selector: AmountSelectorView
     private lateinit var field: EditText
@@ -60,12 +60,7 @@ class AmountSelectorViewTest {
 
     @Test
     fun fractionalPresetsSetTheStepUsedByBothButtons() {
-        val order = object : HasAmount {
-            override val unitSize = selector.size
-            override val amount = selector.amount
-        }
-        selector.didIncrement.subscribe { order.incrementAmountByUnitSize() }
-        selector.didDecrement.subscribe { order.decrementAmountByUnitSize() }
+        connectAmountButtons()
         field.text.replace(0, field.length(), "0.015")
 
         selector.findViewById<View>(R.id.dotOneButton).performClick()
@@ -78,5 +73,38 @@ class AmountSelectorViewTest {
 
         selector.findViewById<View>(R.id.minusButton).performClick()
         assertEquals("0.025", field.text.toString())
+    }
+
+    @Test
+    @Config(qualifiers = "de-rDE")
+    fun editingAfterButtonClicksKeepsOneLocalizedDecimalSeparator() {
+        connectAmountButtons()
+        field.setText("0,015")
+        assertEquals(0.015, selector.amount.value, 0.0)
+
+        selector.findViewById<View>(R.id.dotOneButton).performClick()
+        selector.findViewById<View>(R.id.plusButton).performClick()
+        assertEquals("0,025", field.text.toString())
+
+        field.text.append(',')
+        field.text.append('5')
+        assertEquals("0,0255", field.text.toString())
+        assertEquals(0.0255, selector.amount.value, 0.0)
+
+        field.text.replace(1, field.length(), ",0355")
+        assertEquals("0,0355", field.text.toString())
+        assertEquals(0.0355, selector.amount.value, 0.0)
+
+        selector.findViewById<View>(R.id.minusButton).performClick()
+        assertEquals("0,0255", field.text.toString())
+    }
+
+    private fun connectAmountButtons() {
+        val order = object : HasAmount {
+            override val unitSize = selector.size
+            override val amount = selector.amount
+        }
+        selector.didIncrement.subscribe { order.incrementAmountByUnitSize() }
+        selector.didDecrement.subscribe { order.decrementAmountByUnitSize() }
     }
 }

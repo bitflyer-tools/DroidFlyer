@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
+import android.os.Build
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import com.jakewharton.rxbinding2.view.clicks
@@ -14,6 +15,8 @@ import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 import java.math.BigDecimal
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 
 class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val size = Variable(1.0)
@@ -24,6 +27,7 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
     private val binding by lazy {
         AmountSelectorViewBinding.inflate(LayoutInflater.from(context), this, true)
     }
+    private var amountSymbols = DecimalFormatSymbols.getInstance(Locale.US)
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -31,6 +35,11 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         setupStyle()
 
         val amountField = binding.amountTextView
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val locales = resources.configuration.locales
+            amountField.imeHintLocales = locales
+            amountSymbols = DecimalFormatSymbols.getInstance(locales[0])
+        }
         amountField.setText(formatAmount(amount.value))
 
         size.asObservable()
@@ -75,12 +84,19 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
 
     private fun parseAmount(text: CharSequence): Double = text.map { character ->
         when (character) {
-            ',', '\u066B' -> '.'
+            amountSymbols.decimalSeparator, ',', '\u066B' -> '.'
             else -> character.digitToIntOrNull()?.digitToChar() ?: character
         }
     }.joinToString("").toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
 
-    private fun formatAmount(amount: Double): String = BigDecimal.valueOf(amount).toPlainString()
+    private fun formatAmount(amount: Double): String =
+        BigDecimal.valueOf(amount).toPlainString().map { character ->
+            when (character) {
+                '.' -> amountSymbols.decimalSeparator
+                in '0'..'9' -> amountSymbols.zeroDigit + (character - '0')
+                else -> character
+            }
+        }.joinToString("")
 
     private fun select(size: Double) {
         binding.dotOneButton.alpha = 0.4f
