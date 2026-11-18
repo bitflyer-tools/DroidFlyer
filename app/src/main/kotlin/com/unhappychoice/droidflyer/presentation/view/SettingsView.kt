@@ -17,12 +17,19 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
     val presenter: SettingsPresenter by instance()
     private val binding by lazy { SettingsViewBinding.bind(this) }
 
+    override fun onFinishInflate() {
+        super.onFinishInflate()
+        binding.apiTokenTextView.isSaveFromParentEnabled = false
+        binding.apiSecretTextView.isSaveFromParentEnabled = false
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
 
         setupStyle()
 
+        presenter.loadCredentials()
         binding.apiTokenTextView.setText(presenter.key.value)
         binding.apiSecretTextView.setText(presenter.secret.value)
 
