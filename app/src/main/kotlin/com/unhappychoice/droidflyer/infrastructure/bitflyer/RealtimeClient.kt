@@ -28,7 +28,19 @@ import org.json.JSONObject
  * client.parentOrderEvents.subscribeNext { Log.d("a", it.toString()) }
  * ```
  */
-class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
+class RealtimeClient internal constructor(
+    val gson: Gson,
+    val preference: APITokenPreference,
+    private val socket: Socket
+) {
+    constructor(gson: Gson, preference: APITokenPreference) : this(
+        gson,
+        preference,
+        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply { transports = arrayOf("websocket") })
+    ) {
+        socket.connect()
+    }
+
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
     val boardSnapshot: PublishSubject<Board> = PublishSubject.create<Board>()
     val ticker: PublishSubject<Ticker> = PublishSubject.create<Ticker>()
@@ -36,7 +48,6 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
     val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
-    private val host = "https://io.lightstream.bitflyer.com"
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
@@ -47,8 +58,6 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
         "child_order_events",
         "parent_order_events"
     )
-
-    private val socket: Socket = IO.socket(host, IO.Options().apply { transports = arrayOf("websocket") })
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -63,8 +72,6 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
         socket.on(Socket.EVENT_DISCONNECT) {
             Log.d("Socket", "Disconnected")
         }
-
-        socket.connect()
     }
 
     fun authenticate() {
@@ -83,8 +90,8 @@ class RealtimeClient(val gson: Gson, val preference: APITokenPreference) {
 
     private fun publishEvent(channel: String, event: Any?) {
         when (event) {
-            is JSONObject -> publish(channel, event.toString(4))
-            is JSONArray -> publish(channel, event.toString(4))
+            is JSONObject -> publish(channel, event.toString())
+            is JSONArray -> publish(channel, event.toString())
         }
     }
 
