@@ -17,7 +17,10 @@ internal class ClosePositionService(
     private val scheduler: Scheduler = Schedulers.io()
 ) {
     fun close(confirmedSize: Double): Single<Unit> =
-        positionSize().flatMap { size -> closeRemaining(size, confirmedSize) }
+        positionSize().flatMap { size ->
+            check(size == 0.0 || size == confirmedSize) { "Position changed since confirmation" }
+            closeRemaining(size, confirmedSize)
+        }
 
     private fun closeRemaining(size: Double, confirmedSize: Double): Single<Unit> {
         if (size == 0.0) return Single.just(Unit)

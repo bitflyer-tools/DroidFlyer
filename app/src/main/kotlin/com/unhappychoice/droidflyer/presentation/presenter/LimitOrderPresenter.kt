@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChi
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
@@ -19,6 +20,9 @@ class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrder
     override val unitSize = Variable(1.0)
 
     val groupingSize = Variable(1L)
+
+    val canSubmitOrder: Boolean
+        get() = !isLoading.value && amount.value != 0.0
 
     private val groupingSizes = listOf(1L, 10L, 50L, 100L, 250L, 500L, 1000L, 2500L, 5000L)
     private val bag = CompositeDisposable()
@@ -38,23 +42,23 @@ class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrder
         groupingSizes.getOrNull(index - 1)?.let { groupingSize.value = it }
     }
 
-    fun buy(price: Long) {
-        if (amount.value == 0.0) return
-        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "BUY", price, Math.abs(amount.value))
-        apiClient.sendChildOrder(request)
-            .subscribeOnIoObserveOnUI()
-            .startLoading()
-            .subscribeNextWithSnackBar(view, view.context.getString(R.string.ordered_buy, Math.abs(amount.value), price))
-            .addTo(bag)
-    }
+    fun buy(price: Long) = submitOrder(price, "BUY", R.string.ordered_buy)
 
-    fun sell(price: Long) {
-        if (amount.value == 0.0) return
-        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "SELL", price, Math.abs(amount.value))
-        apiClient.sendChildOrder(request)
+    fun sell(price: Long) = submitOrder(price, "SELL", R.string.ordered_sell)
+
+    private fun submitOrder(price: Long, side: String, messageRes: Int) {
+        if (!canSubmitOrder) return
+
+        val size = Math.abs(amount.value)
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, size)
+        val orderView = view
+        val message = orderView.context.getString(messageRes, size, price)
+
+        isLoading.value = true
+        Observable.defer { apiClient.sendChildOrder(request) }
             .subscribeOnIoObserveOnUI()
-            .startLoading()
-            .subscribeNextWithSnackBar(view, view.context.getString(R.string.ordered_sell, Math.abs(amount.value), price))
+            .doFinally { isLoading.value = false }
+            .subscribeNextWithSnackBar(orderView, message)
             .addTo(bag)
     }
 }

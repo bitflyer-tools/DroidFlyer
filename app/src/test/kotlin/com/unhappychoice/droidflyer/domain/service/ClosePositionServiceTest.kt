@@ -121,6 +121,15 @@ class ClosePositionServiceTest {
     }
 
     @Test
+    fun `does not submit when the initial position has shrunk since confirmation`() {
+        positions.add(11.0)
+
+        service.close(12.0).test().assertError(IllegalStateException::class.java)
+
+        assertOrders("SELL")
+    }
+
+    @Test
     fun `does not submit another order when the position never reflects the fill`() {
         positions.addAll(listOf(12.0) + List(16) { 12.0 })
         orderUpdates.add("COMPLETED" to 10.0)

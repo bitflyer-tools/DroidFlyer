@@ -1,10 +1,19 @@
 package com.unhappychoice.droidflyer.infrastructure.preference
 
 import android.content.Context
-import jp.takuji31.koreference.KoreferenceModel
-import jp.takuji31.koreference.stringPreference
 
-class APITokenPreference(context: Context) : KoreferenceModel(context, name = "api_token") {
-    var secret: String by stringPreference("")
-    var key: String by stringPreference("")
+class APITokenPreference(context: Context) {
+    private val preferences = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+
+    fun read(): APICredentials {
+        val values = preferences.all
+        return APICredentials(values["key"] as? String ?: "", values["secret"] as? String ?: "")
+    }
+
+    fun save(credentials: APICredentials) {
+        preferences.edit()
+            .putString("key", credentials.key)
+            .putString("secret", credentials.secret)
+            .apply()
+    }
 }

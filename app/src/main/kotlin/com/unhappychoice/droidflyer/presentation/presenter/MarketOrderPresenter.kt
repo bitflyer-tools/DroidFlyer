@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
@@ -55,9 +56,19 @@ class MarketOrderPresenter(
             .addTo(bag)
     }
 
-    fun clearPosition(confirmedSize: Double) {
-        if (isLoading.value || confirmedSize == 0.0) return
-        closePositionService.close(confirmedSize)
+    internal fun positionCloseOrder(): PositionCloseOrder? =
+        PositionCloseOrder.from(currentStatusService.position.value.wholeSize())
+
+    internal fun clearPosition(
+        confirmed: PositionCloseOrder,
+        reconfirm: (PositionCloseOrder) -> Unit
+    ) {
+        if (isLoading.value) return
+        confirmed.confirm(positionCloseOrder(), ::submitPositionClose, reconfirm)
+    }
+
+    private fun submitPositionClose(order: PositionCloseOrder) {
+        closePositionService.close(order.positionSize)
             .map { R.string.cleared_all_positions }
             .onErrorReturn { R.string.close_positions_incomplete }
             .toObservable()
