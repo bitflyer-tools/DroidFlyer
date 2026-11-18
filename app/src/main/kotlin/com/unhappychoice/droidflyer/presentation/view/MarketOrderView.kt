@@ -3,7 +3,6 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
-import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
@@ -19,6 +18,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
+import org.kodein.di.instance
 
 class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: MarketOrderPresenter by instance()
