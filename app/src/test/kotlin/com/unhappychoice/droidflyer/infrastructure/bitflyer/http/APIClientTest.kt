@@ -4,10 +4,12 @@ import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -79,10 +81,10 @@ class APIClientTest {
 
     private fun client(origin: MockWebServer): APIClientV1 {
         val preference = APITokenPreference(RuntimeEnvironment.getApplication()).apply {
-            key = "dummy-key"
-            secret = "dummy-secret"
+            save(APICredentials("dummy-key", "dummy-secret"))
         }
-        return APIClient(gson, preference, origin.url("/v1/").toString()).client()
+        val transport = OkHttpClient.Builder().followRedirects(true).build()
+        return APIClient(gson, preference, transport, origin.url("/v1/").toString()).client()
     }
 
     private fun assertSignedRequest(origin: MockWebServer, method: String, target: String, body: String) {
