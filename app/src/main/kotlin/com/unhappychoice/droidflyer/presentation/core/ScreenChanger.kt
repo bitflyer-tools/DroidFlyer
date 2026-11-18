@@ -37,9 +37,12 @@ class ScreenChanger(val activity: MainActivity) : KeyChanger {
             incomingState.restore(it)
         }
 
-        callback.onTraversalCompleted()
+        screen?.let {
+            activity.updateBottomNavigation(it)
+            updateActionBar(it)
+        }
 
-        screen?.let { updateActionBar(it) }
+        callback.onTraversalCompleted()
     }
 
     private fun updateActionBar(screen: Screen) {
