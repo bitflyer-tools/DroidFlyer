@@ -39,10 +39,8 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
 
         presenter.currentStatusService.orders.asObservable()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext {
-                orderAdapter.items.value = it
-                orderAdapter.notifyDataSetChanged()
-            }.addTo(subscriptions)
+            .subscribeNext { orderAdapter.updateOrders(it) }
+            .addTo(subscriptions)
 
         orderAdapter.clickCancel
             .subscribeOnIoObserveOnUI()

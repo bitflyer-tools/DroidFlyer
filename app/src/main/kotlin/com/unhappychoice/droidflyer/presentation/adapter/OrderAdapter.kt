@@ -7,19 +7,25 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import io.reactivex.subjects.PublishSubject
 
 class OrderAdapter(val context: Context?) : RecyclerView.Adapter<OrderAdapter.ViewHolder>() {
-    val items = Variable<List<ChildOrder>>(listOf())
     val clickCancel = PublishSubject.create<ChildOrder>()
+    private var items = emptyList<ChildOrder>()
 
-    override fun getItemCount() = items.value.size
+    fun updateOrders(orders: List<ChildOrder>) {
+        if (items == orders) return
+
+        items = orders
+        notifyDataSetChanged()
+    }
+
+    override fun getItemCount() = items.size
 
     override fun onBindViewHolder(holder: OrderAdapter.ViewHolder, position: Int) {
-        val item = items.value[position]
+        val item = items[position]
         holder.bind(item)
     }
 
