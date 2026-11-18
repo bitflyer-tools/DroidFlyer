@@ -6,9 +6,12 @@ import android.util.AttributeSet
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.github.salomonbrys.kodein.instance
+import com.google.android.material.snackbar.Snackbar
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
@@ -28,12 +31,16 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             adapter = orderAdapter
         }
 
-        presenter.currentStatusService.orders.asObservable()
+        presenter.orders
             .subscribeOnIoObserveOnUI()
             .subscribeNext {
                 orderAdapter.items.value = it
                 orderAdapter.notifyDataSetChanged()
             }.addTo(bag)
+
+        presenter.cancellationFailures
+            .subscribeNext(::showCancellationFailure)
+            .addTo(bag)
 
         orderAdapter.clickCancel
             .subscribeOnIoObserveOnUI()
@@ -44,5 +51,10 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun showCancellationFailure(order: ChildOrder) {
+        val message = context.getString(R.string.order_cancellation_failed, order.childOrderAcceptanceId)
+        Snackbar.make(this, message, Snackbar.LENGTH_LONG).show()
     }
 }
