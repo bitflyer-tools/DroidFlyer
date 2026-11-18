@@ -2,7 +2,9 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
@@ -14,34 +16,38 @@ import retrofit2.converter.gson.GsonConverterFactory
 class APIClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
-    private val baseUrl: String
+    transport: OkHttpClient
 ) {
-    constructor(gson: Gson, preference: APITokenPreference) :
-        this(gson, preference, "https://api.bitflyer.jp/v1/")
-
-    private val key: String
-        get() = preference.key
-
-    private val secret: String
-        get() = preference.secret
+    constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, OkHttpClient())
 
     fun client(): APIClientV1 = retrofit().create(APIClientV1::class.java)
 
-    private val okHttp = OkHttpClient.Builder()
-        .addInterceptor {
-            val timestamp = (System.currentTimeMillis() / 1000L).toString()
+    private val baseUrl = "https://api.bitflyer.jp/v1/"
 
-            val builder = it.request().newBuilder()
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "application/json")
-                .apply { if (key != "" && secret != "") addHeader("Access-Key", key) }
-                .apply { if (key != "" && secret != "") addHeader("Access-Timestamp", timestamp) }
-                .apply { if (key != "" && secret != "") addHeader("Access-Sign", sign(it.request(), timestamp)) }
-                .build()
-
-            it.proceed(builder)
-        }.addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+    private val okHttp = transport.newBuilder()
+        .apply {
+            interceptors().add(0, Interceptor { chain ->
+                chain.proceed(authenticatedRequest(chain.request()))
+            })
+        }
+        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
+
+    private fun authenticatedRequest(request: Request): Request {
+        val credentials = request.tag(APICredentials::class.java) ?: preference.read()
+        val timestamp = (System.currentTimeMillis() / 1000L).toString()
+
+        return request.newBuilder()
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+            .apply {
+                if (credentials.key.isNotEmpty() && credentials.secret.isNotEmpty()) {
+                    addHeader("Access-Key", credentials.key)
+                    addHeader("Access-Timestamp", timestamp)
+                    addHeader("Access-Sign", sign(request, timestamp, credentials.secret))
+                }
+            }.build()
+    }
 
     private fun retrofit(): Retrofit = Retrofit.Builder()
         .client(okHttp)
@@ -50,7 +56,7 @@ class APIClient internal constructor(
         .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
         .build()
 
-    private fun sign(request: Request, timestamp: String): String {
+    private fun sign(request: Request, timestamp: String, secret: String): String {
         val body = Buffer().apply { request.body?.writeTo(this) }.readUtf8()
         val method = request.method
         val query = if (request.url.query != null) "?${request.url.query}" else ""

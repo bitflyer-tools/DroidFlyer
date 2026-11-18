@@ -36,17 +36,17 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .subscribeNext { binding.currentPrice.text = "${it.toLong().splitByComma()} JPY" }
             .addTo(bag)
 
-        currentStatusService.currentPrice.asObservable()
+        currentStatusService.tradingTotals
             .throttleLast(100, TimeUnit.MILLISECONDS)
             .subscribeOnComputationObserveOnUI()
-            .subscribeNext {
-                binding.profit.text = currentStatusService.profit().splitByComma()
-                binding.profit.setCoefficientColor(currentStatusService.profit())
+            .subscribeNext { totals ->
+                binding.profit.text = totals.profit.splitByComma()
+                binding.profit.setCoefficientColor(totals.profit)
 
-                binding.spread.text = currentStatusService.spread().splitByComma()
-                binding.spread.setCoefficientColor(currentStatusService.spread())
+                binding.spread.text = totals.spread.splitByComma()
+                binding.spread.setCoefficientColor(totals.spread)
 
-                binding.balance.text = "${(currentStatusService.balance.value.toLong() + currentStatusService.profit()).splitByComma()} JPY"
+                binding.balance.text = "${totals.balance.splitByComma()} JPY"
             }.addTo(bag)
 
         currentStatusService.position.asObservable()
