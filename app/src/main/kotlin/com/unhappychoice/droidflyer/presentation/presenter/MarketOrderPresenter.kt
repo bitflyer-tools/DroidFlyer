@@ -1,6 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.github.unhappychoice.rxsnackbar.withNextSnackBar
+import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
@@ -13,45 +13,36 @@ import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
-class MarketOrderPresenter(
-    val apiClient: APIClientV1,
-    val currentStatusService: CurrentStatusService
+class MarketOrderPresenter internal constructor(
+    private val apiClient: APIClientV1,
+    private val currentStatusService: CurrentStatusService,
+    private val notify: MarketOrderPresenter.(Int) -> Unit
 ) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
+    constructor(apiClient: APIClientV1, currentStatusService: CurrentStatusService) : this(
+        apiClient,
+        currentStatusService,
+        MarketOrderPresenter::showMessage
+    )
+
     override val isLoading = Variable(false)
     override val unitSize = Variable(1.0)
     override val amount = Variable(0.0)
 
-    private val bag = CompositeDisposable()
+    private val closeConfirmation = SerialDisposable()
+    private val bag = CompositeDisposable(closeConfirmation)
 
     override fun onExitScope() {
         bag.dispose()
         super.onExitScope()
     }
 
-    fun buy() {
-        if (amount.value == 0.0) return
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, Math.abs(amount.value))
-        apiClient.sendChildOrder(request)
-            .subscribeOnIoObserveOnUI()
-            .startLoading()
-            .withNextSnackBar(view, view.context.getString(R.string.bought_coins, Math.abs(amount.value)))
-            .subscribeNext { currentStatusService.updateStatus() }
-            .addTo(bag)
-    }
+    fun buy() = submit("BUY", amount.value)
 
-    fun sell() {
-        if (amount.value == 0.0) return
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, Math.abs(amount.value))
-        apiClient.sendChildOrder(request)
-            .subscribeOnIoObserveOnUI()
-            .startLoading()
-            .withNextSnackBar(view, view.context.getString(R.string.sold_coins, Math.abs(amount.value)))
-            .subscribeNext { currentStatusService.updateStatus() }
-            .addTo(bag)
-    }
+    fun sell() = submit("SELL", amount.value)
 
     internal fun positionCloseOrder(): PositionCloseOrder? =
         PositionCloseOrder.from(currentStatusService.position.value.wholeSize())
@@ -64,12 +55,32 @@ class MarketOrderPresenter(
     }
 
     private fun submitPositionClose(order: PositionCloseOrder) {
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", order.side, null, order.size)
+        submit(order.side, order.size, ::awaitPositionClose)
+    }
+
+    private fun submit(side: String, size: Double, onAccepted: () -> Unit = {}) {
+        if (size == 0.0) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .withNextSnackBar(view, view.context.getString(R.string.cleared_all_positions))
-            .subscribeNext { currentStatusService.updateStatus() }
+            .subscribeNext {
+                notify(R.string.market_order_accepted)
+                onAccepted()
+                currentStatusService.updateStatus()
+            }
             .addTo(bag)
+    }
+
+    private fun awaitPositionClose() {
+        closeConfirmation.set(currentStatusService.observeNewPositionResponses()
+            .filter { positions -> positions.isEmpty() }
+            .take(1)
+            .subscribeNext { notify(R.string.cleared_all_positions) })
+    }
+
+    private fun showMessage(message: Int) {
+        val currentView = view ?: return
+        Snackbar.make(currentView, message, Snackbar.LENGTH_SHORT).show()
     }
 }

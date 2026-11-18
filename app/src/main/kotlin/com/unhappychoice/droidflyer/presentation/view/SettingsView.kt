@@ -2,7 +2,6 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
-import com.github.salomonbrys.kodein.instance
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
@@ -11,11 +10,18 @@ import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
+import org.kodein.di.instance
 
 
 class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
     val presenter: SettingsPresenter by instance()
     private val binding by lazy { SettingsViewBinding.bind(this) }
+
+    override fun onFinishInflate() {
+        super.onFinishInflate()
+        binding.apiTokenTextView.isSaveFromParentEnabled = false
+        binding.apiSecretTextView.isSaveFromParentEnabled = false
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -23,6 +29,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         setupStyle()
 
+        presenter.loadCredentials()
         binding.apiTokenTextView.setText(presenter.key.value)
         binding.apiSecretTextView.setText(presenter.secret.value)
 
