@@ -19,6 +19,6 @@ data class ChildOrder(
     val totalCommission: Double
 ) {
     fun flooredPrice(size: Long) = (price / size) * size
-    fun ceiledPrice(size: Long) = ((price + size) / size) * size
+    fun ceiledPrice(size: Long) = price.ceilToMultipleOf(size)
 }
 

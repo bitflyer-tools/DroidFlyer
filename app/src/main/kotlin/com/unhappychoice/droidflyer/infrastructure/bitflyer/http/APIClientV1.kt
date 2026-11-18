@@ -3,11 +3,14 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import io.reactivex.Completable
 import io.reactivex.Observable
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Tag
 
 interface APIClientV1 {
     // Public API
@@ -30,6 +33,12 @@ interface APIClientV1 {
         @Query("product_code") productCode: String = "BTC_JPY"
     ): Observable<List<Execution>>
 
+    @GET("executions")
+    fun getExecutionPrices(
+        @Query("product_code") productCode: String,
+        @Query("count") count: Int
+    ): Observable<List<ExecutionPrice>>
+
     @GET("gethealth")
     fun getHealth(): Observable<Map<String, Any>>
 
@@ -42,7 +51,7 @@ interface APIClientV1 {
     fun getPermissions(): Observable<List<String>>
 
     @GET("me/getbalance")
-    fun getBalance(): Observable<List<Map<String, Any>>>
+    fun getBalance(@Tag credentials: APICredentials? = null): Observable<List<Map<String, Any>>>
 
     @GET("me/getcollateral")
     fun getCollateral(): Observable<Map<String, Any>>
@@ -59,7 +68,7 @@ interface APIClientV1 {
     @GET("me/getbankaccounts")
     fun getBankAccounts(): Observable<List<Map<String, Any>>>
 
-    @GET("/me/getdeposits")
+    @GET("me/getdeposits")
     fun getDeposits(): Observable<List<Map<String, Any>>>
 
     // @POST("POST /v1/me/withdraw")
@@ -72,7 +81,7 @@ interface APIClientV1 {
     fun sendChildOrder(@Body request: SendChildOrderRequest): Observable<Map<String, Any>>
 
     @POST("me/cancelchildorder")
-    fun cancelChildOrder(@Body request: CancelChildOrderRequest): Observable<String>
+    fun cancelChildOrder(@Body request: CancelChildOrderRequest): Completable
 
     // @POST("me/sendparentorder")
     // fun sendParentOrder()

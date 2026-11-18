@@ -8,40 +8,63 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
-class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: RealtimeClient) {
+class CurrentStatusService internal constructor(
+    val apiClient: APIClientV1,
+    executions: Observable<List<Execution>>,
+    boardUpdates: Observable<(Board) -> Board>,
+    orderEvents: Observable<Unit>
+) {
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient) : this(
+        apiClient,
+        realtimeClient.executions,
+        boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
+        Observable.merge(
+            realtimeClient.childOrderEvents.map { Unit },
+            realtimeClient.parentOrderEvents.map { Unit }
+        )
+    )
+
     val currentPrice = Variable(0.0)
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = Variable<List<Position>>(listOf())
     val balance = Variable(0.0)
+    val tradingTotals = observeTradingTotals(
+        currentPrice.asObservable(), position.asObservable(), balance.asObservable()
+    )
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = Variable<List<ChildOrder>>(listOf())
 
+    private val positionRequestId = AtomicLong()
+    private val positionResponses = PublishSubject.create<Pair<Long, List<Position>>>()
     private val bag = CompositeDisposable()
 
     init {
-        realtimeClient.executions
+        executions
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
 
-        realtimeClient.board
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { board.value = board.value.merge(it) }
+        boardUpdates
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext { update -> board.value = update(board.value) }
             .addTo(bag)
 
         board.asObservable()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext {
-                buyPrice.value = board.value.asks.map { it.price }.minOrNull() ?: 0
-                sellPrice.value = board.value.bids.map { it.price }.maxOrNull() ?: 0
+            .subscribeNext { book ->
+                buyPrice.value = book.asks.map { it.price }.minOrNull() ?: 0
+                sellPrice.value = book.bids.map { it.price }.maxOrNull() ?: 0
             }.addTo(bag)
 
-        orderEvents()
+        orderEvents
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
             .subscribeNext { updateStatus() }
@@ -50,14 +73,21 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
         updateStatus()
     }
 
-    fun profit(): Long = position.value.profit(currentPrice.value.toLong()).toLong()
-
-    fun spread(): Long = currentPrice.value.toLong() - position.value.average().toLong()
+    fun observeNewPositionResponses(): Observable<List<Position>> {
+        val latestRequestId = positionRequestId.get()
+        return positionResponses
+            .filter { (requestId, _) -> requestId > latestRequestId }
+            .map { (_, positions) -> positions }
+    }
 
     fun updateStatus() {
+        val requestId = positionRequestId.incrementAndGet()
         apiClient.getPositions()
             .subscribeOnIoObserveOnUI()
-            .bindTo(position)
+            .subscribeNext { positions ->
+                position.value = positions
+                positionResponses.onNext(requestId to positions)
+            }
             .addTo(bag)
 
         apiClient.getCollateral()
@@ -76,9 +106,12 @@ class CurrentStatusService(val apiClient: APIClientV1, val realtimeClient: Realt
             .bindTo(orders)
             .addTo(bag)
     }
-
-    private fun orderEvents(): Observable<Unit> = Observable.merge(
-        realtimeClient.childOrderEvents.map { Unit },
-        realtimeClient.parentOrderEvents.map { Unit }
-    )
 }
+
+internal fun boardUpdates(
+    snapshots: Observable<Board>,
+    deltas: Observable<Board>
+): Observable<(Board) -> Board> = Observable.merge(
+    snapshots.map<(Board) -> Board> { snapshot -> { snapshot } },
+    deltas.map<(Board) -> Board> { delta -> { book -> book.merge(delta) } }
+)

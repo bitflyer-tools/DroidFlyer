@@ -4,10 +4,11 @@ commands:
   restore_gradle_cache:
     steps:
       - restore_cache:
-          keys:
-            - jars-{{ checksum "build.gradle" }}-{{ checksum  "app/build.gradle" }}
-            - builds-{{ .Revision }}
-            - app-builds-{{ .Revision }}
+          key: jars-{{ checksum "build.gradle" }}-{{ checksum  "app/build.gradle" }}
+      - restore_cache:
+          key: builds-{{ .Revision }}
+      - restore_cache:
+          key: app-builds-{{ .Revision }}
 jobs:
   build:
     working_directory: ~/droidFlyer
@@ -30,11 +31,11 @@ jobs:
           key: jars-{{ checksum "build.gradle" }}-{{ checksum  "app/build.gradle" }}
       - save_cache:
           paths:
-            - ~/norimaki/build
+            - build
           key: builds-{{ .Revision }}
       - save_cache:
           paths:
-            - ~/norimaki/app/build
+            - app/build
           key: app-builds-{{ .Revision }}
 
   test:
@@ -77,7 +78,5 @@ workflows:
       - build
       - test: { requires: [build] }
       - deploy:
-          filters:
-            branches:
-              only: master
+          filters: pipeline.git.branch == "master"
           requires: [test]
