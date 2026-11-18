@@ -11,7 +11,6 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import mortar.MortarScope
 import mortar.ViewPresenter
 
 class SettingsPresenter(
@@ -23,8 +22,7 @@ class SettingsPresenter(
     val secret: Variable<String> = Variable("")
     private val bag = CompositeDisposable()
 
-    override fun onEnterScope(scope: MortarScope?) {
-        super.onEnterScope(scope)
+    fun loadCredentials() {
         key.value = preference.key
         secret.value = preference.secret
     }
