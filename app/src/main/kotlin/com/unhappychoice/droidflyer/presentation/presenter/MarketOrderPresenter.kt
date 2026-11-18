@@ -8,7 +8,6 @@ import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
@@ -20,14 +19,12 @@ import mortar.ViewPresenter
 
 class MarketOrderPresenter internal constructor(
     private val apiClient: APIClientV1,
-    private val position: Variable<List<Position>>,
-    private val updateStatus: () -> Unit,
+    private val currentStatusService: CurrentStatusService,
     private val notify: MarketOrderPresenter.(Int) -> Unit
 ) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
     constructor(apiClient: APIClientV1, currentStatusService: CurrentStatusService) : this(
         apiClient,
-        currentStatusService.position,
-        currentStatusService::updateStatus,
+        currentStatusService,
         MarketOrderPresenter::showMessage
     )
 
@@ -48,7 +45,7 @@ class MarketOrderPresenter internal constructor(
     fun sell() = submit("SELL", amount.value)
 
     fun clearPosition() {
-        val size = position.value.wholeSize()
+        val size = currentStatusService.position.value.wholeSize()
         val side = if (size > 0.0) "SELL" else "BUY"
         submit(side, size, ::awaitPositionClose)
     }
@@ -62,13 +59,13 @@ class MarketOrderPresenter internal constructor(
             .subscribeNext {
                 notify(R.string.market_order_accepted)
                 onAccepted()
-                updateStatus()
+                currentStatusService.updateStatus()
             }
             .addTo(bag)
     }
 
     private fun awaitPositionClose() {
-        closeConfirmation.set(position.asObservable()
+        closeConfirmation.set(currentStatusService.observeNewPositionResponses()
             .filter { positions -> positions.isEmpty() }
             .take(1)
             .subscribeNext { notify(R.string.cleared_all_positions) })

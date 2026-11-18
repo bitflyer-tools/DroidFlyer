@@ -1,7 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
@@ -9,6 +9,7 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.subjects.PublishSubject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -17,15 +18,24 @@ import org.mockito.Mockito
 
 class MarketOrderPresenterTest {
     private val apiClient = Mockito.mock(APIClientV1::class.java)
-    private val position = Variable<List<Position>>(emptyList())
+    private val positionResponse = PublishSubject.create<List<Position>>()
+    private val acceptedResponse = mapOf<String, Any>("child_order_acceptance_id" to "JRF-accepted")
     private val messages = mutableListOf<Int>()
-    private val presenter = MarketOrderPresenter(apiClient, position, {}, { messages.add(it) })
+    private lateinit var status: CurrentStatusService
+    private lateinit var presenter: MarketOrderPresenter
 
     @Before
-    fun useSynchronousSchedulers() {
+    fun setUp() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+
+        Mockito.`when`(apiClient.getCollateral()).thenReturn(Observable.empty())
+        Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.empty(), positionResponse.take(1))
+        status = CurrentStatusService(apiClient, Observable.empty(), Observable.empty(), Observable.empty())
+        presenter = MarketOrderPresenter(apiClient, status) { messages.add(it) }
     }
 
     @After
@@ -57,34 +67,60 @@ class MarketOrderPresenterTest {
     @Test
     fun closeReportsAcceptanceUntilConfirmedPositionsAreEmpty() {
         stubAcceptance("SELL")
-        position.value = listOf(openPosition("BUY", 0.5))
+        status.position.value = listOf(openPosition("BUY", 0.5))
 
         presenter.clearPosition()
         assertEquals(listOf(R.string.market_order_accepted), messages)
 
-        position.value = listOf(openPosition("BUY", 0.25))
+        positionResponse.onNext(listOf(openPosition("BUY", 0.25)))
         assertEquals(listOf(R.string.market_order_accepted), messages)
 
-        position.value = emptyList()
-        position.value = emptyList()
+        status.updateStatus()
+        positionResponse.onNext(emptyList())
+        status.updateStatus()
+        positionResponse.onNext(emptyList())
         assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
     }
 
     @Test
     fun offsettingOpenPositionsDoNotReportClosure() {
         stubAcceptance("BUY")
-        position.value = listOf(openPosition("SELL", 0.5))
+        status.position.value = listOf(openPosition("SELL", 0.5))
 
         presenter.clearPosition()
-        position.value = listOf(openPosition("BUY", 0.25), openPosition("SELL", 0.25))
+        positionResponse.onNext(listOf(openPosition("BUY", 0.25), openPosition("SELL", 0.25)))
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
     }
 
+    @Test
+    fun closeIgnoresCachedEmptyPositionsAndRequestsStartedBeforeAcceptance() {
+        val acceptance = PublishSubject.create<Map<String, Any>>()
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)
+        Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(acceptance)
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        val previousResponse = PublishSubject.create<List<Position>>()
+        Mockito.`when`(apiClient.getPositions())
+            .thenReturn(Observable.just(emptyList()), previousResponse.take(1), positionResponse.take(1))
+
+        presenter.clearPosition()
+        status.updateStatus()
+        status.updateStatus()
+        assertEquals(emptyList<Position>(), status.position.value)
+
+        acceptance.onNext(acceptedResponse)
+        assertEquals(listOf(R.string.market_order_accepted), messages)
+
+        previousResponse.onNext(emptyList())
+        assertEquals(listOf(R.string.market_order_accepted), messages)
+
+        positionResponse.onNext(emptyList())
+        assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
+    }
+
     private fun stubAcceptance(side: String) {
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5)
-        val response = mapOf<String, Any>("child_order_acceptance_id" to "JRF-accepted")
-        Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(response))
+        Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
     }
 
     private fun openPosition(side: String, size: Double) =
