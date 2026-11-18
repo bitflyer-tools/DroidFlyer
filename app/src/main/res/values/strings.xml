@@ -30,4 +30,13 @@
     <string name="api_key_not_saved">API key is incorrect</string>
     <string name="api_key_saved">Saved API key</string>
     <string name="order_executed">Executed %1$s / %2$f / %3$d</string>
+    <string name="active_orders">Active</string>
+    <string name="fills">Fills</string>
+    <string name="refresh_fills">Refresh</string>
+    <string name="load_older_fills">Load older fills</string>
+    <string name="loading_fills">Loading fills…</string>
+    <string name="fill_access_denied">Check your API key and enable permission to list executions.</string>
+    <string name="fill_request_failed">Could not load fills. Try again.</string>
+    <string name="no_fills">No Crypto CFD fills.</string>
+    <string name="fill_details">%1$s · %2$s JPY · %3$s ɃFX</string>
 </resources>

@@ -18,6 +18,12 @@ class OrdersPresenter(
     val api: APIClientV1,
     val currentStatusService: CurrentStatusService
 ) : ViewPresenter<OrdersView>() {
+    internal val fillHistory = FillHistory { count, before ->
+        api.getMyExecutions(count, before)
+            .subscribeOnIoObserveOnUI()
+            .singleOrError()
+    }
+
     private val bag = CompositeDisposable()
 
     override fun onEnterScope(scope: MortarScope?) {
@@ -29,6 +35,7 @@ class OrdersPresenter(
     }
 
     override fun onExitScope() {
+        fillHistory.clear()
         bag.dispose()
         super.onExitScope()
     }
