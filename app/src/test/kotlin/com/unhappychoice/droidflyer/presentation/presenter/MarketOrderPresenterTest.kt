@@ -69,7 +69,7 @@ class MarketOrderPresenterTest {
         stubAcceptance("SELL")
         status.position.value = listOf(openPosition("BUY", 0.5))
 
-        presenter.clearPosition()
+        confirmPositionClose()
         assertEquals(listOf(R.string.market_order_accepted), messages)
 
         positionResponse.onNext(listOf(openPosition("BUY", 0.25)))
@@ -87,7 +87,7 @@ class MarketOrderPresenterTest {
         stubAcceptance("BUY")
         status.position.value = listOf(openPosition("SELL", 0.5))
 
-        presenter.clearPosition()
+        confirmPositionClose()
         positionResponse.onNext(listOf(openPosition("BUY", 0.25), openPosition("SELL", 0.25)))
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
@@ -103,7 +103,7 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.getPositions())
             .thenReturn(Observable.just(emptyList()), previousResponse.take(1), positionResponse.take(1))
 
-        presenter.clearPosition()
+        confirmPositionClose()
         status.updateStatus()
         status.updateStatus()
         assertEquals(emptyList<Position>(), status.position.value)
@@ -116,6 +116,33 @@ class MarketOrderPresenterTest {
 
         positionResponse.onNext(emptyList())
         assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
+    }
+
+    @Test
+    fun changedPositionRequiresReconfirmationBeforeReportingAcceptance() {
+        stubAcceptance("BUY")
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        val confirmed = requireNotNull(presenter.positionCloseOrder())
+        status.position.value = listOf(openPosition("SELL", 0.5))
+
+        presenter.clearPosition(confirmed) { updated ->
+            assertEquals("BUY", updated.side)
+            assertEquals(emptyList<Int>(), messages)
+            Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
+                SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)
+            )
+            presenter.clearPosition(updated) { error("Unexpected reconfirmation") }
+        }
+
+        assertEquals(listOf(R.string.market_order_accepted), messages)
+        positionResponse.onNext(emptyList())
+        assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
+    }
+
+    private fun confirmPositionClose() {
+        presenter.clearPosition(requireNotNull(presenter.positionCloseOrder())) {
+            error("Unexpected reconfirmation")
+        }
     }
 
     private fun stubAcceptance(side: String) {

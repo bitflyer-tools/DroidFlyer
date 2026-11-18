@@ -44,10 +44,18 @@ class MarketOrderPresenter internal constructor(
 
     fun sell() = submit("SELL", amount.value)
 
-    fun clearPosition() {
-        val size = currentStatusService.position.value.wholeSize()
-        val side = if (size > 0.0) "SELL" else "BUY"
-        submit(side, size, ::awaitPositionClose)
+    internal fun positionCloseOrder(): PositionCloseOrder? =
+        PositionCloseOrder.from(currentStatusService.position.value.wholeSize())
+
+    internal fun clearPosition(
+        confirmed: PositionCloseOrder,
+        reconfirm: (PositionCloseOrder) -> Unit
+    ) {
+        confirmed.confirm(positionCloseOrder(), ::submitPositionClose, reconfirm)
+    }
+
+    private fun submitPositionClose(order: PositionCloseOrder) {
+        submit(order.side, order.size, ::awaitPositionClose)
     }
 
     private fun submit(side: String, size: Double, onAccepted: () -> Unit = {}) {
