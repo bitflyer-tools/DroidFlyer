@@ -10,7 +10,7 @@ fun activityModule(activity: MainActivity) = Kodein.Module {
     bind<MainActivity>() with provider { activity }
     bind<RealtimeClient>() with singleton { RealtimeClient(instance(), instance()) }
     bind<CurrentStatusService>() with eagerSingleton { CurrentStatusService(instance(), instance()) }
-    bind<SettingsPresenter>() with singleton { SettingsPresenter(instance(), instance(), instance()) }
+    bind<SettingsPresenter>() with singleton { SettingsPresenter(instance(), instance(), realtimeClient = instance()) }
     bind<ChartPresenter>() with singleton { ChartPresenter() }
     bind<OrderPresenter>() with singleton { OrderPresenter(instance()) }
     bind<MarketOrderPresenter>() with singleton { MarketOrderPresenter(instance(), instance()) }
