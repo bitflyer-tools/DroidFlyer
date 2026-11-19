@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -11,19 +10,24 @@ import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.schedulers.Schedulers
+import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
-    boardUpdates: Observable<(Board) -> Board>,
+    boardUpdates: Observable<BoardUpdate>,
     orderEvents: Observable<Unit>,
     privateClient: APIClientV1 = apiClient
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
         realtimeClient.executions,
-        boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
+        Observable.merge(
+            realtimeClient.boardSnapshot.map { BoardUpdate(it, BoardSource.SNAPSHOT) },
+            realtimeClient.board.map { BoardUpdate(it, BoardSource.DELTA) }
+        ),
         Observable.merge(
             realtimeClient.childOrderEvents.map { Unit },
             realtimeClient.parentOrderEvents.map { Unit }
@@ -44,6 +48,7 @@ class CurrentStatusService internal constructor(
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
 
+    private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
 
     init {
@@ -52,14 +57,17 @@ class CurrentStatusService internal constructor(
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
 
-        boardUpdates
+        observeOrderBook(Observable.merge(boardUpdates, restBoards), Schedulers.single())
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { update -> board.value = update(board.value) }
-            .addTo(bag)
-
-        board.asObservable()
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { it.updateMarketQuotes(buyPrice, sellPrice) }
+            .subscribeNext { event ->
+                when (event) {
+                    is OrderBookEvent.View -> board.value = event.board
+                    is OrderBookEvent.Quotes -> {
+                        if (buyPrice.value != event.bestAsk) buyPrice.value = event.bestAsk
+                        if (sellPrice.value != event.bestBid) sellPrice.value = event.bestBid
+                    }
+                }
+            }
             .addTo(bag)
 
         orderEvents
@@ -75,23 +83,8 @@ class CurrentStatusService internal constructor(
         privateState.refresh()
 
         apiClient.getBoard("FX_BTC_JPY")
-            .subscribeOnIoObserveOnUI()
-            .bindTo(board)
+            .subscribeOn(Schedulers.io())
+            .subscribeNext { restBoards.onNext(BoardUpdate(it, BoardSource.REST)) }
             .addTo(bag)
     }
 }
-
-internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {
-    val bestAsk = asks.minOfOrNull(Order::price) ?: 0L
-    val bestBid = bids.maxOfOrNull(Order::price) ?: 0L
-    if (buyPrice.value != bestAsk) buyPrice.value = bestAsk
-    if (sellPrice.value != bestBid) sellPrice.value = bestBid
-}
-
-internal fun boardUpdates(
-    snapshots: Observable<Board>,
-    deltas: Observable<Board>
-): Observable<(Board) -> Board> = Observable.merge(
-    snapshots.map<(Board) -> Board> { snapshot -> { snapshot } },
-    deltas.map<(Board) -> Board> { delta -> { book -> book.merge(delta) } }
-)

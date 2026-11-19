@@ -1,14 +1,18 @@
 package com.unhappychoice.droidflyer.presentation.adapter
 
+import android.os.Looper
 import android.view.View
 import android.widget.RelativeLayout
 import android.widget.TextView
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import io.reactivex.schedulers.TestScheduler
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -17,11 +21,17 @@ class BoardAdapterTest {
     @Test
     fun clickingAskRowsEmitsTheirGroupedPricesForSellConfirmation() {
         val context = RuntimeEnvironment.getApplication()
-        val adapter = BoardAdapter(context, BoardType.Ask)
+        val groupingScheduler = TestScheduler()
+        val adapter = BoardAdapter(context, BoardType.Ask, groupingScheduler)
         val exactAsk = Order(100L, 1.0)
         val offBucketAsk = Order(101L, 2.0)
         adapter.groupSize.value = 10L
         adapter.items.value = listOf(exactAsk, offBucketAsk)
+
+        assertEquals(0, adapter.itemCount)
+        groupingScheduler.triggerActions()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(2, adapter.itemCount)
 
         val row = RelativeLayout(context).apply {
             listOf(R.id.price, R.id.size, R.id.mineSize).forEach { id ->
