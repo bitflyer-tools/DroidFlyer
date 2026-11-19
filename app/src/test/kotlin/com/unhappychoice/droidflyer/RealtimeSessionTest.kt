@@ -6,12 +6,14 @@ import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import io.socket.client.Manager
 import io.socket.client.Socket
 import org.json.JSONArray
@@ -49,7 +51,9 @@ class RealtimeSessionTest {
         val old = Session()
         assertEquals(1, old.refreshes)
         old.socket.receiveExecution()
+        assertTrue(old.positions.hasObservers())
         old.lifecycle.close()
+        assertFalse(old.positions.hasObservers())
 
         val replacement = Session()
         try {
@@ -75,6 +79,7 @@ class RealtimeSessionTest {
 
     private class Session {
         val socket = TestSocket()
+        val positions = PublishSubject.create<List<Position>>()
         var refreshes = 0
         var notifications = 0
 
@@ -82,12 +87,16 @@ class RealtimeSessionTest {
             APIClientV1::class.java.classLoader,
             arrayOf(APIClientV1::class.java)
         ) { _, method, _ ->
-            if (method.name == "getPositions") refreshes++
-            Observable.empty<Any>()
+            if (method.name == "getPositions") {
+                refreshes++
+                positions
+            } else {
+                Observable.empty<Any>()
+            }
         } as APIClientV1
         private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         val client = RealtimeClient(gson, APITokenPreference(RuntimeEnvironment.getApplication()), socket)
-        val status = CurrentStatusService(api, client)
+        val status = CurrentStatusService(api, client, api)
         val lifecycle = RealtimeSession(client, status).apply { notifyExecutions { notifications++ } }
     }
 
