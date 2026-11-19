@@ -54,6 +54,31 @@ class APIClientTest {
         }
     }
 
+    @Test
+    fun collateralHistoryUsesDocumentedEndpointAndDecodesResponse() {
+        MockWebServer().use { origin ->
+            val body = """
+                [{"id":42,"currency_code":"BTC","change":-0.25,"amount":1.5,
+                  "reason_code":"EXCHANGE_COLL","date":"2025-01-15T12:30:45.123"}]
+            """.trimIndent()
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body(body).build())
+
+            val history = client(origin).getCollateralHistory().blockingSingle()
+
+            assertSignedRequest(origin, "GET", "/v1/me/getcollateralhistory", "")
+            val entry = mapOf(
+                "id" to 42.0,
+                "currency_code" to "BTC",
+                "change" to -0.25,
+                "amount" to 1.5,
+                "reason_code" to "EXCHANGE_COLL",
+                "date" to "2025-01-15T12:30:45.123"
+            )
+            assertEquals(listOf(entry), history)
+        }
+    }
+
     private fun assertRedirectBlocked(
         status: Int,
         responseBody: String,

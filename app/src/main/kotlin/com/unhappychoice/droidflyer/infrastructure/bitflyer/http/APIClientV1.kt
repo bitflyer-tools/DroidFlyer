@@ -112,7 +112,7 @@ interface APIClientV1 {
         @Query("product_code") productCode: String = "FX_BTC_JPY"
     ): Observable<List<Position>>
 
-    @GET("me/getmycollateralhistory")
+    @GET("me/getcollateralhistory")
     fun getCollateralHistory(): Observable<List<Map<String, Any>>>
 
     @GET("me/gettradingcommission")
