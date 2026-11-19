@@ -25,6 +25,7 @@
 
     <string name="cleared_all_positions">Cleared all positions</string>
     <string name="market_order_accepted">Market order accepted</string>
+    <string name="market_order_failed">Could not submit market order</string>
     <string name="ordered_buy">Ordered BUY / %1$f / %2$d</string>
     <string name="ordered_sell">Ordered SELL / %1$f / %2$d</string>
     <string name="api_key_not_saved">API key is incorrect</string>
