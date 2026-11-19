@@ -87,8 +87,8 @@ class RealtimeClient internal constructor(
 
     private fun publishEvent(channel: String, event: Any?) {
         when (event) {
-            is JSONObject -> publish(channel, event.toString(4))
-            is JSONArray -> publish(channel, event.toString(4))
+            is JSONObject -> publish(channel, event.toString())
+            is JSONArray -> publish(channel, event.toString())
         }
     }
 
