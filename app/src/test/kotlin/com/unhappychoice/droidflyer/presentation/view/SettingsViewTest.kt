@@ -16,13 +16,13 @@ import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
-import org.kodein.di.DI
-import org.kodein.di.bindInstance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.kodein.di.DI
+import org.kodein.di.bindInstance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -82,7 +82,7 @@ class SettingsViewTest {
             val preference = APITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
-            val presenter = SettingsPresenter(APIClient(Gson(), preference).client(), preference) {}
+            val presenter = SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {}
             DI { bindInstance { presenter } }
         }
 

@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -21,7 +22,7 @@ class OrderAdapterTest {
     private val secondOrder = order(2)
 
     @Test
-    fun equalResponsesNotifyOnlyOnce() {
+    fun equalResponsesNotifyOnlyOnceAndKeepTheOriginalOrderForCancellation() {
         var updates = 0
         adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
             override fun onChanged() {
@@ -34,6 +35,13 @@ class OrderAdapterTest {
 
         assertEquals(1, updates)
         assertEquals(2, adapter.itemCount)
+
+        val row = createRow()
+        val canceledOrders = adapter.clickCancel.test()
+        adapter.onBindViewHolder(adapter.ViewHolder(row), 0)
+        row.findViewById<View>(R.id.cancel).performClick()
+
+        assertSame(firstOrder, canceledOrders.values().single())
     }
 
     @Test

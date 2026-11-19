@@ -10,7 +10,6 @@ import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.FillAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
@@ -40,7 +39,6 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         }
 
         presenter.orders
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { orderAdapter.updateOrders(it) }
             .addTo(subscriptions)
 
@@ -49,7 +47,6 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             .addTo(subscriptions)
 
         orderAdapter.clickCancel
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { presenter.cancelOrder(it) }
             .addTo(subscriptions)
     }
@@ -70,6 +67,10 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         binding.loadOlderFills.setOnClickListener { presenter.fillHistory.loadOlder() }
         presenter.fillHistory.state.asObservable().subscribeNext(::renderFills).addTo(subscriptions)
 
+        presenter.fillAccountChanges.subscribeNext {
+            if (binding.ordersTabs.selectedTabPosition == 1) presenter.fillHistory.refresh()
+        }.addTo(subscriptions)
+
         binding.ordersTabs.apply {
             setBackgroundColor(DefaultStyle.darkerPrimaryColor)
             setTabTextColors(DefaultStyle.darkerAccentColor, DefaultStyle.accentColor)
@@ -89,7 +90,7 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     }
 
     private fun renderFills(state: FillHistory.State) {
-        fillAdapter.submitList(state.fills)
+        fillAdapter.submitList(state.fills.ifEmpty { null })
         binding.refreshFills.isEnabled = !state.loading
         binding.loadOlderFills.isVisible = state.nextCursor != null
         binding.loadOlderFills.isEnabled = !state.loading

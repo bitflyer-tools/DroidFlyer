@@ -2,12 +2,16 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
-import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
+import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -22,6 +26,8 @@ import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
+import java.lang.reflect.Proxy
+import java.math.BigDecimal
 
 class OrdersPresenterTest {
     @Before
@@ -47,6 +53,50 @@ class OrdersPresenterTest {
         assertFailureAllowsRetry { response(it, 400) }
     }
 
+    @Test
+    fun switchingAccountsClearsFillsAndIgnoresPendingResponses() {
+        val scheduler = TestScheduler()
+        val oldResponses = PublishSubject.create<List<PrivateExecution>>()
+        val newResponses = PublishSubject.create<List<PrivateExecution>>()
+        val state = PrivateTradingState(fillApi(oldResponses), scheduler, scheduler)
+        val presenter = OrdersPresenter(state) {}
+        val accountChanges = presenter.fillAccountChanges.test()
+        try {
+            val history = presenter.fillHistory
+            val oldFill = PrivateExecution(1, "BUY", BigDecimal.ONE, BigDecimal.ONE, "2026-01-01T00:00:00")
+            history.refresh()
+            scheduler.triggerActions()
+            oldResponses.onNext(listOf(oldFill))
+            scheduler.triggerActions()
+            assertEquals(listOf(oldFill), history.state.value.fills)
+
+            history.refresh()
+            scheduler.triggerActions()
+            oldResponses.onNext(listOf(oldFill))
+            state.switchAccount(fillApi(newResponses))
+            assertEquals(FillHistory.State(), history.state.value)
+
+            history.refresh()
+            scheduler.triggerActions()
+            assertEquals(emptyList<PrivateExecution>(), history.state.value.fills)
+            val newFill = oldFill.copy(id = 2)
+            newResponses.onNext(listOf(newFill))
+            scheduler.triggerActions()
+            assertEquals(listOf(newFill), history.state.value.fills)
+        } finally {
+            accountChanges.dispose()
+        }
+    }
+
+    private fun fillApi(responses: Observable<List<PrivateExecution>>): APIClientV1 =
+        Proxy.newProxyInstance(APIClientV1::class.java.classLoader, arrayOf(APIClientV1::class.java)) { _, method, _ ->
+            when (method.name) {
+                "getMyExecutions" -> responses.take(1)
+                "getPositions", "getCollateral", "getChildOrders" -> Observable.empty<Any>()
+                else -> error("Unexpected API call: ${method.name}")
+            }
+        } as APIClientV1
+
     private fun assertFailureAllowsRetry(failureResponse: (Request) -> Response) {
         val order = activeOrder()
         val requests = mutableListOf<Request>()
@@ -63,9 +113,10 @@ class OrdersPresenterTest {
             .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
             .build()
             .create(APIClientV1::class.java)
-        val exchangeOrders = Variable(listOf(order))
-        val presenter = OrdersPresenter(api, exchangeOrders.asObservable()) {
-            exchangeOrders.value = emptyList()
+        val state = PrivateTradingState(api)
+        state.orders.value = listOf(order)
+        val presenter = OrdersPresenter(state) {
+            state.orders.value = emptyList()
         }
         val failures = presenter.cancellationFailures.test()
         val orders = presenter.orders.test()
