@@ -22,7 +22,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
-import org.kodein.di.bindSingleton
+import org.kodein.di.bindInstance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -83,7 +83,7 @@ class SettingsViewTest {
                 save(APICredentials("stored-key", "stored-secret"))
             }
             DI {
-                bindSingleton { SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {} }
+                bindInstance { SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {} }
             }
         }
 
