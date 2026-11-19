@@ -2,10 +2,11 @@ package com.unhappychoice.droidflyer.infrastructure.preference
 
 import android.app.Application
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,10 +52,43 @@ class APITokenPreferenceTest {
             throw KeyStoreException("Key unavailable")
         })
 
-        assertThrows(KeyStoreException::class.java) { unavailable.read() }
+        assertCredentials(unavailable.read())
         assertEquals(credentials.key, preferences.getString("key", null))
         assertEquals(credentials.secret, preferences.getString("secret", null))
 
+        assertCredentials(testAPITokenPreference(context).read())
+        assertEncryptedOnDisk()
+    }
+
+    @Test
+    fun migrationCanRetryAfterCommitThrows() {
+        writeLegacyCredentials()
+        val storage = object : ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                object : SharedPreferences by preferences {
+                    override fun edit(): SharedPreferences.Editor {
+                        val editor = preferences.edit()
+                        return object : SharedPreferences.Editor by editor {
+                            override fun putString(key: String?, value: String?) = apply {
+                                editor.putString(key, value)
+                            }
+
+                            override fun commit(): Boolean {
+                                val saved = editor.commit()
+                                if (!preferences.contains("key")) throw SecurityException("Write failed")
+                                return saved
+                            }
+                        }
+                    }
+                }
+        }
+
+        assertCredentials(testAPITokenPreference(storage).read())
+        assertEquals(credentials.key, preferences.getString("key", null))
+        assertEquals(credentials.secret, preferences.getString("secret", null))
+        val restored = preferenceFile.readText()
+        assertTrue(restored.contains(credentials.key))
+        assertTrue(restored.contains(credentials.secret))
         assertCredentials(testAPITokenPreference(context).read())
         assertEncryptedOnDisk()
     }

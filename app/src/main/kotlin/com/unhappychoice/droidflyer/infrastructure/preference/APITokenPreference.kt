@@ -16,28 +16,41 @@ class APITokenPreference internal constructor(
         (values[encryptedEntry] as? String)?.let { return@synchronized readEncrypted(it) }
 
         val legacy = APICredentials(values["key"] as? String ?: "", values["secret"] as? String ?: "")
-        if ("key" in values || "secret" in values) save(legacy)
+        if ("key" in values || "secret" in values) migrateLegacy(legacy)
         legacy
     }
 
     fun save(credentials: APICredentials) = synchronized(lock) {
         val encrypted = cipher.encrypt(credentials)
         val previous = preferences.all
-        // SharedPreferences commits the encrypted pair and the legacy removals in one file transaction.
+        try {
+            persist(encrypted, null, null)
+        } catch (failure: Exception) {
+            // A failed commit can still update the in-memory preferences.
+            try {
+                persist(previous[encryptedEntry] as? String, previous["key"] as? String, previous["secret"] as? String)
+            } catch (restoreFailure: Exception) {
+                if (restoreFailure !== failure) failure.addSuppressed(restoreFailure)
+            }
+            throw failure
+        }
+    }
+
+    private fun migrateLegacy(credentials: APICredentials) {
+        try {
+            save(credentials)
+        } catch (_: Exception) {
+            // Keep using the legacy pair and retry migration on the next read.
+        }
+    }
+
+    private fun persist(encrypted: String?, key: String?, secret: String?) {
         val saved = preferences.edit()
             .putString(encryptedEntry, encrypted)
-            .remove("key")
-            .remove("secret")
+            .putString("key", key)
+            .putString("secret", secret)
             .commit()
-        if (!saved) {
-            // A failed commit can still update the in-memory preferences.
-            preferences.edit()
-                .putString(encryptedEntry, previous[encryptedEntry] as? String)
-                .putString("key", previous["key"] as? String)
-                .putString("secret", previous["secret"] as? String)
-                .commit()
-            throw IOException("Unable to save API credentials")
-        }
+        if (!saved) throw IOException("Unable to save API credentials")
     }
 
     private fun readEncrypted(encrypted: String): APICredentials =

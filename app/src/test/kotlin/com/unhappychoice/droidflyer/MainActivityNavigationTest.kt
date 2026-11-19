@@ -1,7 +1,9 @@
 package com.unhappychoice.droidflyer
 
+import android.content.Context
 import android.view.View
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
@@ -21,6 +23,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
@@ -43,6 +46,26 @@ class MainActivityNavigationTest {
     @After
     fun resetSchedulers() {
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun startupContinuesWhenLegacyCredentialsCannotBeEncrypted() {
+        val application = RuntimeEnvironment.getApplication()
+        val preferences = application.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        assertTrue(preferences.edit().putString("key", "legacy-key").putString("secret", "legacy-secret").commit())
+
+        // Robolectric does not provide the AndroidKeyStore provider used by the activity.
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            assertDestination(controller.get(), R.id.chartIcon, ChartView::class.java, 1)
+            assertEquals("legacy-key", preferences.getString("key", null))
+            assertEquals("legacy-secret", preferences.getString("secret", null))
+        }
+
+        val credentials = testAPITokenPreference(application).read()
+        assertEquals("legacy-key", credentials.key)
+        assertEquals("legacy-secret", credentials.secret)
+        assertFalse(preferences.contains("key"))
+        assertFalse(preferences.contains("secret"))
     }
 
     @Test
