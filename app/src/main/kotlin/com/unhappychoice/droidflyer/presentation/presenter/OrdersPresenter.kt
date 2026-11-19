@@ -22,7 +22,7 @@ class OrdersPresenter internal constructor(
     constructor(currentStatusService: CurrentStatusService) :
         this(currentStatusService.privateState, currentStatusService::updateStatus)
 
-    val orders = privateState.orders.asObservable()
+    internal val orders = privateState.orderRows()
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()
 
@@ -43,14 +43,14 @@ class OrdersPresenter internal constructor(
         super.onExitScope()
     }
 
-    fun cancelOrder(order: ChildOrder) {
-        val cancellation = privateState.cancelOrder(order) ?: return
+    internal fun cancelOrder(row: PrivateTradingState.OrderRow) {
+        val cancellation = privateState.cancelOrder(row) ?: return
         cancellation
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { refreshOrders() },
-                { failedCancellations.onNext(order) }
+                { failedCancellations.onNext(row.order) }
             )
             .addTo(bag)
     }

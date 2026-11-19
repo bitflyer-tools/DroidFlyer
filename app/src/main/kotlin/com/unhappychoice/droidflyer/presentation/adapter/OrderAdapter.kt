@@ -7,15 +7,16 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.OrderRow
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import io.reactivex.subjects.PublishSubject
 
-class OrderAdapter(val context: Context?) : RecyclerView.Adapter<OrderAdapter.ViewHolder>() {
-    val clickCancel = PublishSubject.create<ChildOrder>()
-    private var items = emptyList<ChildOrder>()
+internal class OrderAdapter(val context: Context?) : RecyclerView.Adapter<OrderAdapter.ViewHolder>() {
+    val clickCancel = PublishSubject.create<OrderRow>()
+    private var items = emptyList<OrderRow>()
 
-    fun updateOrders(orders: List<ChildOrder>) {
+    fun updateOrders(orders: List<OrderRow>) {
         if (items == orders) return
 
         items = orders
@@ -35,12 +36,13 @@ class OrderAdapter(val context: Context?) : RecyclerView.Adapter<OrderAdapter.Vi
     }
 
     inner class ViewHolder(val view: View) : RecyclerView.ViewHolder(view) {
-        fun bind(order: ChildOrder) {
+        fun bind(row: OrderRow) {
+            val order = row.order
             setupStyle(order)
             typeTextView.text = if (order.side == "BUY") context?.getString(R.string.buy) else context?.getString(R.string.sell)
             priceTextView.text = "${order.price} JPY"
             sizeTextView.text = "${order.size} ɃFX"
-            cancelTextView.setOnClickListener { clickCancel.onNext(order) }
+            cancelTextView.setOnClickListener { clickCancel.onNext(row) }
         }
 
         private fun setupStyle(order: ChildOrder) {
