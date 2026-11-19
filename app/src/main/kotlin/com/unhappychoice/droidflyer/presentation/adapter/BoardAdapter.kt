@@ -18,6 +18,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.floorBySize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 
@@ -29,9 +30,17 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
 
     private val groupedItems = Variable<List<Order>>(listOf())
 
+    private val outstandingSizes = Variable<Map<Long, Double>>(emptyMap())
+
     private val bag = CompositeDisposable()
 
     init {
+        Observables.combineLatest(
+            myOrders.asObservable().distinctUntilChanged(),
+            groupSize.asObservable().distinctUntilChanged(),
+            type::personalOutstandingSizes
+        ).bindTo(outstandingSizes).addTo(bag)
+
         items.asObservable()
             .map { type.groupBySize(it, groupSize.value).take(50) }
             .bindTo(groupedItems)
@@ -72,7 +81,7 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val outstandingSize = type.personalOutstandingSize(myOrders.value, order.price, groupSize.value)
+            val outstandingSize = outstandingSizes.value[order.price]
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
@@ -96,16 +105,17 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
 }
 
 sealed class BoardType(private val side: String) {
-    internal fun personalOutstandingSize(orders: List<ChildOrder>, price: Long, groupSize: Long): Double? =
-        orders.filter { it.side == side && groupedPrice(it, groupSize) == price }
-            .takeIf { it.isNotEmpty() }
-            ?.sumOf { it.outstandingSize }
-
     abstract fun groupedPrice(order: ChildOrder, size: Long): Long
     abstract fun groupBySize(orders: List<Order>, size: Long): List<Order>
     abstract fun sizeDirection(): Int
     abstract fun priceDirection(): Int
     abstract fun color(): Int
+
+    internal fun personalOutstandingSizes(orders: List<ChildOrder>, groupSize: Long): Map<Long, Double> =
+        orders.asSequence()
+            .filter { it.side == side }
+            .groupingBy { groupedPrice(it, groupSize) }
+            .fold(0.0) { total, order -> total + order.outstandingSize }
 
     object Ask : BoardType("SELL") {
         override fun groupedPrice(order: ChildOrder, size: Long) = order.ceiledPrice(size)
