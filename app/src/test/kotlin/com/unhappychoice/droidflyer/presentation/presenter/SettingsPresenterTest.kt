@@ -7,7 +7,7 @@ import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
@@ -31,14 +31,14 @@ import java.io.IOException
 @Config(application = Application::class, sdk = [35])
 class SettingsPresenterTest {
     private val context = RuntimeEnvironment.getApplication()
-    private val preference = APITokenPreference(context)
+    private val preference = testAPITokenPreference(context)
     private val requests = mutableListOf<Request>()
     private val authenticated = mutableListOf<Pair<String, String>>()
     private val switched = mutableListOf<APIClientV1>()
     private var validationStatus = 200
     private var validationFailure: IOException? = null
 
-    private val api = APIClient(Gson(), APITokenPreference(context), OkHttpClient.Builder()
+    private val api = APIClient(Gson(), testAPITokenPreference(context), OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request()
             requests.add(request)

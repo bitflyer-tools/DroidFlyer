@@ -10,7 +10,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
@@ -45,7 +45,7 @@ class SettingsViewTest {
             assertCredentialsOmitted(settings, Bundle().also { controller.saveInstanceState(it) }, flowState)
 
             activity.setContentView(LinearLayout(activity))
-            APITokenPreference(activity).save(APICredentials("updated-key", "updated-secret"))
+            testAPITokenPreference(activity).save(APICredentials("updated-key", "updated-secret"))
             val reopened = activity.openSettings()
             flowState.restore(reopened.root)
             assertEquals("updated-key", reopened.apiTokenTextView.text.toString())
@@ -79,7 +79,7 @@ class SettingsViewTest {
                 .build("settings_test")
         }
         private val module by lazy {
-            val preference = APITokenPreference(this).apply {
+            val preference = testAPITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
             val presenter = SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {}
