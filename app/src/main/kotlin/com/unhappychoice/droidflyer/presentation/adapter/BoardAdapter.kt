@@ -22,12 +22,12 @@ import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
-    val myOrders = Variable<List<ChildOrder>>(listOf())
     val items = Variable<List<Order>>(listOf())
     val clickItems = PublishSubject.create<Order>()
     val groupSize = Variable(1L)
 
     private val groupedItems = Variable<List<Order>>(listOf())
+    private var myOrders = emptyList<ChildOrder>()
 
     private val bag = CompositeDisposable()
 
@@ -44,6 +44,17 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     }
 
     override fun getItemCount() = groupedItems.value.size
+
+    fun updateMyOrders(orders: List<ChildOrder>) {
+        val previousOrders = myOrders
+        myOrders = orders
+        val size = groupSize.value
+        groupedItems.value.forEachIndexed { position, item ->
+            val previousSize = type.personalOutstandingSize(previousOrders, item.price, size)
+            val currentSize = type.personalOutstandingSize(orders, item.price, size)
+            if (previousSize != currentSize) notifyItemChanged(position)
+        }
+    }
 
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
         val item = groupedItems.value[position]
@@ -72,7 +83,7 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val outstandingSize = type.personalOutstandingSize(myOrders.value, order.price, groupSize.value)
+            val outstandingSize = type.personalOutstandingSize(myOrders, order.price, groupSize.value)
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
