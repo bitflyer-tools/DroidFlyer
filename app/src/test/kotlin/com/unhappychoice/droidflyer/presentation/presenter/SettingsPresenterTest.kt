@@ -5,6 +5,8 @@ import android.content.Context
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -32,6 +34,7 @@ class SettingsPresenterTest {
     private val preference = APITokenPreference(context)
     private val requests = mutableListOf<Request>()
     private val authenticated = mutableListOf<Pair<String, String>>()
+    private val switched = mutableListOf<APIClientV1>()
     private var validationStatus = 200
     private var validationFailure: IOException? = null
 
@@ -51,8 +54,8 @@ class SettingsPresenterTest {
                 .message("Test response")
                 .body("[]".toResponseBody())
                 .build()
-        }.build()).client()
-    private val presenter = SettingsPresenter(api, preference) { authenticated.add(savedCredentials()) }
+        }.build())
+    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { authenticated.add(savedCredentials()) }
 
     @Before
     fun setUp() {
@@ -94,7 +97,7 @@ class SettingsPresenterTest {
         presenter.secret.value = "edited-secret"
 
         save.test().assertValueCount(1).assertComplete()
-        api.getPermissions().blockingFirst()
+        api.client().getPermissions().blockingFirst()
 
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
         assertEquals(listOf(savedCredentials()), authenticated)
@@ -102,10 +105,32 @@ class SettingsPresenterTest {
         assertSignedWith(requests[1], "submitted-key", "submitted-secret")
     }
 
+    @Test
+    fun switchedClientKeepsTheValidatedCredentials() {
+        presenter.saveCredentials().test().assertComplete()
+        preference.save(APICredentials("other-key", "other-secret"))
+
+        switched.single().getPermissions().blockingFirst()
+
+        assertSignedWith(requests[1], "submitted-key", "submitted-secret")
+    }
+
+    @Test
+    fun savingTheSameCredentialsKeepsTheCurrentSession() {
+        presenter.key.value = "saved-key"
+        presenter.secret.value = "saved-secret"
+
+        presenter.saveCredentials().test().assertComplete()
+
+        assertEquals(emptyList<APIClientV1>(), switched)
+        assertEquals(listOf(savedCredentials()), authenticated)
+    }
+
     private fun assertSavedPairStillActive() {
-        api.getPermissions().blockingFirst()
+        api.client().getPermissions().blockingFirst()
         assertEquals("saved-key" to "saved-secret", savedCredentials())
         assertEquals(emptyList<Pair<String, String>>(), authenticated)
+        assertEquals(emptyList<APIClientV1>(), switched)
         assertSignedWith(requests[0], "submitted-key", "submitted-secret")
         assertSignedWith(requests[1], "saved-key", "saved-secret")
     }

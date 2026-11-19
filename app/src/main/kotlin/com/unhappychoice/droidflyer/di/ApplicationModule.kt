@@ -20,11 +20,17 @@ import org.kodein.di.instance
 
 fun applicationModule(application: DroidFlyerApplication) = DI.Module("application") {
     bindSingleton<Gson> { createGson() }
-    bindProvider<APIClientV1> { APIClient(instance(), instance()).client() }
+    bindSingleton<APIClient> { APIClient(instance(), instance()) }
+    bindProvider<APIClientV1> { instance<APIClient>().client() }
     bindSingleton<RealtimeClient> { RealtimeClient(instance(), instance()) }
-    bindProvider<APITokenPreference> { APITokenPreference(application) }
+    bindSingleton<APITokenPreference> { APITokenPreference(application) }
 
-    bind<CurrentStatusService> { eagerSingleton { CurrentStatusService(instance(), instance()) } }
+    bind<CurrentStatusService> {
+        eagerSingleton {
+            val credentials = instance<APITokenPreference>().read()
+            CurrentStatusService(instance(), instance(), instance<APIClient>().client(credentials))
+        }
+    }
 
     bindProvider<Style> { DefaultStyle }
 }

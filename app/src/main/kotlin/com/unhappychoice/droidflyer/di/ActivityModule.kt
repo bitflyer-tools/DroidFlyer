@@ -10,10 +10,10 @@ import org.kodein.di.instance
 
 fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindProvider<MainActivity> { activity }
-    bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), realtimeClient = instance()) }
+    bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
     bindSingleton<ChartPresenter> { ChartPresenter(instance<APIClientV1>()::getExecutionPrices) }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
     bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
     bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance()) }
-    bindSingleton<OrdersPresenter> { OrdersPresenter(instance(), instance()) }
+    bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

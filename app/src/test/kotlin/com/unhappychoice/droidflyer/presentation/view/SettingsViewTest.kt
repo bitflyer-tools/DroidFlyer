@@ -82,7 +82,7 @@ class SettingsViewTest {
             val preference = APITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
-            val presenter = SettingsPresenter(APIClient(Gson(), preference).client(), preference) {}
+            val presenter = SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {}
             DI { bindInstance { presenter } }
         }
 
