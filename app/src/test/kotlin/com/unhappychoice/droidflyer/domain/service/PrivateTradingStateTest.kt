@@ -51,7 +51,9 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         assertPrivateData(listOf(newPosition), 20.0, listOf(newOrder))
         assertNull(state.cancelOrder(order))
-        checkNotNull(state.cancelOrder(newOrder)).test().assertComplete()
+        val cancellation = checkNotNull(state.cancelOrder(newOrder)).test()
+        scheduler.triggerActions()
+        cancellation.assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
     }
@@ -77,7 +79,9 @@ class PrivateTradingStateTest {
 
         assertSame(displayedOrder, state.orders.value.single())
         assertNull(state.cancelOrder(previousAccountOrder))
-        checkNotNull(state.cancelOrder(displayedOrder)).test().assertComplete()
+        val cancellation = checkNotNull(state.cancelOrder(displayedOrder)).test()
+        scheduler.triggerActions()
+        cancellation.assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
     }
@@ -100,7 +104,9 @@ class PrivateTradingStateTest {
         assertNull(state.closePosition(oldConfirmation) { error("Reconfirmed on another account") })
 
         val confirmation = checkNotNull(state.closeConfirmation())
-        checkNotNull(state.closePosition(confirmation)).test().assertComplete()
+        val close = checkNotNull(state.closePosition(confirmation)).test()
+        scheduler.triggerActions()
+        close.assertComplete()
         assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
         assertEquals(
             listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)),
@@ -121,8 +127,46 @@ class PrivateTradingStateTest {
         assertNull(state.closePosition(original) { updated = it })
         assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
 
-        checkNotNull(state.closePosition(checkNotNull(updated))).test().assertComplete()
+        val close = checkNotNull(state.closePosition(checkNotNull(updated))).test()
+        scheduler.triggerActions()
+        close.assertComplete()
         assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0)), accountA.sent)
+    }
+
+    @Test
+    fun unlinkClearsDataAndRejectsQueuedResponsesAndStaleOrderActions() {
+        state.refresh()
+        scheduler.triggerActions()
+        accountA.publish(position, 10.0, order)
+        scheduler.triggerActions()
+        val confirmation = checkNotNull(state.closeConfirmation())
+        val unsubmitted = checkNotNull(state.closePosition(confirmation))
+        val cancellation = checkNotNull(state.cancelOrder(order)).test()
+        val positions = state.observeNewPositionResponses().test()
+
+        state.refresh()
+        accountA.publish(position, 99.0, order)
+        state.unlink()
+        assertPrivateData(emptyList(), 0.0, emptyList())
+        assertNull(state.closePosition(confirmation))
+        assertNull(state.cancelOrder(order))
+        assertNull(state.submitOrder(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 0.5)))
+
+        val staleOrder = unsubmitted.test()
+        state.refresh()
+        scheduler.triggerActions()
+        assertPrivateData(emptyList(), 0.0, emptyList())
+        staleOrder.assertNoValues().assertComplete()
+        cancellation.assertNoValues().assertComplete()
+        positions.assertNoValues().assertComplete()
+        assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
+        assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
+
+        state.switchAccount(accountB.client)
+        scheduler.triggerActions()
+        accountB.publish(position, 20.0, order)
+        scheduler.triggerActions()
+        assertPrivateData(listOf(position), 20.0, listOf(order))
     }
 
     private fun assertPrivateData(positions: List<Position>, balance: Double, orders: List<ChildOrder>) {

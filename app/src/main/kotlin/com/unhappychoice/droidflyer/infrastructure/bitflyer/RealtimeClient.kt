@@ -8,33 +8,49 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEven
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 /** A realtime connection owned by a single activity session. */
 class RealtimeClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
-    private val socket: Socket
+    private val socketFactory: () -> Socket
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(
         gson,
         preference,
-        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
-            transports = arrayOf("websocket")
-            forceNew = true
-        })
+        {
+            IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
+                transports = arrayOf("websocket")
+                forceNew = true
+            })
+        }
     )
 
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
     val boardSnapshot: PublishSubject<Board> = PublishSubject.create<Board>()
     val executions: PublishSubject<List<Execution>> = PublishSubject.create<List<Execution>>()
-    val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
-    val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
+    val childOrderEvents: Observable<List<ChildOrderEvent>>
+        get() = deliverPrivate(childEvents)
+    val parentOrderEvents: Observable<List<ParentOrderEvent>>
+        get() = deliverPrivate(parentEvents)
+
+    internal val orderChanges: Observable<Unit>
+        get() = deliverPrivate(
+            Observable.merge(childEvents.map { it.first to Unit }, parentEvents.map { it.first to Unit })
+                .debounce(1, TimeUnit.SECONDS)
+        )
+
+    private val childEvents = PublishSubject.create<Pair<Socket, List<ChildOrderEvent>>>()
+    private val parentEvents = PublishSubject.create<Pair<Socket, List<ParentOrderEvent>>>()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
@@ -46,58 +62,92 @@ class RealtimeClient internal constructor(
         "parent_order_events"
     )
 
-    @Volatile private var disconnected = false
+    @Volatile private var socket: Socket? = socketFactory()
+    @Volatile private var authenticatedSocket: Socket? = null
 
     init {
-        socket.on(Socket.EVENT_CONNECT) {
-            publicChannels.forEach { channel -> socket.emit("subscribe", channel) }
-            authenticate()
-        }
-
-        (publicChannels + privateChannels).forEach { channel ->
-            socket.on(channel) { events -> events.forEach { publishEvent(channel, it) } }
-        }
-
-        socket.on(Socket.EVENT_DISCONNECT) {
-            Log.d("Socket", "Disconnected")
-        }
-
-        socket.connect()
+        connect(checkNotNull(socket))
     }
 
     fun authenticate() {
-        if (disconnected) return
-        val credentials = preference.read()
-        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
-        val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
-        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
+        socket?.takeIf { it.connected() }?.let(::authenticate)
     }
 
+    @Synchronized
+    fun restartConnection() {
+        val previous = socket ?: return
+        val next = socketFactory()
+        authenticatedSocket = null
+        socket = next
+        previous.off()
+        previous.disconnect()
+        connect(next)
+    }
+
+    @Synchronized
     fun disconnect() {
-        if (disconnected) return
-        disconnected = true
-        socket.off()
-        socket.disconnect()
+        val previous = socket ?: return
+        socket = null
+        authenticatedSocket = null
+        previous.off()
+        previous.disconnect()
     }
 
-    private fun onAuthenticated(args: Array<out Any?>) {
-        if (disconnected) return
+    private fun connect(connection: Socket) {
+        connection.on(Socket.EVENT_CONNECT) {
+            if (connection === socket) {
+                publicChannels.forEach { channel -> connection.emit("subscribe", channel) }
+                authenticate(connection)
+            }
+        }
+        (publicChannels + privateChannels).forEach { channel ->
+            connection.on(channel) { events ->
+                events.forEach { publishEvent(connection, channel, it) }
+            }
+        }
+        connection.on(Socket.EVENT_DISCONNECT) {
+            synchronized(this) {
+                if (authenticatedSocket === connection) authenticatedSocket = null
+            }
+        }
+        connection.connect()
+    }
+
+    @Synchronized
+    private fun authenticate(connection: Socket) {
+        val credentials = preference.read()
+        if (!credentials.isComplete || connection !== socket) return
+        val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
+        connection.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(connection, it) })
+    }
+
+    @Synchronized
+    private fun onAuthenticated(connection: Socket, args: Array<out Any?>) {
+        if (connection !== socket) return
         val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
-        if (error == null) subscribePrivateChannels() else Log.d("Socket", "Authentication failed: $error")
-    }
-
-    private fun subscribePrivateChannels() =
-        privateChannels.forEach { channel -> socket.emit("subscribe", channel) }
-
-    private fun publishEvent(channel: String, event: Any?) {
-        if (disconnected) return
-        when (event) {
-            is JSONObject -> publish(channel, event.toString())
-            is JSONArray -> publish(channel, event.toString())
+        if (error == null) {
+            authenticatedSocket = connection
+            privateChannels.forEach { channel -> connection.emit("subscribe", channel) }
+        } else {
+            Log.d("Socket", "Authentication failed: $error")
         }
     }
 
-    private fun publish(channel: String, body: String) {
+    private fun <T : Any> deliverPrivate(events: Observable<Pair<Socket, T>>): Observable<T> =
+        events.observeOn(AndroidSchedulers.mainThread())
+            .filter { (connection, _) -> connection === socket && connection === authenticatedSocket }
+            .map { (_, event) -> event }
+
+    private fun publishEvent(connection: Socket, channel: String, event: Any?) {
+        if (connection !== socket) return
+        if (channel in privateChannels && connection !== authenticatedSocket) return
+        when (event) {
+            is JSONObject -> publish(connection, channel, event.toString())
+            is JSONArray -> publish(connection, channel, event.toString())
+        }
+    }
+
+    private fun publish(connection: Socket, channel: String, body: String) {
         when (channel) {
             "lightning_board_FX_BTC_JPY" ->
                 board.onNext(gson.fromJson(body, Board::class.java))
@@ -106,9 +156,9 @@ class RealtimeClient internal constructor(
             "lightning_executions_FX_BTC_JPY" ->
                 executions.onNext(gson.fromJson(body, object : TypeToken<List<Execution>>() {}.type))
             "child_order_events" ->
-                childOrderEvents.onNext(gson.fromJson(body, object : TypeToken<List<ChildOrderEvent>>() {}.type))
+                childEvents.onNext(connection to gson.fromJson(body, object : TypeToken<List<ChildOrderEvent>>() {}.type))
             "parent_order_events" ->
-                parentOrderEvents.onNext(gson.fromJson(body, object : TypeToken<List<ParentOrderEvent>>() {}.type))
+                parentEvents.onNext(connection to gson.fromJson(body, object : TypeToken<List<ParentOrderEvent>>() {}.type))
         }
     }
 }

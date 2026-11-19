@@ -16,6 +16,7 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -24,10 +25,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import android.os.Looper
 import org.robolectric.annotation.Config
 import java.util.Date
 
@@ -41,7 +46,7 @@ class RealtimeClientTest {
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = RealtimeClient(gson, preference) { socket }
         socket.receive(Socket.EVENT_CONNECT)
         assertEquals(
             listOf("lightning_board_FX_BTC_JPY", "lightning_board_snapshot_FX_BTC_JPY", "lightning_executions_FX_BTC_JPY"),
@@ -64,6 +69,7 @@ class RealtimeClientTest {
         val expectedBoard = Board(123456.0, emptyList(), emptyList())
         board.assertValue(expectedBoard)
         snapshot.assertValue(expectedBoard)
+        shadowOf(Looper.getMainLooper()).idle()
         childOrders.assertValue(emptyList())
         parentOrders.assertValue(emptyList())
     }
@@ -71,7 +77,7 @@ class RealtimeClientTest {
     @Test
     fun ignoresAuthenticationAcknowledgementAfterDisconnect() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = RealtimeClient(gson, preference) { socket }
         socket.receive(Socket.EVENT_CONNECT)
         val acknowledge = checkNotNull(socket.authAck)
         val publicSubscriptions = socket.subscriptions.toList()
@@ -83,8 +89,56 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun unlinkDropsOldEventsAndAcknowledgementsAndKeepsPublicSubscriptions() {
+        val replacement = RecordingSocket()
+        val sockets = listOf(socket, replacement).iterator()
+        val main = TestScheduler()
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+        RxJavaPlugins.setComputationSchedulerHandler { main }
+        try {
+            preference.save(APICredentials("key", "secret"))
+            val client = RealtimeClient(gson, preference, sockets::next)
+            val privateEvents = client.childOrderEvents.test()
+            val orderChanges = client.orderChanges.test()
+            val board = client.board.test()
+            socket.receive(Socket.EVENT_CONNECT)
+            val oldAck = checkNotNull(socket.authAck)
+            oldAck.call(JSONObject.NULL)
+            val oldListener = socket.listeners("child_order_events").single()
+            socket.receive("child_order_events", JSONArray())
+            val oldSubscriptions = socket.subscriptions.toList()
+
+            assertTrue(preference.clear())
+            client.restartConnection()
+            oldAck.call(JSONObject.NULL)
+            oldListener.call(JSONArray())
+            replacement.receive(Socket.EVENT_CONNECT)
+            replacement.receive("lightning_board_FX_BTC_JPY", JSONObject("""{"mid_price":100,"bids":[],"asks":[]}"""))
+            assertFalse(socket.connected())
+            assertEquals(oldSubscriptions, socket.subscriptions)
+            assertEquals(oldSubscriptions.take(3), replacement.subscriptions)
+            assertNull(replacement.authAck)
+            board.assertValue(Board(100.0, emptyList(), emptyList()))
+
+            preference.save(APICredentials("new-key", "new-secret"))
+            client.authenticate()
+            replacement.authAck!!.call(JSONObject.NULL)
+            main.advanceTimeBy(1, java.util.concurrent.TimeUnit.SECONDS)
+            privateEvents.assertNoValues()
+            orderChanges.assertNoValues()
+            replacement.receive("child_order_events", JSONArray())
+            main.advanceTimeBy(1, java.util.concurrent.TimeUnit.SECONDS)
+            privateEvents.assertValue(emptyList())
+            orderChanges.assertValue(Unit)
+        } finally {
+            RxJavaPlugins.reset()
+            RxAndroidPlugins.reset()
+        }
+    }
+
+    @Test
     fun executionUpdatesTradingPrice() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = RealtimeClient(gson, preference) { socket }
         val api = mock<APIClientV1>()
         whenever(api.getPositions()).thenReturn(Observable.empty())
         whenever(api.getCollateral()).thenReturn(Observable.empty())
@@ -106,7 +160,7 @@ class RealtimeClientTest {
 
     @Test
     fun publishesBoardDeltaWithoutIndentingPayload() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = RealtimeClient(gson, preference) { socket }
         val payload = object : JSONObject(
             """{"mid_price":100,"bids":[{"price":99,"size":0}],"asks":[{"price":101,"size":0.25}]}"""
         ) {
@@ -124,7 +178,7 @@ class RealtimeClientTest {
 
     @Test
     fun publishesExecutionBatchWithoutIndentingPayload() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = RealtimeClient(gson, preference) { socket }
         val payload = object : JSONArray(
             """
                 [{"id":123,"side":"BUY","price":101,"size":0.25,"exec_date":"2020-01-01T00:00:00Z",
@@ -154,9 +208,13 @@ class RealtimeClientTest {
         val subscriptions = mutableListOf<String>()
         var authAck: Ack? = null
 
-        override fun connect(): Socket = this
+        private var open = false
 
-        override fun disconnect(): Socket = this
+        override fun connect(): Socket = apply { open = true }
+
+        override fun disconnect(): Socket = apply { open = false }
+
+        override fun connected(): Boolean = open
 
         override fun emit(event: String, vararg args: Any): Emitter {
             when (event) {

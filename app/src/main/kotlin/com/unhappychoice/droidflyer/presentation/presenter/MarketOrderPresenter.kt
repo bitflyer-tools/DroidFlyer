@@ -6,8 +6,6 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
@@ -19,12 +17,10 @@ import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
 class MarketOrderPresenter internal constructor(
-    private val apiClient: APIClientV1,
     private val currentStatusService: CurrentStatusService,
     private val notify: MarketOrderPresenter.(Int) -> Unit
 ) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
-    constructor(apiClient: APIClientV1, currentStatusService: CurrentStatusService) : this(
-        apiClient,
+    constructor(currentStatusService: CurrentStatusService) : this(
         currentStatusService,
         MarketOrderPresenter::showMessage
     )
@@ -65,7 +61,8 @@ class MarketOrderPresenter internal constructor(
     private fun submit(side: String, size: Double) {
         if (size == 0.0) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
-        submit(apiClient.sendChildOrder(request)) {
+        val order = currentStatusService.privateState.submitOrder(request) ?: return
+        submit(order) {
             reportAcceptance()
             currentStatusService.updateStatus()
         }
@@ -73,7 +70,6 @@ class MarketOrderPresenter internal constructor(
 
     private fun submit(order: Observable<Map<String, Any>>, onAccepted: () -> Unit) {
         order
-            .subscribeOnIoObserveOnUI()
             .startLoading()
             .subscribeNext { onAccepted() }
             .addTo(bag)

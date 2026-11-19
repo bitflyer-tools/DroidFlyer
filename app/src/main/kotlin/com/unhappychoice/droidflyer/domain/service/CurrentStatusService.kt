@@ -11,23 +11,19 @@ import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import java.util.concurrent.TimeUnit
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<(Board) -> Board>,
     orderEvents: Observable<Unit>,
-    privateClient: APIClientV1 = apiClient
+    privateClient: APIClientV1? = apiClient
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
-        Observable.merge(
-            realtimeClient.childOrderEvents.map { Unit },
-            realtimeClient.parentOrderEvents.map { Unit }
-        ),
+        realtimeClient.orderChanges,
         privateClient
     )
 
@@ -63,8 +59,6 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
 
         orderEvents
-            .debounce(1, TimeUnit.SECONDS)
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { updateStatus() }
             .addTo(bag)
 

@@ -2,8 +2,10 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
+import com.google.android.material.snackbar.Snackbar
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
@@ -30,8 +32,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         setupStyle()
 
         presenter.loadCredentials()
-        binding.apiTokenTextView.setText(presenter.key.value)
-        binding.apiSecretTextView.setText(presenter.secret.value)
+        showCredentials()
 
         binding.apiTokenTextView.textChanges()
             .subscribeNext {
@@ -48,11 +49,30 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         binding.saveButton.clicks()
             .subscribeNext { presenter.save() }
             .addTo(bag)
+
+        presenter.accountUnlinked
+            .subscribeNext {
+                presenter.loadCredentials()
+                showCredentials()
+            }
+            .addTo(bag)
+
+        binding.unlinkButton.clicks()
+            .subscribeNext {
+                val message = if (presenter.unlink()) R.string.account_unlinked else R.string.account_unlink_failed
+                Snackbar.make(this, message, Snackbar.LENGTH_SHORT).show()
+            }
+            .addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun showCredentials() {
+        binding.apiTokenTextView.setText(presenter.key.value)
+        binding.apiSecretTextView.setText(presenter.secret.value)
     }
 
     private fun setupStyle() {
@@ -62,5 +82,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         binding.apiSecretTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
         binding.saveButton.setTextColor(DefaultStyle.accentColor)
         binding.saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.unlinkButton.setTextColor(DefaultStyle.accentColor)
+        binding.unlinkButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }

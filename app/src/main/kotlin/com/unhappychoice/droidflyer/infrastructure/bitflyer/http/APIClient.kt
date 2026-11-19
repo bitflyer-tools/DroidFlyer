@@ -12,6 +12,7 @@ import okio.Buffer
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.IOException
 
 class APIClient internal constructor(
     val gson: Gson,
@@ -30,13 +31,19 @@ class APIClient internal constructor(
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
 
-    private fun authenticatedTransport(credentials: APICredentials?) = okHttp.newBuilder()
-        .apply {
-            interceptors().add(0, Interceptor { chain ->
-                chain.proceed(authenticatedRequest(chain.request(), credentials))
-            })
-        }
-        .build()
+    private fun authenticatedTransport(credentials: APICredentials?): OkHttpClient {
+        val generation = preference.unlinkGeneration
+        return okHttp.newBuilder()
+            .apply {
+                interceptors().add(0, Interceptor { chain ->
+                    if (credentials != null && generation != preference.unlinkGeneration) {
+                        throw IOException("bitFlyer account was unlinked")
+                    }
+                    chain.proceed(authenticatedRequest(chain.request(), credentials))
+                })
+            }
+            .build()
+    }
 
     private fun authenticatedRequest(request: Request, pinned: APICredentials?): Request {
         val credentials = pinned ?: request.tag(APICredentials::class.java) ?: preference.read()
@@ -46,7 +53,7 @@ class APIClient internal constructor(
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "application/json")
             .apply {
-                if (credentials.key.isNotEmpty() && credentials.secret.isNotEmpty()) {
+                if (credentials.isComplete) {
                     addHeader("Access-Key", credentials.key)
                     addHeader("Access-Timestamp", timestamp)
                     addHeader("Access-Sign", sign(request, timestamp, credentials.secret))

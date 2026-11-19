@@ -20,13 +20,13 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bind<CurrentStatusService> {
         eagerSingleton {
             val credentials = instance<APITokenPreference>().read()
-            CurrentStatusService(instance(), instance(), instance<APIClient>().client(credentials))
+            CurrentStatusService(instance(), instance(), credentials.takeIf { it.isComplete }?.let { instance<APIClient>().client(it) })
         }
     }
     bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
     bindSingleton<ChartPresenter> { ChartPresenter(instance<APIClientV1>()::getExecutionPrices) }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
-    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance()) }
+    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance()) }
+    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState::submitOrder) }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

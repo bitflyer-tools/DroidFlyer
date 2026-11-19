@@ -2,7 +2,6 @@ package com.unhappychoice.droidflyer
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import io.reactivex.disposables.CompositeDisposable
@@ -14,9 +13,17 @@ internal class RealtimeSession(
 ) {
     private val subscriptions = CompositeDisposable()
 
+    init {
+        client.preference.accountUnlinked
+            .subscribeNext {
+                status.privateState.unlink()
+                client.restartConnection()
+            }
+            .addTo(subscriptions)
+    }
+
     fun notifyExecutions(onExecution: (ChildOrderEvent) -> Unit) {
         client.childOrderEvents
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { events -> events.filter(ChildOrderEvent::isExecution).forEach(onExecution) }
             .addTo(subscriptions)
     }

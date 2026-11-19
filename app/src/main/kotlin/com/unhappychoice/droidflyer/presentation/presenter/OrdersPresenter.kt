@@ -9,7 +9,6 @@ import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import mortar.MortarScope
 import mortar.ViewPresenter
@@ -46,8 +45,6 @@ class OrdersPresenter internal constructor(
     fun cancelOrder(order: ChildOrder) {
         val cancellation = privateState.cancelOrder(order) ?: return
         cancellation
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { refreshOrders() },
                 { failedCancellations.onNext(order) }

@@ -7,6 +7,7 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -14,9 +15,12 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
+import io.socket.emitter.Emitter
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -59,8 +63,6 @@ class RealtimeSessionTest {
         try {
             assertFalse(old.socket.connected())
             assertFalse(old.socket.hasListeners("child_order_events"))
-            assertFalse(old.client.childOrderEvents.hasObservers())
-            assertFalse(old.client.parentOrderEvents.hasObservers())
             assertTrue(replacement.socket.connected())
 
             old.socket.receiveExecution()
@@ -77,8 +79,33 @@ class RealtimeSessionTest {
         }
     }
 
+    @Test
+    fun unlinkSignalClearsActiveSessionAndLeavesTheReplacementSocketOpen() {
+        val session = Session()
+        try {
+            session.status.balance.value = 500.0
+            session.socket.receiveExecution()
+
+            assertTrue(session.preference.clear())
+            time.advanceTimeBy(1, TimeUnit.SECONDS)
+
+            assertEquals(0.0, session.status.balance.value, 0.0)
+            assertFalse(session.positions.hasObservers())
+            assertFalse(session.socket.connected())
+            assertTrue(session.replacement.connected())
+            assertEquals(0, session.notifications)
+            assertEquals(1, session.refreshes)
+
+            session.status.updateStatus()
+            assertEquals(1, session.refreshes)
+        } finally {
+            session.lifecycle.close()
+        }
+    }
+
     private class Session {
         val socket = TestSocket()
+        val replacement = TestSocket()
         val positions = PublishSubject.create<List<Position>>()
         var refreshes = 0
         var notifications = 0
@@ -95,7 +122,11 @@ class RealtimeSessionTest {
             }
         } as APIClientV1
         private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
-        val client = RealtimeClient(gson, APITokenPreference(RuntimeEnvironment.getApplication()), socket)
+        val preference = APITokenPreference(RuntimeEnvironment.getApplication()).apply {
+            save(APICredentials("key", "secret"))
+        }
+        private val client = RealtimeClient(gson, preference, listOf(socket, replacement).iterator()::next)
+            .also { socket.finishConnecting() }
         val status = CurrentStatusService(api, client, api)
         val lifecycle = RealtimeSession(client, status).apply { notifyExecutions { notifications++ } }
     }
@@ -108,6 +139,13 @@ class RealtimeSessionTest {
         override fun disconnect(): Socket = apply { open = false }
 
         override fun connected(): Boolean = open
+
+        override fun emit(event: String, vararg args: Any): Emitter {
+            if (event == "auth") (args.last() as Ack).call(JSONObject.NULL)
+            return this
+        }
+
+        fun finishConnecting() = listeners(EVENT_CONNECT).forEach { it.call() }
 
         fun receiveExecution() {
             val events = JSONArray("""[{"event_type":"EXECUTION"}]""")

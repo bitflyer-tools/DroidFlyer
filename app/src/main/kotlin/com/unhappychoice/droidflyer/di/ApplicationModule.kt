@@ -18,7 +18,7 @@ fun applicationModule(application: DroidFlyerApplication) = DI.Module("applicati
     bindSingleton<Gson> { createGson() }
     bindSingleton<APIClient> { APIClient(instance(), instance()) }
     bindProvider<APIClientV1> { instance<APIClient>().client() }
-    bindSingleton<APITokenPreference> { APITokenPreference(application) }
+    bindSingleton<APITokenPreference> { application.tokenPreference }
 
     bindProvider<Style> { DefaultStyle }
 }
