@@ -69,6 +69,20 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun ignoresAuthenticationAcknowledgementAfterDisconnect() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        socket.receive(Socket.EVENT_CONNECT)
+        val acknowledge = checkNotNull(socket.authAck)
+        val publicSubscriptions = socket.subscriptions.toList()
+
+        client.disconnect()
+        acknowledge.call(JSONObject.NULL)
+
+        assertEquals(publicSubscriptions, socket.subscriptions)
+    }
+
+    @Test
     fun executionUpdatesTradingPrice() {
         val client = RealtimeClient(gson, preference, socket)
         val api = mock<APIClientV1>()
@@ -141,6 +155,8 @@ class RealtimeClientTest {
         var authAck: Ack? = null
 
         override fun connect(): Socket = this
+
+        override fun disconnect(): Socket = this
 
         override fun emit(event: String, vararg args: Any): Emitter {
             when (event) {

@@ -15,17 +15,7 @@ import io.socket.client.Socket
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * ```
- * val client = RealtimeClient()
- * client.connect()
- * client.board.subscribeNext { Log.d("a", it.toString()) }
- * client.boardSnapshot.subscribeNext { Log.d("a", it.toString()) }
- * client.executions.subscribeNext { Log.d("a", it.toString()) }
- * client.childOrderEvents.subscribeNext { Log.d("a", it.toString()) }
- * client.parentOrderEvents.subscribeNext { Log.d("a", it.toString()) }
- * ```
- */
+/** A realtime connection owned by a single activity session. */
 class RealtimeClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
@@ -34,7 +24,10 @@ class RealtimeClient internal constructor(
     constructor(gson: Gson, preference: APITokenPreference) : this(
         gson,
         preference,
-        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply { transports = arrayOf("websocket") })
+        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
+            transports = arrayOf("websocket")
+            forceNew = true
+        })
     )
 
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
@@ -52,6 +45,8 @@ class RealtimeClient internal constructor(
         "child_order_events",
         "parent_order_events"
     )
+
+    @Volatile private var disconnected = false
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -71,13 +66,22 @@ class RealtimeClient internal constructor(
     }
 
     fun authenticate() {
+        if (disconnected) return
         val credentials = preference.read()
         if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
         val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
         socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
     }
 
+    fun disconnect() {
+        if (disconnected) return
+        disconnected = true
+        socket.off()
+        socket.disconnect()
+    }
+
     private fun onAuthenticated(args: Array<out Any?>) {
+        if (disconnected) return
         val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
         if (error == null) subscribePrivateChannels() else Log.d("Socket", "Authentication failed: $error")
     }
@@ -86,6 +90,7 @@ class RealtimeClient internal constructor(
         privateChannels.forEach { channel -> socket.emit("subscribe", channel) }
 
     private fun publishEvent(channel: String, event: Any?) {
+        if (disconnected) return
         when (event) {
             is JSONObject -> publish(channel, event.toString())
             is JSONArray -> publish(channel, event.toString())
