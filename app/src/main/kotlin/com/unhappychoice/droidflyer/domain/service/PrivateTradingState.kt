@@ -14,6 +14,8 @@ import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 
@@ -31,8 +33,17 @@ internal class PrivateTradingState(
 
     private var session = Session(client)
     private val accountSwitches = PublishSubject.create<Unit>()
+    private val requests = CompositeDisposable()
+
+    fun dispose() {
+        requests.dispose()
+        session.positionResponses.onComplete()
+    }
 
     fun switchAccount(client: APIClientV1) {
+        if (requests.isDisposed) return
+
+        requests.clear()
         val previous = session
         session = Session(client)
         previous.positionResponses.onComplete()
@@ -44,6 +55,8 @@ internal class PrivateTradingState(
     }
 
     fun refresh() {
+        if (requests.isDisposed) return
+
         val current = session
         val requestId = ++current.positionRequestId
         current.client.getPositions()
@@ -55,12 +68,14 @@ internal class PrivateTradingState(
                     current.positionResponses.onNext(requestId to positions)
                 }
             }
+            .addTo(requests)
         bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
         // Unchanged rows keep their order references for cancellation.
         current.client.getChildOrders("FX_BTC_JPY")
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session && orders.value != it) orders.value = it }
+            .addTo(requests)
     }
 
     fun getMyExecutions(count: Int, before: Long?): Single<List<PrivateExecution>> =
@@ -109,6 +124,7 @@ internal class PrivateTradingState(
         source.subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session) target.value = it }
+            .addTo(requests)
     }
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
