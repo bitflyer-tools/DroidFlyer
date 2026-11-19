@@ -26,11 +26,19 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = Session(client)
+    private val requests = CompositeDisposable()
+
+    fun dispose() {
+        requests.dispose()
+        session.positionResponses.onComplete()
+    }
 
     fun switchAccount(client: APIClientV1) {
+        if (requests.isDisposed) return
+
+        requests.clear()
         val previous = session
         session = Session(client)
-        previous.refreshes.dispose()
         previous.positionResponses.onComplete()
         position.value = emptyList()
         balance.value = 0.0
@@ -39,12 +47,14 @@ internal class PrivateTradingState(
     }
 
     fun refresh() {
+        if (requests.isDisposed) return
+
         val current = session
         val requestId = ++current.positionRequestId
         current.client.getPositions()
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
-            .subscribeRefresh(current.refreshes) { positions ->
+            .subscribeRefresh(requests) { positions ->
                 if (current === session) {
                     position.value = positions
                     current.positionResponses.onNext(requestId to positions)
@@ -55,7 +65,7 @@ internal class PrivateTradingState(
         current.client.getChildOrders("FX_BTC_JPY")
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
-            .subscribeRefresh(current.refreshes) { if (current === session && orders.value != it) orders.value = it }
+            .subscribeRefresh(requests) { if (current === session && orders.value != it) orders.value = it }
     }
 
     fun observeNewPositionResponses(): Observable<List<Position>> {
@@ -97,12 +107,11 @@ internal class PrivateTradingState(
     private fun <T : Any> bind(current: Session, source: Observable<T>, target: Variable<T>) {
         source.subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
-            .subscribeRefresh(current.refreshes) { if (current === session) target.value = it }
+            .subscribeRefresh(requests) { if (current === session) target.value = it }
     }
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1) {
-        val refreshes = CompositeDisposable()
         var positionRequestId = 0L
         val positionResponses = PublishSubject.create<Pair<Long, List<Position>>>()
     }

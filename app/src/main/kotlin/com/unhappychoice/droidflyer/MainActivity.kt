@@ -11,10 +11,8 @@ import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
 import com.unhappychoice.droidflyer.di.applicationModule
-import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
+import com.unhappychoice.droidflyer.presentation.executionMessage
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
@@ -25,8 +23,6 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
 import flow.Flow
 import flow.KeyDispatcher
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import org.kodein.di.DI
@@ -43,8 +39,7 @@ class MainActivity : AppCompatActivity() {
 
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
 
-    private val realtimeClient by lazy { module.direct.instance<RealtimeClient>() }
-    private val bag = CompositeDisposable()
+    private val realtimeSession = lazy { RealtimeSession(module.direct.instance(), module.direct.instance()) }
 
     private val chartScreen by lazy { ChartScreen() }
     private val bottomNavigationScreens by lazy {
@@ -79,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNavigation.isSaveFromParentEnabled = false
         setContentView(binding.root)
         setupStyle()
-        notifyExecutions()
+        realtimeSession.value.notifyExecutions(::showExecution)
 
         binding.bottomNavigation.setOnItemSelectedListener {
             bottomNavigationScreens[it.itemId]?.let { screen -> Flow.get(this).set(screen) }
@@ -94,7 +89,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        bag.dispose()
+        if (realtimeSession.isInitialized()) realtimeSession.value.close()
         scope.destroy()
         super.onDestroy()
     }
@@ -139,15 +134,8 @@ class MainActivity : AppCompatActivity() {
         binding.containerView.setBackgroundColor(DefaultStyle.primaryColor)
     }
 
-    private fun notifyExecutions() {
-        realtimeClient.childOrderEvents
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { events -> events.filter(ChildOrderEvent::isExecution).forEach(::showExecution) }
-            .addTo(bag)
-    }
-
     private fun showExecution(event: ChildOrderEvent) {
-        val message = getString(R.string.order_executed, event.side ?: "", event.size ?: 0.0, event.price ?: 0L)
+        val message = executionMessage(event)
         Snackbar.make(binding.containerView, message, Snackbar.LENGTH_SHORT).show()
     }
 }

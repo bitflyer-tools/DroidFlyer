@@ -59,6 +59,23 @@ class PrivateTradingStateTest {
     }
 
     @Test
+    fun disposalCancelsPrivateRefreshesAndPreventsAnotherRefresh() {
+        val responses = state.observeNewPositionResponses().test()
+        state.refresh()
+        scheduler.triggerActions()
+        assertEquals(listOf(true, true, true), accountA.refreshObservers())
+
+        state.dispose()
+        state.refresh()
+        state.switchAccount(accountB.client)
+        scheduler.triggerActions()
+
+        responses.assertNoValues().assertComplete()
+        assertEquals(listOf(false, false, false), accountA.refreshObservers())
+        assertEquals(listOf(false, false, false), accountB.refreshObservers())
+    }
+
+    @Test
     fun equalOrderRefreshKeepsDisplayedCancellationValidOnlyForTheCurrentAccount() {
         state.refresh()
         scheduler.triggerActions()
