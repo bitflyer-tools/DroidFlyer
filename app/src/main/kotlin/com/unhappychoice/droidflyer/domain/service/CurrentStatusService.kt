@@ -18,9 +18,9 @@ class CurrentStatusService internal constructor(
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<(Board) -> Board>,
     orderEvents: Observable<Unit>,
-    privateClient: APIClientV1 = apiClient
+    privateClient: APIClientV1? = apiClient
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),

@@ -17,7 +17,7 @@ import io.reactivex.subjects.PublishSubject
 
 // Access the session and its cached data on the UI thread.
 internal class PrivateTradingState(
-    client: APIClientV1,
+    client: APIClientV1?,
     private val requestScheduler: Scheduler = Schedulers.io(),
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
@@ -27,7 +27,7 @@ internal class PrivateTradingState(
 
     private var session = Session(client)
 
-    fun switchAccount(client: APIClientV1) {
+    fun switchAccount(client: APIClientV1?) {
         val previous = session
         session = Session(client)
         previous.positionResponses.onComplete()
@@ -39,8 +39,9 @@ internal class PrivateTradingState(
 
     fun refresh() {
         val current = session
+        val client = current.client ?: return
         val requestId = ++current.positionRequestId
-        current.client.getPositions()
+        client.getPositions()
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { positions ->
@@ -49,9 +50,9 @@ internal class PrivateTradingState(
                     current.positionResponses.onNext(requestId to positions)
                 }
             }
-        bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
+        bind(current, client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
         // Unchanged rows keep their order references for cancellation.
-        current.client.getChildOrders("FX_BTC_JPY")
+        client.getChildOrders("FX_BTC_JPY")
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session && orders.value != it) orders.value = it }
@@ -76,12 +77,13 @@ internal class PrivateTradingState(
         reconfirm: (CloseConfirmation) -> Unit = {}
     ): Observable<Map<String, Any>>? {
         val current = session
+        val client = current.client ?: return null
         if (!isCurrent(confirmation)) return null
         return confirmation.order.confirm(
             PositionCloseOrder.from(position.value.wholeSize()),
             submit = {
                 val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", it.side, null, it.size)
-                current.client.sendChildOrder(request)
+                client.sendChildOrder(request)
             },
             reconfirm = { reconfirm(CloseConfirmation(current, it)) }
         )
@@ -90,7 +92,7 @@ internal class PrivateTradingState(
     fun cancelOrder(order: ChildOrder): Completable? {
         if (orders.value.none { it === order }) return null
         val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
-        return session.client.cancelChildOrder(request)
+        return session.client?.cancelChildOrder(request)
     }
 
     private fun <T : Any> bind(current: Session, source: Observable<T>, target: Variable<T>) {
@@ -100,7 +102,7 @@ internal class PrivateTradingState(
     }
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
-    class Session(val client: APIClientV1) {
+    class Session(val client: APIClientV1?) {
         var positionRequestId = 0L
         val positionResponses = PublishSubject.create<Pair<Long, List<Position>>>()
     }

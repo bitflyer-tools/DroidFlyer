@@ -3,14 +3,20 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import android.app.Application
 import android.content.Context
 import com.google.gson.Gson
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.presentation.view.OrderView
+import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
+import mortar.MortarScope
+import mortar.bundler.BundleServiceRunner
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -26,6 +32,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import retrofit2.HttpException
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [35])
@@ -34,7 +41,8 @@ class SettingsPresenterTest {
     private val preference = APITokenPreference(context)
     private val requests = mutableListOf<Request>()
     private val authenticated = mutableListOf<Pair<String, String>>()
-    private val switched = mutableListOf<APIClientV1>()
+    private val switched = mutableListOf<APIClientV1?>()
+    private var credentialsBeforeValidation = "saved-key" to "saved-secret"
     private var validationStatus = 200
     private var validationFailure: IOException? = null
 
@@ -44,7 +52,7 @@ class SettingsPresenterTest {
             requests.add(request)
             val validating = request.url.encodedPath.endsWith("/getbalance")
             if (validating) {
-                assertEquals("saved-key" to "saved-secret", savedCredentials())
+                assertEquals(credentialsBeforeValidation, savedCredentials())
                 validationFailure?.let { throw it }
             }
             Response.Builder()
@@ -52,7 +60,11 @@ class SettingsPresenterTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(if (validating) validationStatus else 200)
                 .message("Test response")
-                .body("[]".toResponseBody())
+                .body(when (request.url.encodedPath) {
+                    "/v1/board" -> """{"midPrice":100.0,"bids":[],"asks":[]}"""
+                    "/v1/me/getcollateral" -> """{"collateral":250.0}"""
+                    else -> "[]"
+                }.toResponseBody())
                 .build()
         }.build())
     private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { authenticated.add(savedCredentials()) }
@@ -110,7 +122,7 @@ class SettingsPresenterTest {
         presenter.saveCredentials().test().assertComplete()
         preference.save(APICredentials("other-key", "other-secret"))
 
-        switched.single().getPermissions().blockingFirst()
+        requireNotNull(switched.single()).getPermissions().blockingFirst()
 
         assertSignedWith(requests[1], "submitted-key", "submitted-secret")
     }
@@ -122,15 +134,68 @@ class SettingsPresenterTest {
 
         presenter.saveCredentials().test().assertComplete()
 
-        assertEquals(emptyList<APIClientV1>(), switched)
+        assertEquals(emptyList<APIClientV1?>(), switched)
         assertEquals(listOf(savedCredentials()), authenticated)
     }
+
+    @Test
+    fun privateStatusStartsAfterValidationWhilePublicBoardLoadsBeforeSetup() {
+        context.getSharedPreferences("api_token", Context.MODE_PRIVATE).edit().clear().apply()
+        credentialsBeforeValidation = "" to ""
+        val timer = TestScheduler()
+        RxJavaPlugins.setComputationSchedulerHandler { timer }
+        val status = createStatus()
+        assertEquals(listOf("/v1/board"), requestPaths())
+        val scope = MortarScope.buildRootScope()
+            .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
+            .build("order_status_test")
+        try {
+            OrderPresenter(status).takeView(OrderView(scope.createContext(context), null))
+            timer.advanceTimeBy(18, TimeUnit.SECONDS)
+            assertEquals(List(4) { "/v1/board" }, requestPaths())
+            assertEquals(100.0, status.board.value.midPrice, 0.0)
+
+            val settings = SettingsPresenter(api, preference, status.privateState::switchAccount) {}
+            settings.key.value = "submitted-key"
+            settings.secret.value = "submitted-secret"
+            settings.saveCredentials().test().assertValueCount(1).assertComplete()
+
+            assertEquals(
+                listOf(
+                    "/v1/me/getbalance", "/v1/me/getpositions",
+                    "/v1/me/getcollateral", "/v1/me/getchildorders"
+                ),
+                requestPaths().drop(4)
+            )
+            requests.drop(4).forEach { assertSignedWith(it, "submitted-key", "submitted-secret") }
+            assertEquals("ACTIVE", requests.last().url.queryParameter("child_order_state"))
+            assertEquals(250.0, status.balance.value, 0.0)
+        } finally {
+            scope.destroy()
+        }
+    }
+
+    @Test
+    fun privateStatusRequiresBothPartsOfTheSavedCredentials() {
+        listOf(APICredentials("key", ""), APICredentials("", "secret")).forEach {
+            preference.save(it)
+            createStatus()
+        }
+        assertEquals(List(2) { "/v1/board" }, requestPaths())
+    }
+
+    private fun createStatus() = CurrentStatusService(
+        api.client(), Observable.empty(), Observable.empty(), Observable.empty(),
+        api.privateStatusClient(preference.read())
+    )
+
+    private fun requestPaths() = requests.map { it.url.encodedPath }
 
     private fun assertSavedPairStillActive() {
         api.client().getPermissions().blockingFirst()
         assertEquals("saved-key" to "saved-secret", savedCredentials())
         assertEquals(emptyList<Pair<String, String>>(), authenticated)
-        assertEquals(emptyList<APIClientV1>(), switched)
+        assertEquals(emptyList<APIClientV1?>(), switched)
         assertSignedWith(requests[0], "submitted-key", "submitted-secret")
         assertSignedWith(requests[1], "saved-key", "saved-secret")
     }
@@ -139,7 +204,8 @@ class SettingsPresenterTest {
 
     private fun assertSignedWith(request: Request, key: String, secret: String) {
         assertEquals(key, request.header("Access-Key"))
-        val signed = request.header("Access-Timestamp") + request.method + request.url.encodedPath
+        val path = request.url.encodedPath + (request.url.query?.let { "?$it" } ?: "")
+        val signed = request.header("Access-Timestamp") + request.method + path
         assertEquals(signed.toHmacSHA256(secret), request.header("Access-Sign"))
     }
 }

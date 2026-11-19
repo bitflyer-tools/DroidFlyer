@@ -28,7 +28,7 @@ fun applicationModule(application: DroidFlyerApplication) = DI.Module("applicati
     bind<CurrentStatusService> {
         eagerSingleton {
             val credentials = instance<APITokenPreference>().read()
-            CurrentStatusService(instance(), instance(), instance<APIClient>().client(credentials))
+            CurrentStatusService(instance(), instance(), instance<APIClient>().privateStatusClient(credentials))
         }
     }
 
