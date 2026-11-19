@@ -10,6 +10,7 @@ import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -60,6 +61,9 @@ class PrivateTradingStateTest {
         state.refresh()
         scheduler.triggerActions()
         state.switchAccount(accountB.client)
+        assertFalse(accountA.positions.hasObservers())
+        assertFalse(accountA.collateral.hasObservers())
+        assertFalse(accountA.orders.hasObservers())
         assertPrivateData(emptyList(), null, emptyList())
         assertNull(state.cancelOrder(order))
         scheduler.triggerActions()

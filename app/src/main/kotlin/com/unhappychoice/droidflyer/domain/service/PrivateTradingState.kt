@@ -12,6 +12,8 @@ import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 
@@ -26,8 +28,17 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = Session(client)
+    private val requests = CompositeDisposable()
+
+    fun dispose() {
+        requests.dispose()
+        session.positionResponses.onComplete()
+    }
 
     fun switchAccount(client: APIClientV1) {
+        if (requests.isDisposed) return
+
+        requests.clear()
         val previous = session
         session = Session(client)
         previous.positionResponses.onComplete()
@@ -38,6 +49,8 @@ internal class PrivateTradingState(
     }
 
     fun refresh() {
+        if (requests.isDisposed) return
+
         val current = session
         val requestId = ++current.positionRequestId
         current.client.getPositions()
@@ -49,6 +62,7 @@ internal class PrivateTradingState(
                     current.positionResponses.onNext(requestId to positions)
                 }
             }
+            .addTo(requests)
         current.client.getCollateral()
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
@@ -56,11 +70,13 @@ internal class PrivateTradingState(
                 val amount = response["collateral"] as? Number
                 if (current === session && amount != null) collateral.value = Collateral(amount.toDouble())
             }
+            .addTo(requests)
         // Unchanged rows keep their order references for cancellation.
         current.client.getChildOrders("FX_BTC_JPY")
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session && orders.value != it) orders.value = it }
+            .addTo(requests)
     }
 
     fun observeNewPositionResponses(): Observable<List<Position>> {
