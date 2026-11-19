@@ -48,6 +48,7 @@ class CurrentStatusService internal constructor(
 
     init {
         executions
+            .filter { it.isNotEmpty() }
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)

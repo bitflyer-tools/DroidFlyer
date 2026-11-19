@@ -66,7 +66,7 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun executionUpdatesTradingPrice() {
+    fun executionUpdatesTradingPriceAfterEmptyBatch() {
         val client = RealtimeClient(gson, preference, socket)
         val api = mock<APIClientV1>()
         whenever(api.getPositions()).thenReturn(Observable.empty())
@@ -81,6 +81,12 @@ class RealtimeClientTest {
             socket.receive(Socket.EVENT_CONNECT)
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":123456.0}]"""))
             assertEquals(123456.0, service.currentPrice.value, 0.0)
+
+            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray())
+            assertEquals(123456.0, service.currentPrice.value, 0.0)
+
+            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":234567.0}]"""))
+            assertEquals(234567.0, service.currentPrice.value, 0.0)
         } finally {
             RxAndroidPlugins.reset()
             RxJavaPlugins.reset()
