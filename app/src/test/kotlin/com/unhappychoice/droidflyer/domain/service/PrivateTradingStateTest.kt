@@ -10,6 +10,7 @@ import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -54,6 +55,20 @@ class PrivateTradingStateTest {
         checkNotNull(state.cancelOrder(newOrder)).test().assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
+    }
+
+    @Test
+    fun switchingToAnUnconfiguredAccountCancelsInFlightRequests() {
+        state.refresh()
+        scheduler.triggerActions()
+
+        state.switchAccount(null)
+        scheduler.triggerActions()
+
+        assertFalse(accountA.positions.hasObservers())
+        assertFalse(accountA.collateral.hasObservers())
+        assertFalse(accountA.orders.hasObservers())
+        assertPrivateData(emptyList(), 0.0, emptyList())
     }
 
     @Test

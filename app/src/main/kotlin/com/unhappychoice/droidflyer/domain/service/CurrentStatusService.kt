@@ -71,7 +71,14 @@ class CurrentStatusService internal constructor(
         updateStatus()
     }
 
+    fun dispose() {
+        bag.dispose()
+        privateState.dispose()
+    }
+
     fun updateStatus() {
+        if (bag.isDisposed) return
+
         privateState.refresh()
 
         apiClient.getBoard("FX_BTC_JPY")
