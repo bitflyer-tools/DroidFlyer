@@ -19,9 +19,8 @@ class BoardAdapterTest {
         val context = RuntimeEnvironment.getApplication()
         val adapter = BoardAdapter(context, BoardType.Ask)
         val exactAsk = Order(100L, 1.0)
-        val offBucketAsk = Order(101L, 2.0)
-        adapter.groupSize.value = 10L
-        adapter.items.value = listOf(exactAsk, offBucketAsk)
+        val roundedAsk = Order(110L, 2.0)
+        adapter.applyRows(listOf(exactAsk, roundedAsk), groupingSize = 10L)
 
         val row = RelativeLayout(context).apply {
             listOf(R.id.price, R.id.size, R.id.mineSize).forEach { id ->
@@ -37,6 +36,6 @@ class BoardAdapterTest {
         adapter.onBindViewHolder(holder, 1)
         row.performClick()
 
-        selectedAsks.assertValues(exactAsk, offBucketAsk.copy(price = 110L))
+        selectedAsks.assertValues(exactAsk, roundedAsk)
     }
 }
