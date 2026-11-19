@@ -33,7 +33,7 @@ class CurrentStatusService internal constructor(
 
     internal val privateState = PrivateTradingState(privateClient)
 
-    val currentPrice = Variable(0.0)
+    internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = privateState.position
@@ -49,7 +49,11 @@ class CurrentStatusService internal constructor(
     init {
         executions
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { currentPrice.value = it.first().price }
+            .subscribeNext { batch ->
+                batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }?.let {
+                    currentPrice.value = MarketPrice(it.price)
+                }
+            }
             .addTo(bag)
 
         boardUpdates

@@ -5,7 +5,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import org.junit.Test
 
 class TradingTotalsTest {
-    private val price = Variable(120.75)
+    private val price = Variable(MarketPrice(120.75))
     private val positions = Variable<List<Position>>(emptyList())
     private val collateral = Variable(1000.75)
     private val totals = observeTradingTotals(
@@ -40,7 +40,7 @@ class TradingTotalsTest {
     fun priceUpdateUsesLatestPositionAndCollateral() {
         positions.value = listOf(position.copy(price = 110L))
         collateral.value = 1500.75
-        price.value = 99.75
+        price.value = MarketPrice(99.75)
 
         totals.assertValues(
             TradingTotals(0L, 120L, 1000L),
