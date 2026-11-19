@@ -8,13 +8,13 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
-import com.unhappychoice.droidflyer.presentation.presenter.PositionCloseOrder
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.Observables
@@ -84,7 +84,8 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         super.onDetachedFromWindow()
     }
 
-    private fun showCloseConfirmation(order: PositionCloseOrder) {
+    private fun showCloseConfirmation(confirmation: CloseConfirmation) {
+        val order = confirmation.order
         val side = context.getString(if (order.side == "SELL") R.string.sell else R.string.buy)
         val summary = "$side / ${order.size}"
         val message = if (order.size > ClosePositionService.ORDER_SIZE_LIMIT) {
@@ -96,7 +97,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             .setTitle(R.string.clear_all_positions)
             .setMessage(message)
             .setPositiveButton(R.string.ok) { _, _ ->
-                presenter.clearPosition(order, ::showCloseConfirmation)
+                presenter.clearPosition(confirmation, ::showCloseConfirmation)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

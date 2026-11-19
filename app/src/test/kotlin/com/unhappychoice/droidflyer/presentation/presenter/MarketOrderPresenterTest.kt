@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -20,6 +19,7 @@ import org.junit.Test
 import org.mockito.Mockito
 
 class MarketOrderPresenterTest {
+    private val scheduler = TestScheduler()
     private val apiClient = Mockito.mock(APIClientV1::class.java)
     private val closePositionResponse = PublishSubject.create<List<Position>>()
     private val acceptedResponse = mapOf<String, Any>("child_order_acceptance_id" to "JRF-accepted")
@@ -29,7 +29,7 @@ class MarketOrderPresenterTest {
 
     @Before
     fun setUp() {
-        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
 
@@ -38,8 +38,7 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.empty())
         status = CurrentStatusService(apiClient, Observable.empty(), Observable.empty(), Observable.empty())
-        val closeService = ClosePositionService(apiClient, TestScheduler())
-        presenter = MarketOrderPresenter(apiClient, status, closeService) { messages.add(it) }
+        presenter = MarketOrderPresenter(apiClient, status) { messages.add(it) }
     }
 
     @After
@@ -54,6 +53,7 @@ class MarketOrderPresenterTest {
         presenter.amount.value = 0.5
 
         presenter.buy()
+        scheduler.triggerActions()
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
     }
@@ -64,6 +64,7 @@ class MarketOrderPresenterTest {
         presenter.amount.value = 0.5
 
         presenter.sell()
+        scheduler.triggerActions()
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
     }
@@ -103,23 +104,44 @@ class MarketOrderPresenterTest {
         stubClose("BUY", "SELL")
 
         presenter.clearPosition(confirmed) { updated ->
-            assertEquals("BUY", updated.side)
+            assertEquals("BUY", updated.order.side)
             assertEquals(emptyList<Int>(), messages)
             Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
                 SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5, timeInForce = "IOC")
             )
             presenter.clearPosition(updated) { error("Unexpected reconfirmation") }
         }
+        scheduler.triggerActions()
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
         closePositionResponse.onNext(emptyList())
         assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
     }
 
+    @Test
+    fun switchingAccountsStopsThePreviousCloseSequence() {
+        stubClose("SELL", "BUY", positionSize = 12.0)
+        confirmPositionClose()
+
+        val newAccount = Mockito.mock(APIClientV1::class.java)
+        Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
+        Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        status.privateState.switchAccount(newAccount)
+        closePositionResponse.onNext(listOf(openPosition("BUY", 2.0)))
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
+            SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 2.0, timeInForce = "IOC")
+        )
+        assertEquals(false, presenter.isLoading.value)
+
+        assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
     private fun confirmPositionClose() {
         presenter.clearPosition(requireNotNull(presenter.positionCloseOrder())) {
             error("Unexpected reconfirmation")
         }
+        scheduler.triggerActions()
     }
 
     private fun stubAcceptance(side: String) {
@@ -127,16 +149,17 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
     }
 
-    private fun stubClose(side: String, positionSide: String) {
-        val positions = listOf(openPosition(positionSide, 0.5))
+    private fun stubClose(side: String, positionSide: String, positionSize: Double = 0.5) {
+        val positions = listOf(openPosition(positionSide, positionSize))
+        val firstOrderSize = minOf(positionSize, 10.0)
         status.position.value = positions
         Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
             .thenReturn(Observable.just(positions), closePositionResponse.take(1), Observable.just(emptyList()))
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5, timeInForce = "IOC")
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, firstOrderSize, timeInForce = "IOC")
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
         val filledOrder = ChildOrder(
-            1, "child", "FX_BTC_JPY", side, "MARKET", 0, 0, 0.5,
-            "COMPLETED", "JRF-accepted", 0.0, 0.0, 0.5, 0.0
+            1, "child", "FX_BTC_JPY", side, "MARKET", 0, 0, firstOrderSize,
+            "COMPLETED", "JRF-accepted", 0.0, 0.0, firstOrderSize, 0.0
         )
         Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY", null, "JRF-accepted"))
             .thenReturn(Observable.just(listOf(filledOrder)))

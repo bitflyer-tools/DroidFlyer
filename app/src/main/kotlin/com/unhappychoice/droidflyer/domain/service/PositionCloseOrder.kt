@@ -1,19 +1,18 @@
-package com.unhappychoice.droidflyer.presentation.presenter
+package com.unhappychoice.droidflyer.domain.service
 
 internal class PositionCloseOrder private constructor(val positionSize: Double) {
     val side = if (positionSize > 0.0) "SELL" else "BUY"
     val size = Math.abs(positionSize)
 
-    fun confirm(
+    fun <T> confirm(
         current: PositionCloseOrder?,
-        submit: (PositionCloseOrder) -> Unit,
+        submit: (PositionCloseOrder) -> T,
         reconfirm: (PositionCloseOrder) -> Unit
-    ) {
-        when {
-            current == null -> return
-            current.side == side && current.size == size -> submit(this)
-            else -> reconfirm(current)
-        }
+    ): T? {
+        if (current == null) return null
+        if (current.side == side && current.size == size) return submit(this)
+        reconfirm(current)
+        return null
     }
 
     companion object {
