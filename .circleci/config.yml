@@ -24,7 +24,7 @@ jobs:
           command: ./gradlew dependencies
       - run:
           name: Build
-          command: ./gradlew assembleDebugUnitTest
+          command: ./gradlew assembleDebug assembleDebugUnitTest
       - save_cache:
           paths:
             - ~/.gradle
