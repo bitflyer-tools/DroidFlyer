@@ -126,7 +126,7 @@ class MarketOrderPresenterTest {
         status.position.value = listOf(openPosition("SELL", 0.5))
 
         presenter.clearPosition(confirmed) { updated ->
-            assertEquals("BUY", updated.side)
+            assertEquals("BUY", updated.order.side)
             assertEquals(emptyList<Int>(), messages)
             Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
                 SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)
@@ -137,6 +137,22 @@ class MarketOrderPresenterTest {
         assertEquals(listOf(R.string.market_order_accepted), messages)
         positionResponse.onNext(emptyList())
         assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
+    }
+
+    @Test
+    fun newAccountPositionsDoNotConfirmPreviousAccountClosure() {
+        stubAcceptance("SELL")
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        confirmPositionClose()
+
+        val newAccount = Mockito.mock(APIClientV1::class.java)
+        Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
+        Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        status.privateState.switchAccount(newAccount)
+        positionResponse.onNext(emptyList())
+
+        assertEquals(listOf(R.string.market_order_accepted), messages)
     }
 
     private fun confirmPositionClose() {

@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.di
 
 import com.unhappychoice.droidflyer.DroidFlyerApplication
 import com.unhappychoice.droidflyer.MainActivity
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import org.junit.Assert.assertSame
@@ -27,6 +28,8 @@ class RestModuleTest {
             import(activityModule(activity))
         }
 
-        assertSame(graph.direct.instance<APIClientV1>(), graph.direct.instance<LimitOrderPresenter>().apiClient)
+        val client = graph.direct.instance<APIClientV1>()
+        assertSame(client, graph.direct.instance<APIClient>().client())
+        assertSame(client, graph.direct.instance<LimitOrderPresenter>().apiClient)
     }
 }

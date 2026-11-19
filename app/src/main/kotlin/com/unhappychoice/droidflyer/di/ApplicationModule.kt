@@ -22,15 +22,21 @@ fun applicationModule(application: DroidFlyerApplication) = DI.Module("applicati
     import(restModule(application))
     bindSingleton<RealtimeClient> { RealtimeClient(instance(), instance()) }
 
-    bind<CurrentStatusService> { eagerSingleton { CurrentStatusService(instance(), instance()) } }
+    bind<CurrentStatusService> {
+        eagerSingleton {
+            val credentials = instance<APITokenPreference>().read()
+            CurrentStatusService(instance(), instance(), instance<APIClient>().client(credentials))
+        }
+    }
 
     bindProvider<Style> { DefaultStyle }
 }
 
 internal fun restModule(application: DroidFlyerApplication) = DI.Module("rest") {
     bindSingleton<Gson> { createGson() }
-    bindSingleton<APIClientV1> { APIClient(instance(), instance()).client() }
-    bindProvider<APITokenPreference> { APITokenPreference(application) }
+    bindSingleton<APITokenPreference> { APITokenPreference(application) }
+    bindSingleton<APIClient> { APIClient(instance(), instance()) }
+    bindSingleton<APIClientV1> { instance<APIClient>().client() }
 }
 
 private fun createGson() = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()

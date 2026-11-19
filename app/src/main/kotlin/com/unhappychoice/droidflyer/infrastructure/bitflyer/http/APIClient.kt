@@ -21,20 +21,27 @@ class APIClient internal constructor(
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, OkHttpClient())
 
-    fun client(): APIClientV1 = retrofit().create(APIClientV1::class.java)
+    fun client(): APIClientV1 = defaultClient
+
+    fun client(credentials: APICredentials): APIClientV1 = createClient(credentials)
 
     private val okHttp = transport.newBuilder()
         .followRedirects(false)
-        .apply {
-            interceptors().add(0, Interceptor { chain ->
-                chain.proceed(authenticatedRequest(chain.request()))
-            })
-        }
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
 
-    private fun authenticatedRequest(request: Request): Request {
-        val credentials = request.tag(APICredentials::class.java) ?: preference.read()
+    private val defaultClient by lazy { createClient(null) }
+
+    private fun authenticatedTransport(credentials: APICredentials?) = okHttp.newBuilder()
+        .apply {
+            interceptors().add(0, Interceptor { chain ->
+                chain.proceed(authenticatedRequest(chain.request(), credentials))
+            })
+        }
+        .build()
+
+    private fun authenticatedRequest(request: Request, pinned: APICredentials?): Request {
+        val credentials = pinned ?: request.tag(APICredentials::class.java) ?: preference.read()
         val timestamp = (System.currentTimeMillis() / 1000L).toString()
 
         return request.newBuilder()
@@ -49,12 +56,13 @@ class APIClient internal constructor(
             }.build()
     }
 
-    private fun retrofit(): Retrofit = Retrofit.Builder()
-        .client(okHttp)
+    private fun createClient(credentials: APICredentials?): APIClientV1 = Retrofit.Builder()
+        .client(authenticatedTransport(credentials))
         .baseUrl(baseUrl)
         .addConverterFactory(GsonConverterFactory.create(gson))
         .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
         .build()
+        .create(APIClientV1::class.java)
 
     private fun sign(request: Request, timestamp: String, secret: String): String {
         val body = Buffer().apply { request.body?.writeTo(this) }.readUtf8()
