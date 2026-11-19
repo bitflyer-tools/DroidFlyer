@@ -13,7 +13,7 @@ class APITokenPreference internal constructor(
 
     fun read(): APICredentials = synchronized(lock) {
         val values = preferences.all
-        (values[encryptedEntry] as? String)?.let { return@synchronized cipher.decrypt(it) }
+        (values[encryptedEntry] as? String)?.let { return@synchronized readEncrypted(it) }
 
         val legacy = APICredentials(values["key"] as? String ?: "", values["secret"] as? String ?: "")
         if ("key" in values || "secret" in values) save(legacy)
@@ -39,6 +39,14 @@ class APITokenPreference internal constructor(
             throw IOException("Unable to save API credentials")
         }
     }
+
+    private fun readEncrypted(encrypted: String): APICredentials =
+        try {
+            cipher.decrypt(encrypted)
+        } catch (_: Exception) {
+            // Keep the ciphertext until a validated replacement is saved.
+            APICredentials("", "")
+        }
 
     private companion object {
         val lock = Any()

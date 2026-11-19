@@ -6,8 +6,10 @@ import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
@@ -26,25 +28,32 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import retrofit2.HttpException
 import java.io.IOException
+import javax.crypto.spec.SecretKeySpec
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [35])
 class SettingsPresenterTest {
     private val context = RuntimeEnvironment.getApplication()
-    private val preference = testAPITokenPreference(context)
+    private var credentialKey: SecretKeySpec? = testCredentialKey
+    private val replacementKey = SecretKeySpec(ByteArray(32) { 1 }, "AES")
+    private val preference = APITokenPreference(context, APICredentialCipher { create ->
+        credentialKey ?: if (create) replacementKey.also { credentialKey = it }
+        else error("API credential encryption key is missing")
+    })
     private val requests = mutableListOf<Request>()
     private val authenticated = mutableListOf<Pair<String, String>>()
     private val switched = mutableListOf<APIClientV1>()
     private var validationStatus = 200
     private var validationFailure: IOException? = null
+    private var expectedSavedCredentials = "saved-key" to "saved-secret"
 
-    private val api = APIClient(Gson(), testAPITokenPreference(context), OkHttpClient.Builder()
+    private val api = APIClient(Gson(), preference, OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request()
             requests.add(request)
             val validating = request.url.encodedPath.endsWith("/getbalance")
             if (validating) {
-                assertEquals("saved-key" to "saved-secret", savedCredentials())
+                assertEquals(expectedSavedCredentials, savedCredentials())
                 validationFailure?.let { throw it }
             }
             Response.Builder()
@@ -103,6 +112,33 @@ class SettingsPresenterTest {
         assertEquals(listOf(savedCredentials()), authenticated)
         assertSignedWith(requests[0], "submitted-key", "submitted-secret")
         assertSignedWith(requests[1], "submitted-key", "submitted-secret")
+    }
+
+    @Test
+    fun missingEncryptionKeyAllowsCredentialsToBeRegisteredAgain() {
+        preference.save(APICredentials("saved-key", "saved-secret"))
+        val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        val originalEntries = stored.all
+        credentialKey = null
+        expectedSavedCredentials = "" to ""
+
+        presenter.loadCredentials()
+        assertEquals("", presenter.key.value)
+        assertEquals("", presenter.secret.value)
+        presenter.key.value = "submitted-key"
+        presenter.secret.value = "submitted-secret"
+
+        validationStatus = 401
+        presenter.saveCredentials().test().assertError(HttpException::class.java)
+        assertEquals(originalEntries, stored.all)
+        assertEquals(emptyList<APIClientV1>(), switched)
+        assertEquals(emptyList<Pair<String, String>>(), authenticated)
+
+        validationStatus = 200
+        presenter.saveCredentials().test().assertValueCount(1).assertComplete()
+        assertEquals("submitted-key" to "submitted-secret", savedCredentials())
+        assertEquals(1, switched.size)
+        assertEquals(listOf(savedCredentials()), authenticated)
     }
 
     @Test
