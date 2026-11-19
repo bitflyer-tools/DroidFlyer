@@ -3,15 +3,16 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
@@ -44,36 +45,44 @@ class MarketOrderPresenter internal constructor(
 
     fun sell() = submit("SELL", amount.value)
 
-    internal fun positionCloseOrder(): PositionCloseOrder? =
-        PositionCloseOrder.from(currentStatusService.position.value.wholeSize())
+    internal fun positionCloseOrder(): CloseConfirmation? =
+        currentStatusService.privateState.closeConfirmation()
 
     internal fun clearPosition(
-        confirmed: PositionCloseOrder,
-        reconfirm: (PositionCloseOrder) -> Unit
+        confirmed: CloseConfirmation,
+        reconfirm: (CloseConfirmation) -> Unit
     ) {
-        confirmed.confirm(positionCloseOrder(), ::submitPositionClose, reconfirm)
+        val state = currentStatusService.privateState
+        val order = state.closePosition(confirmed, reconfirm) ?: return
+        submit(order) {
+            if (!state.isCurrent(confirmed)) return@submit
+            reportAcceptance()
+            awaitPositionClose()
+            currentStatusService.updateStatus()
+        }
     }
 
-    private fun submitPositionClose(order: PositionCloseOrder) {
-        submit(order.side, order.size, ::awaitPositionClose)
-    }
-
-    private fun submit(side: String, size: Double, onAccepted: () -> Unit = {}) {
+    private fun submit(side: String, size: Double) {
         if (size == 0.0) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
-        apiClient.sendChildOrder(request)
+        submit(apiClient.sendChildOrder(request)) {
+            reportAcceptance()
+            currentStatusService.updateStatus()
+        }
+    }
+
+    private fun submit(order: Observable<Map<String, Any>>, onAccepted: () -> Unit) {
+        order
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext {
-                notify(R.string.market_order_accepted)
-                onAccepted()
-                currentStatusService.updateStatus()
-            }
+            .subscribeNext { onAccepted() }
             .addTo(bag)
     }
 
+    private fun reportAcceptance() = notify(R.string.market_order_accepted)
+
     private fun awaitPositionClose() {
-        closeConfirmation.set(currentStatusService.observeNewPositionResponses()
+        closeConfirmation.set(currentStatusService.privateState.observeNewPositionResponses()
             .filter { positions -> positions.isEmpty() }
             .take(1)
             .subscribeNext { notify(R.string.cleared_all_positions) })

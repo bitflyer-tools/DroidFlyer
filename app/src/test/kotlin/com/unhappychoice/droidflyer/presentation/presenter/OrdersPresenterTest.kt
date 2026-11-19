@@ -2,7 +2,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
-import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -63,9 +63,10 @@ class OrdersPresenterTest {
             .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
             .build()
             .create(APIClientV1::class.java)
-        val exchangeOrders = Variable(listOf(order))
-        val presenter = OrdersPresenter(api, exchangeOrders.asObservable()) {
-            exchangeOrders.value = emptyList()
+        val state = PrivateTradingState(api)
+        state.orders.value = listOf(order)
+        val presenter = OrdersPresenter(state) {
+            state.orders.value = emptyList()
         }
         val failures = presenter.cancellationFailures.test()
         val orders = presenter.orders.test()

@@ -83,7 +83,7 @@ class SettingsViewTest {
                 save(APICredentials("stored-key", "stored-secret"))
             }
             DI {
-                bindSingleton { SettingsPresenter(APIClient(Gson(), preference).client(), preference) {} }
+                bindSingleton { SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {} }
             }
         }
 
