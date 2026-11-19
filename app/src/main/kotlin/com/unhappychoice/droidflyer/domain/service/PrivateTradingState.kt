@@ -22,7 +22,7 @@ internal class PrivateTradingState(
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
     val position = Variable<List<Position>>(emptyList())
-    val balance = Variable(0.0)
+    val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = Session(client)
@@ -31,8 +31,8 @@ internal class PrivateTradingState(
         val previous = session
         session = Session(client)
         previous.positionResponses.onComplete()
+        collateral.value = Collateral(null)
         position.value = emptyList()
-        balance.value = 0.0
         orders.value = emptyList()
         refresh()
     }
@@ -49,7 +49,13 @@ internal class PrivateTradingState(
                     current.positionResponses.onNext(requestId to positions)
                 }
             }
-        bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
+        current.client.getCollateral()
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .subscribeNext { response ->
+                val amount = response["collateral"] as? Number
+                if (current === session && amount != null) collateral.value = Collateral(amount.toDouble())
+            }
         // Unchanged rows keep their order references for cancellation.
         current.client.getChildOrders("FX_BTC_JPY")
             .subscribeOn(requestScheduler)
@@ -91,12 +97,6 @@ internal class PrivateTradingState(
         if (orders.value.none { it === order }) return null
         val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
         return session.client.cancelChildOrder(request)
-    }
-
-    private fun <T : Any> bind(current: Session, source: Observable<T>, target: Variable<T>) {
-        source.subscribeOn(requestScheduler)
-            .observeOn(stateScheduler)
-            .subscribeNext { if (current === session) target.value = it }
     }
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)

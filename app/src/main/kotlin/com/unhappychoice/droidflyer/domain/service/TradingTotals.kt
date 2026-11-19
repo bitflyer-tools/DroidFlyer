@@ -6,14 +6,17 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
 import io.reactivex.Observable
 import io.reactivex.rxkotlin.Observables
 
-data class TradingTotals(val profit: Long, val spread: Long, val balance: Long)
+data class TradingTotals(val profit: Long, val spread: Long, val balance: Long?)
+
+internal data class Collateral(val amount: Double?)
 
 internal fun observeTradingTotals(
     prices: Observable<Double>,
     positions: Observable<List<Position>>,
-    collateral: Observable<Double>
-): Observable<TradingTotals> = Observables.combineLatest(prices, positions, collateral) { price, position, balance ->
+    collateral: Observable<Collateral>
+): Observable<TradingTotals> = Observables.combineLatest(prices, positions, collateral) { price, position, margin ->
     val currentPrice = price.toLong()
     val profit = position.profit(currentPrice).toLong()
-    TradingTotals(profit, currentPrice - position.average().toLong(), balance.toLong() + profit)
+    val balance = margin.amount?.let { it.toLong() + profit }
+    TradingTotals(profit, currentPrice - position.average().toLong(), balance)
 }

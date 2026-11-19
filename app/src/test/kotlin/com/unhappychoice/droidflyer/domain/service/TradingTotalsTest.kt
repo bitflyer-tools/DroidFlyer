@@ -7,7 +7,7 @@ import org.junit.Test
 class TradingTotalsTest {
     private val price = Variable(120.75)
     private val positions = Variable<List<Position>>(emptyList())
-    private val collateral = Variable(1000.75)
+    private val collateral = Variable(Collateral(1000.75))
     private val totals = observeTradingTotals(
         price.asObservable(), positions.asObservable(), collateral.asObservable()
     ).test()
@@ -27,7 +27,7 @@ class TradingTotalsTest {
     @Test
     fun collateralUpdateRecalculatesBalanceAtFixedPrice() {
         positions.value = listOf(position)
-        collateral.value = 1500.75
+        collateral.value = Collateral(1500.75)
 
         totals.assertValues(
             TradingTotals(0L, 120L, 1000L),
@@ -39,7 +39,7 @@ class TradingTotalsTest {
     @Test
     fun priceUpdateUsesLatestPositionAndCollateral() {
         positions.value = listOf(position.copy(price = 110L))
-        collateral.value = 1500.75
+        collateral.value = Collateral(1500.75)
         price.value = 99.75
 
         totals.assertValues(

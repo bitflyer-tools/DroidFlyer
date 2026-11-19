@@ -27,6 +27,29 @@ class PrivateTradingStateTest {
     )
 
     @Test
+    fun rejectedCollateralStaysUnavailableUntilZeroIsLoaded() {
+        accountA.client.getBalance().test().assertValue(emptyList()).assertComplete()
+        val totals = observeTradingTotals(
+            Observable.just(120.0), state.position.asObservable(), state.collateral.asObservable()
+        ).test()
+
+        state.refresh()
+        scheduler.triggerActions()
+        accountA.positions.onNext(emptyList())
+        accountA.collateral.onError(SecurityException("Missing collateral permission"))
+        scheduler.triggerActions()
+        val unavailable = TradingTotals(0L, 120L, null)
+        totals.assertValues(unavailable, unavailable)
+
+        accountA.collateral = PublishSubject.create()
+        state.refresh()
+        scheduler.triggerActions()
+        accountA.collateral.onNext(mapOf("collateral" to 0))
+        scheduler.triggerActions()
+        totals.assertValues(unavailable, unavailable, TradingTotals(0L, 120L, 0L)).assertNoErrors()
+    }
+
+    @Test
     fun switchingClearsAllPrivateDataAndRefreshesTheNewAccount() {
         state.refresh()
         scheduler.triggerActions()
@@ -37,13 +60,13 @@ class PrivateTradingStateTest {
         state.refresh()
         scheduler.triggerActions()
         state.switchAccount(accountB.client)
-        assertPrivateData(emptyList(), 0.0, emptyList())
+        assertPrivateData(emptyList(), null, emptyList())
         assertNull(state.cancelOrder(order))
         scheduler.triggerActions()
 
         accountA.publish(position, 999.0, order)
         scheduler.triggerActions()
-        assertPrivateData(emptyList(), 0.0, emptyList())
+        assertPrivateData(emptyList(), null, emptyList())
 
         val newPosition = position.copy(size = 1.0)
         val newOrder = order.copy()
@@ -125,15 +148,15 @@ class PrivateTradingStateTest {
         assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0)), accountA.sent)
     }
 
-    private fun assertPrivateData(positions: List<Position>, balance: Double, orders: List<ChildOrder>) {
+    private fun assertPrivateData(positions: List<Position>, balance: Double?, orders: List<ChildOrder>) {
         assertEquals(positions, state.position.value)
-        assertEquals(balance, state.balance.value, 0.0)
+        assertEquals(balance, state.collateral.value.amount)
         assertEquals(orders, state.orders.value)
     }
 
     private class TradingApi {
         val positions = PublishSubject.create<List<Position>>()
-        val collateral = PublishSubject.create<Map<String, Any>>()
+        var collateral = PublishSubject.create<Map<String, Any>>()
         val orders = PublishSubject.create<List<ChildOrder>>()
         val sent = mutableListOf<SendChildOrderRequest>()
         val cancelled = mutableListOf<CancelChildOrderRequest>()
@@ -143,6 +166,7 @@ class PrivateTradingStateTest {
         ) { _, method, args ->
             when (method.name) {
                 "getPositions" -> positions.take(1)
+                "getBalance" -> Observable.just(emptyList<Map<String, Any>>())
                 "getCollateral" -> collateral.take(1)
                 "getChildOrders" -> orders.take(1)
                 "sendChildOrder" -> Observable.fromCallable {

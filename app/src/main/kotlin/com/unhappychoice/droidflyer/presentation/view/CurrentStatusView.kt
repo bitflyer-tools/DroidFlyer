@@ -46,7 +46,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
                 binding.spread.text = totals.spread.splitByComma()
                 binding.spread.setCoefficientColor(totals.spread)
 
-                binding.balance.text = "${totals.balance.splitByComma()} JPY"
+                binding.balance.text = totals.balance?.let { "${it.splitByComma()} JPY" } ?: "Balance unavailable"
             }.addTo(bag)
 
         currentStatusService.position.asObservable()
