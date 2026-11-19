@@ -1,6 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
-internal class PositionCloseOrder private constructor(positionSize: Double) {
+internal class PositionCloseOrder private constructor(val positionSize: Double) {
     val side = if (positionSize > 0.0) "SELL" else "BUY"
     val size = Math.abs(positionSize)
 
