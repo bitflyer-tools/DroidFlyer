@@ -15,6 +15,7 @@ import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
+import com.unhappychoice.droidflyer.presentation.executionMessage
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
 import com.unhappychoice.droidflyer.presentation.screen.ChartScreen
@@ -147,7 +148,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showExecution(event: ChildOrderEvent) {
-        val message = getString(R.string.order_executed, event.side ?: "", event.size ?: 0.0, event.price ?: 0L)
+        val message = executionMessage(event)
         Snackbar.make(binding.containerView, message, Snackbar.LENGTH_SHORT).show()
     }
 }
