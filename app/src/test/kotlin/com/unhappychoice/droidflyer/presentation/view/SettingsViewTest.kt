@@ -78,19 +78,20 @@ class SettingsViewTest {
                 .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
                 .build("settings_test")
         }
-        private val module by lazy {
+        private val di by lazy {
             val preference = APITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
-            val presenter = SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {}
-            DI { bindInstance { presenter } }
+            DI {
+                bindInstance { SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {} }
+            }
         }
 
         override fun getSystemService(name: String): Any? =
             if (scope.hasService(name)) scope.getService(name) else super.getSystemService(name)
 
         fun openSettings(): SettingsViewBinding = SettingsViewBinding.inflate(layoutInflater).also {
-            it.root.inject(module)
+            it.root.inject(di)
             setContentView(it.root)
         }
     }

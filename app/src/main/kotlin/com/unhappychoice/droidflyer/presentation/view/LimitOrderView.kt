@@ -11,14 +11,13 @@ import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
-import java.util.concurrent.TimeUnit
 import org.kodein.di.instance
 
 class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, attr) {
@@ -67,29 +66,18 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                     .show()
             }.addTo(bag)
 
-        currentStatusService.board.asObservable()
-            .throttleLast(300, TimeUnit.MILLISECONDS)
-            .subscribeOnComputationObserveOnUI()
+        observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable())
+            .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext {
-                askAdapter.items.value = it.asks.sortedBy { it.price }
-                bidAdapter.items.value = it.bids.sortedByDescending { it.price }
-                askAdapter.notifyDataSetChanged()
-                bidAdapter.notifyDataSetChanged()
+                askAdapter.applyRows(it.asks, it.groupingSize)
+                bidAdapter.applyRows(it.bids, it.groupingSize)
+                binding.groupingTextView.text = it.groupingSize.toString()
             }.addTo(bag)
 
         currentStatusService.orders.asObservable().bindTo(askAdapter.myOrders).addTo(bag)
         currentStatusService.orders.asObservable().bindTo(bidAdapter.myOrders).addTo(bag)
 
         presenter.apply {
-            groupingSize.asObservable()
-                .subscribeNext {
-                    binding.groupingTextView.text = it.toString()
-                    askAdapter.groupSize.value = it
-                    bidAdapter.groupSize.value = it
-                    askAdapter.notifyDataSetChanged()
-                    bidAdapter.notifyDataSetChanged()
-                }.addTo(bag)
-
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
             unitSize.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.size).addTo(bag)
         }
