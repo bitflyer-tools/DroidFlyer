@@ -75,7 +75,7 @@ class MarketOrderPresenter internal constructor(
         order
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext { onAccepted() }
+            .subscribe({ onAccepted() }, { notify(R.string.market_order_failed) })
             .addTo(bag)
     }
 

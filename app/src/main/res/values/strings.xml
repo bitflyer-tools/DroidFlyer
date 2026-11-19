@@ -25,11 +25,12 @@
 
     <string name="cleared_all_positions">Cleared all positions</string>
     <string name="market_order_accepted">Market order accepted</string>
+    <string name="market_order_failed">Could not submit market order</string>
     <string name="ordered_buy">Ordered BUY / %1$f / %2$d</string>
     <string name="ordered_sell">Ordered SELL / %1$f / %2$d</string>
     <string name="api_key_not_saved">API key is incorrect</string>
     <string name="api_key_saved">Saved API key</string>
-    <string name="order_executed">Executed %1$s / %2$f / %3$d</string>
+    <string name="order_executed">Executed %1$s / %2$s / %3$f / %4$d</string>
     <string name="chart_market" translatable="false">BTC-CFD/JPY</string>
     <string name="chart_loading">Loading chart</string>
     <string name="chart_load_error">Could not load the chart.</string>

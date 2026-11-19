@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.di
 
 import com.unhappychoice.droidflyer.DroidFlyerApplication
 import com.unhappychoice.droidflyer.MainActivity
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
@@ -20,16 +21,17 @@ import org.robolectric.annotation.Config
 @Config(manifest = Config.NONE, application = DroidFlyerApplication::class, sdk = [30])
 class RestModuleTest {
     @Test
-    fun sharesRestClientWithOrderPresenter() {
+    fun sharesRestClientWithOrderPresenterAndStatusService() {
         val application = RuntimeEnvironment.getApplication() as DroidFlyerApplication
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         val graph = DI {
-            import(restModule(application))
+            import(applicationModule(application))
             import(activityModule(activity))
         }
 
         val client = graph.direct.instance<APIClientV1>()
         assertSame(client, graph.direct.instance<APIClient>().client())
         assertSame(client, graph.direct.instance<LimitOrderPresenter>().apiClient)
+        assertSame(client, graph.direct.instance<CurrentStatusService>().apiClient)
     }
 }
