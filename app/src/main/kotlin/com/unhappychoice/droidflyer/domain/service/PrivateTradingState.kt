@@ -25,8 +25,16 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = Session(client)
+    private var disposed = false
+
+    fun dispose() {
+        disposed = true
+        session.positionResponses.onComplete()
+    }
 
     fun switchAccount(client: APIClientV1) {
+        if (disposed) return
+
         val previous = session
         session = Session(client)
         previous.positionResponses.onComplete()
@@ -36,6 +44,8 @@ internal class PrivateTradingState(
     }
 
     fun refresh(): Completable = Completable.defer {
+        if (disposed) return@defer Completable.complete()
+
         val current = session
         val requestId = ++current.positionRequestId
         Completable.mergeArray(

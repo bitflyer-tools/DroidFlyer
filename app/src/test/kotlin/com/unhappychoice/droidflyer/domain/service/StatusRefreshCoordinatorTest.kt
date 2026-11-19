@@ -5,6 +5,7 @@ import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.CompletableSubject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.util.concurrent.TimeUnit.SECONDS
 
@@ -55,6 +56,25 @@ class StatusRefreshCoordinatorTest {
         assertEquals(1, requests)
         coordinator.request(followUp = false)
         assertEquals(2, requests)
+    }
+
+    @Test
+    fun disposalCancelsTheActiveRefreshAndDropsPendingRequests() {
+        val response = CompletableSubject.create()
+        var requests = 0
+        val coordinator = StatusRefreshCoordinator {
+            requests++
+            response
+        }
+
+        coordinator.request(followUp = false)
+        coordinator.request(followUp = true)
+        coordinator.dispose()
+
+        assertFalse(response.hasObservers())
+        response.onComplete()
+        coordinator.request(followUp = true)
+        assertEquals(1, requests)
     }
 
     @Test

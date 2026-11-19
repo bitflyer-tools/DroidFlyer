@@ -74,11 +74,19 @@ class CurrentStatusService internal constructor(
         updateStatus()
     }
 
+    fun dispose() {
+        bag.dispose()
+        statusRefresh.dispose()
+        privateState.dispose()
+    }
+
     fun updateStatus() = statusRefresh.request(followUp = true)
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
     internal fun switchAccount(client: APIClientV1) {
+        if (bag.isDisposed) return
+
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
         privateState.switchAccount(client)

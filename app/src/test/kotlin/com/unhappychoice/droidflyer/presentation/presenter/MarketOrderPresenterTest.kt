@@ -11,12 +11,15 @@ import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import retrofit2.HttpException
+import retrofit2.Response
 
 class MarketOrderPresenterTest {
     private val apiClient = Mockito.mock(APIClientV1::class.java)
@@ -64,6 +67,27 @@ class MarketOrderPresenterTest {
         presenter.sell()
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
+    @Test
+    fun rejectedBuyReportsFailureAndRestoresControls() {
+        presenter.amount.value = 0.5
+
+        assertRejected("BUY", presenter::buy)
+    }
+
+    @Test
+    fun rejectedSellReportsFailureAndRestoresControls() {
+        presenter.amount.value = 0.5
+
+        assertRejected("SELL", presenter::sell)
+    }
+
+    @Test
+    fun rejectedCloseReportsFailureAndRestoresControls() {
+        status.position.value = listOf(openPosition("BUY", 0.5))
+
+        assertRejected("SELL", ::confirmPositionClose)
     }
 
     @Test
@@ -163,6 +187,22 @@ class MarketOrderPresenterTest {
         positionResponse.onNext(emptyList())
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
+    private fun assertRejected(side: String, submit: () -> Unit) {
+        val response = PublishSubject.create<Map<String, Any>>()
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5)
+        Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(response)
+        val loading = presenter.isLoading.asObservable().test()
+
+        submit()
+        loading.assertValues(false, true)
+        assertEquals(emptyList<Int>(), messages)
+
+        response.onError(HttpException(Response.error<Any>(400, "".toResponseBody())))
+
+        loading.assertValues(false, true, false)
+        assertEquals(listOf(R.string.market_order_failed), messages)
     }
 
     private fun confirmPositionClose() {
