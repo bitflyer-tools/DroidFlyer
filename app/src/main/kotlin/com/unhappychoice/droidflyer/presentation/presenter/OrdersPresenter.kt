@@ -1,9 +1,8 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
 import io.reactivex.Observable
@@ -17,12 +16,13 @@ import mortar.ViewPresenter
 import java.util.concurrent.TimeUnit
 
 class OrdersPresenter internal constructor(
-    private val api: APIClientV1,
-    val orders: Observable<List<ChildOrder>>,
+    private val privateState: PrivateTradingState,
     private val refreshOrders: () -> Unit
 ) : ViewPresenter<OrdersView>() {
-    constructor(api: APIClientV1, currentStatusService: CurrentStatusService) :
-        this(api, currentStatusService.orders.asObservable(), currentStatusService::updateStatus)
+    constructor(currentStatusService: CurrentStatusService) :
+        this(currentStatusService.privateState, currentStatusService::updateStatus)
+
+    val orders = privateState.orders.asObservable()
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()
 
@@ -33,6 +33,7 @@ class OrdersPresenter internal constructor(
         super.onEnterScope(scope)
 
         Observable.interval(6, TimeUnit.SECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { refreshOrders() }
             .addTo(bag)
     }
@@ -43,8 +44,8 @@ class OrdersPresenter internal constructor(
     }
 
     fun cancelOrder(order: ChildOrder) {
-        val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
-        api.cancelChildOrder(request)
+        val cancellation = privateState.cancelOrder(order) ?: return
+        cancellation
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
