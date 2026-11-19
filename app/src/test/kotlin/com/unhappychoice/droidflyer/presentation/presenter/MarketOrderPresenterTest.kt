@@ -4,6 +4,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -12,6 +13,7 @@ import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
@@ -127,7 +129,7 @@ class MarketOrderPresenterTest {
         status.position.value = listOf(openPosition("SELL", 0.5))
 
         presenter.clearPosition(confirmed) { updated ->
-            assertEquals("BUY", updated.side)
+            assertEquals("BUY", updated.order.side)
             assertEquals(emptyList<Int>(), messages)
             Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
                 SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)
@@ -138,6 +140,29 @@ class MarketOrderPresenterTest {
         assertEquals(listOf(R.string.market_order_accepted), messages)
         positionResponse.onNext(emptyList())
         assertEquals(listOf(R.string.market_order_accepted, R.string.cleared_all_positions), messages)
+    }
+
+    @Test
+    fun newAccountPositionsDoNotConfirmPreviousAccountClosure() {
+        stubAcceptance("SELL")
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        val oldBoard = PublishSubject.create<Board>()
+        Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(oldBoard, Observable.empty())
+        confirmPositionClose()
+        status.updateStatus()
+
+        val newAccount = Mockito.mock(APIClientV1::class.java)
+        Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
+        Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        status.switchAccount(newAccount)
+        assertFalse(oldBoard.hasObservers())
+        assertFalse(positionResponse.hasObservers())
+        assertEquals(emptyList<Position>(), status.position.value)
+        Mockito.verify(newAccount).getPositions()
+        positionResponse.onNext(emptyList())
+
+        assertEquals(listOf(R.string.market_order_accepted), messages)
     }
 
     private fun confirmPositionClose() {

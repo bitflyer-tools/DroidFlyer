@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import io.reactivex.Completable
+import io.reactivex.Observable
 
 internal class StatusRefreshCoordinator(private val refresh: () -> Completable) {
     private val lock = Any()
@@ -36,3 +37,9 @@ internal class StatusRefreshCoordinator(private val refresh: () -> Completable) 
         startRefresh()
     }
 }
+
+internal fun <T : Any> Observable<T>.publishStatus(publish: (T) -> Unit): Completable =
+    doOnNext { publish(it) }
+        .ignoreElements()
+        .doOnError { it.printStackTrace() }
+        .onErrorComplete()

@@ -3,9 +3,11 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
 import com.github.unhappychoice.rxsnackbar.withErrorSnackBar
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
@@ -16,12 +18,17 @@ import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
 class SettingsPresenter internal constructor(
-    private val api: APIClientV1,
+    private val api: APIClient,
     private val preference: APITokenPreference,
+    private val switchAccount: (APIClientV1) -> Unit,
     private val authenticate: () -> Unit
 ) : ViewPresenter<SettingsView>() {
-    constructor(api: APIClientV1, preference: APITokenPreference, realtimeClient: RealtimeClient) :
-        this(api, preference, realtimeClient::authenticate)
+    constructor(
+        api: APIClient,
+        preference: APITokenPreference,
+        currentStatusService: CurrentStatusService,
+        realtimeClient: RealtimeClient
+    ) : this(api, preference, currentStatusService::switchAccount, realtimeClient::authenticate)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
@@ -39,6 +46,7 @@ class SettingsPresenter internal constructor(
     }
 
     fun save() {
+        bag.clear()
         saveCredentials()
             .withErrorSnackBar(view, view.context.getString(R.string.api_key_not_saved))
             .subscribeNextWithSnackBar(view, view.context.getString(R.string.api_key_saved))
@@ -47,10 +55,14 @@ class SettingsPresenter internal constructor(
 
     internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
         val submitted = APICredentials(key.value, secret.value)
-        return api.getBalance(submitted)
+        return api.client().getBalance(submitted)
             .subscribeOnIoObserveOnUI()
             .doOnNext {
-                preference.save(submitted)
+                val saved = preference.read()
+                if (saved.key != submitted.key || saved.secret != submitted.secret) {
+                    preference.save(submitted)
+                    switchAccount(api.client(submitted))
+                }
                 authenticate()
             }
     }

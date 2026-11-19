@@ -9,7 +9,6 @@ import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
@@ -32,7 +31,6 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         }
 
         presenter.orders
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { orderAdapter.updateOrders(it) }
             .addTo(bag)
 
@@ -41,7 +39,6 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             .addTo(bag)
 
         orderAdapter.clickCancel
-            .subscribeOnIoObserveOnUI()
             .subscribeNext { presenter.cancelOrder(it) }
             .addTo(bag)
     }

@@ -11,40 +11,42 @@ import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.subjects.CompletableSubject
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<(Board) -> Board>,
-    orderEvents: Observable<Unit>
+    orderEvents: Observable<Unit>,
+    privateClient: APIClientV1 = apiClient
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
         Observable.merge(
             realtimeClient.childOrderEvents.map { Unit },
             realtimeClient.parentOrderEvents.map { Unit }
-        )
+        ),
+        privateClient
     )
+
+    internal val privateState = PrivateTradingState(privateClient)
 
     val currentPrice = Variable(0.0)
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
-    val position = Variable<List<Position>>(listOf())
-    val balance = Variable(0.0)
+    val position = privateState.position
+    val balance = privateState.balance
     val tradingTotals = observeTradingTotals(
         currentPrice.asObservable(), position.asObservable(), balance.asObservable()
     )
     val board = Variable(Board(0.0, listOf(), listOf()))
-    val orders = Variable<List<ChildOrder>>(listOf())
+    val orders = privateState.orders
 
-    private val positionRequestId = AtomicLong()
-    private val positionResponses = PublishSubject.create<Pair<Long, List<Position>>>()
     private val bag = CompositeDisposable()
+    private var accountChanged = CompletableSubject.create()
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
 
     init {
@@ -72,39 +74,28 @@ class CurrentStatusService internal constructor(
         updateStatus()
     }
 
-    fun observeNewPositionResponses(): Observable<List<Position>> {
-        val latestRequestId = positionRequestId.get()
-        return positionResponses
-            .filter { (requestId, _) -> requestId > latestRequestId }
-            .map { (_, positions) -> positions }
-    }
-
     fun updateStatus() = statusRefresh.request(followUp = true)
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
-    private fun refreshStatus(): Completable {
-        val requestId = positionRequestId.incrementAndGet()
-        return Completable.mergeArray(
-            apiClient.getPositions().publishStatus { positions ->
-                position.value = positions
-                positionResponses.onNext(requestId to positions)
-            },
-            apiClient.getCollateral().map { it["collateral"] as? Double ?: 0.0 }.publishTo(balance),
-            apiClient.getBoard("FX_BTC_JPY").publishTo(board),
-            apiClient.getChildOrders("FX_BTC_JPY").publishTo(orders)
-        )
+    internal fun switchAccount(client: APIClientV1) {
+        val previous = accountChanged
+        accountChanged = CompletableSubject.create()
+        privateState.switchAccount(client)
+        // Queue the new account before ending an in-flight refresh.
+        updateStatus()
+        previous.onComplete()
     }
 
-    private fun <T : Any> Observable<T>.publishTo(variable: Variable<T>): Completable =
-        publishStatus { variable.value = it }
-
-    private fun <T : Any> Observable<T>.publishStatus(publish: (T) -> Unit): Completable =
-        subscribeOnIoObserveOnUI()
-            .doOnNext { publish(it) }
-            .ignoreElements()
-            .doOnError { it.printStackTrace() }
-            .onErrorComplete()
+    private fun refreshStatus(): Completable = Completable.ambArray(
+        accountChanged,
+        Completable.mergeArray(
+            privateState.refresh(),
+            apiClient.getBoard("FX_BTC_JPY")
+                .subscribeOnIoObserveOnUI()
+                .publishStatus { board.value = it }
+        )
+    )
 }
 
 internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {

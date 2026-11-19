@@ -4,6 +4,7 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.MortarScope
@@ -17,6 +18,7 @@ class OrderPresenter(val currentStatusService: CurrentStatusService) : ViewPrese
         super.onEnterScope(scope)
 
         Observable.interval(6, TimeUnit.SECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { currentStatusService.pollStatus() }
             .addTo(bag)
     }
