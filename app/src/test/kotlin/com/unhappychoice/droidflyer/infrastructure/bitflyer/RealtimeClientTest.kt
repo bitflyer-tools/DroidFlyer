@@ -77,7 +77,7 @@ class RealtimeClientTest {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         try {
-            val service = CurrentStatusService(api, client)
+            val service = CurrentStatusService(api, client, api)
             socket.receive(Socket.EVENT_CONNECT)
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":123456.0}]"""))
             assertEquals(123456.0, service.currentPrice.value, 0.0)

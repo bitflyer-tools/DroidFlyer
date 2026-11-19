@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import com.unhappychoice.droidflyer.domain.service.PositionCloseOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
