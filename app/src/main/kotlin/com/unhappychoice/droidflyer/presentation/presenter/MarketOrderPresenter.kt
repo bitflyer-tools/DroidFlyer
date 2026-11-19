@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
@@ -59,7 +60,10 @@ class MarketOrderPresenter internal constructor(
         }, reconfirm = reconfirm) ?: return
 
         close.map { R.string.cleared_all_positions }
-            .onErrorReturnItem(R.string.close_positions_incomplete)
+            .onErrorReturn { error ->
+                if (error is ClosePositionService.InitialOrderSubmissionException) R.string.market_order_failed
+                else R.string.close_positions_incomplete
+            }
             .startLoading()
             .subscribeNext { message ->
                 currentStatusService.updateStatus()
@@ -74,10 +78,10 @@ class MarketOrderPresenter internal constructor(
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
-            .subscribeNext {
+            .subscribe({
                 notify(R.string.market_order_accepted)
                 currentStatusService.updateStatus()
-            }
+            }, { notify(R.string.market_order_failed) })
             .addTo(bag)
     }
 

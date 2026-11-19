@@ -11,6 +11,8 @@ import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.CompletableSubject
 
@@ -25,8 +27,17 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = Session(client)
+    private val requests = CompositeDisposable()
+
+    fun dispose() {
+        requests.dispose()
+        session.ended.onComplete()
+    }
 
     fun switchAccount(client: APIClientV1) {
+        if (requests.isDisposed) return
+
+        requests.clear()
         val previous = session
         session = Session(client)
         previous.ended.onComplete()
@@ -37,6 +48,8 @@ internal class PrivateTradingState(
     }
 
     fun refresh() {
+        if (requests.isDisposed) return
+
         val current = session
         bind(current, current.client.getPositions(), position)
         bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
@@ -45,9 +58,10 @@ internal class PrivateTradingState(
             .subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session && orders.value != it) orders.value = it }
+            .addTo(requests)
     }
 
-    fun isCurrent(confirmation: CloseConfirmation): Boolean = confirmation.session === session
+    fun isCurrent(confirmation: CloseConfirmation): Boolean = !requests.isDisposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
         return PositionCloseOrder.from(position.value.wholeSize())?.let { CloseConfirmation(session, it) }
@@ -84,6 +98,7 @@ internal class PrivateTradingState(
         source.subscribeOn(requestScheduler)
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session) target.value = it }
+            .addTo(requests)
     }
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)

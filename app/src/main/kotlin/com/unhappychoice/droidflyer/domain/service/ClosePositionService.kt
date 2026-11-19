@@ -25,7 +25,7 @@ internal class ClosePositionService(
     private fun closeRemaining(
         size: Double,
         confirmedSize: Double,
-        onAccepted: () -> Unit = {}
+        onFirstAccepted: (() -> Unit)? = null
     ): Single<Unit> {
         if (size == 0.0) return Single.just(Unit)
         if (size.sign != confirmedSize.sign || abs(size) > abs(confirmedSize)) {
@@ -42,10 +42,13 @@ internal class ClosePositionService(
             PRODUCT_CODE, "MARKET", side, null, nextOrderSize(quantity), timeInForce = "IOC"
         )
         return apiClient.sendChildOrder(request).singleOrError()
+            .onErrorResumeNext { error ->
+                Single.error(if (onFirstAccepted != null) InitialOrderSubmissionException(error) else error)
+            }
             .flatMap { response ->
                 val acceptanceId = response["child_order_acceptance_id"] as? String
                 check(!acceptanceId.isNullOrBlank()) { "Missing close order acceptance ID" }
-                onAccepted()
+                onFirstAccepted?.invoke()
                 executedSize(acceptanceId)
             }
             .flatMap { filled ->
@@ -82,6 +85,8 @@ internal class ClosePositionService(
             .repeatWhen { it.delay(1, TimeUnit.SECONDS, scheduler) }
             .firstOrError()
             .timeout(15, TimeUnit.SECONDS, scheduler)
+
+    class InitialOrderSubmissionException(cause: Throwable) : RuntimeException(cause)
 
     companion object {
         const val ORDER_SIZE_LIMIT = 10.0

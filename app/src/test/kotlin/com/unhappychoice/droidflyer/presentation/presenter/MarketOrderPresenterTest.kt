@@ -12,11 +12,14 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import retrofit2.HttpException
+import retrofit2.Response
 
 class MarketOrderPresenterTest {
     private val scheduler = TestScheduler()
@@ -67,6 +70,45 @@ class MarketOrderPresenterTest {
         scheduler.triggerActions()
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
+    @Test
+    fun rejectedBuyReportsFailureAndRestoresControls() {
+        presenter.amount.value = 0.5
+
+        assertRejected("BUY", submit = presenter::buy)
+    }
+
+    @Test
+    fun rejectedSellReportsFailureAndRestoresControls() {
+        presenter.amount.value = 0.5
+
+        assertRejected("SELL", submit = presenter::sell)
+    }
+
+    @Test
+    fun rejectedCloseReportsFailureAndRestoresControls() {
+        status.position.value = listOf(openPosition("BUY", 0.5))
+
+        Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
+            .thenReturn(Observable.just(status.position.value))
+
+        assertRejected("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+    }
+
+    @Test
+    fun rejectionAfterAnAcceptedCloseOrderReportsIncompleteClosure() {
+        stubClose("SELL", "BUY", positionSize = 12.0)
+        val nextOrder = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 2.0, timeInForce = "IOC")
+        Mockito.`when`(apiClient.sendChildOrder(nextOrder)).thenReturn(
+            Observable.error(HttpException(Response.error<Any>(400, "".toResponseBody())))
+        )
+
+        confirmPositionClose()
+        closePositionResponse.onNext(listOf(openPosition("BUY", 2.0)))
+
+        assertEquals(listOf(R.string.market_order_accepted, R.string.close_positions_incomplete), messages)
+        assertEquals(false, presenter.isLoading.value)
     }
 
     @Test
@@ -135,6 +177,23 @@ class MarketOrderPresenterTest {
         assertEquals(false, presenter.isLoading.value)
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
+    private fun assertRejected(side: String, timeInForce: String = "GTC", submit: () -> Unit) {
+        val response = PublishSubject.create<Map<String, Any>>()
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5, timeInForce = timeInForce)
+        Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(response)
+        val loading = presenter.isLoading.asObservable().test()
+
+        submit()
+        scheduler.triggerActions()
+        loading.assertValues(false, true)
+        assertEquals(emptyList<Int>(), messages)
+
+        response.onError(HttpException(Response.error<Any>(400, "".toResponseBody())))
+
+        loading.assertValues(false, true, false)
+        assertEquals(listOf(R.string.market_order_failed), messages)
     }
 
     private fun confirmPositionClose() {
