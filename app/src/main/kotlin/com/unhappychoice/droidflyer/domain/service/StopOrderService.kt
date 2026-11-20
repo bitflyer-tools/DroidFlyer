@@ -122,7 +122,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
                     val updated = stop.copy(event = event)
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
-                            updated.status == StopOrderStatus.PARTIALLY_EXECUTED -> reconcileChildExecution(client, updated)
+                            updated.isPartiallyExecuted -> reconcileChildExecution(client, updated)
                         event == null && updated.canCancel && (cached?.triggerPrice == null || recover) ->
                             reconcileChildExecution(client, updated)
                         else -> Observable.just(updated)

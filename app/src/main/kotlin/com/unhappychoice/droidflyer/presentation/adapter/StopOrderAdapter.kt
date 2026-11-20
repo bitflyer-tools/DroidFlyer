@@ -55,11 +55,21 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
                 ?: context.getString(R.string.stop_price_unavailable)
             details.text = context.getString(
                 R.string.stop_order_row, side, order.parent.size.toString(), trigger,
-                context.getString(order.status.label()), order.acceptanceId
+                statusText(order), order.acceptanceId
             )
             cancelButton.visibility = if (order.canCancel) View.VISIBLE else View.GONE
             cancelButton.isEnabled = order.acceptanceId !in cancelling
             cancelButton.setOnClickListener { cancel(order) }
+        }
+
+        private fun statusText(order: StopOrder): String {
+            val status = order.status
+            val label = context.getString(status.label())
+            return if (order.isPartiallyExecuted && (status == StopOrderStatus.CANCELED || status == StopOrderStatus.EXPIRED)) {
+                context.getString(R.string.stop_status_with_executed_size, label, order.parent.executedSize.toString())
+            } else {
+                label
+            }
         }
     }
 

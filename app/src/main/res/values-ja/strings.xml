@@ -50,6 +50,7 @@
     <string name="stop_load_retry">ストップ注文を読み込めませんでした。タップして再試行できます。</string>
     <string name="stop_price">トリガー：%1$,d JPY</string>
     <string name="stop_price_unavailable">トリガー価格を取得できません</string>
+    <string name="stop_status_with_executed_size">%1$s（%2$s BTC 約定済み）</string>
     <string name="stop_order_row">ストップ · %1$s %2$s BTC\n%3$s · %4$s\n%5$s</string>
     <string name="stop_waiting">受付済み・発動待ち</string>
     <string name="stop_triggered">発動済み</string>

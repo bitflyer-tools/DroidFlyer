@@ -54,6 +54,7 @@
     <string name="stop_load_retry">Could not load stop orders. Tap to retry.</string>
     <string name="stop_price">Trigger: %1$,d JPY</string>
     <string name="stop_price_unavailable">Trigger price unavailable</string>
+    <string name="stop_status_with_executed_size">%1$s (%2$s BTC executed)</string>
     <string name="stop_order_row">Stop · %1$s %2$s BTC\n%3$s · %4$s\n%5$s</string>
     <string name="stop_waiting">Accepted · waiting for trigger</string>
     <string name="stop_triggered">Triggered</string>

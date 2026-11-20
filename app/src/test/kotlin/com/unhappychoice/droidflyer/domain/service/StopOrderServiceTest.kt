@@ -159,6 +159,37 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun canceledStopRetainsAndRefreshesItsPartialExecution() {
+        val service = service()
+        executedSize = 0.003
+        service.refresh()
+
+        parentState = "CANCELED"
+        executedSize = 0.0
+        childOrders = marketChild(0.005)
+        service.refresh()
+
+        val order = service.orders.value.single()
+        assertEquals(StopOrderStatus.CANCELED, order.status)
+        assertEquals(0.005, order.parent.executedSize, 0.0)
+        assertFalse(order.canCancel)
+    }
+
+    @Test
+    fun expiryEventPreservesPartialExecutionWhileParentStateIsActive() {
+        val service = service()
+        executedSize = 0.005
+        service.refresh()
+
+        service.onEvents(listOf(triggerEvent().copy(eventType = "EXPIRE")))
+
+        val order = service.orders.value.single()
+        assertEquals(StopOrderStatus.EXPIRED, order.status)
+        assertEquals(0.005, order.parent.executedSize, 0.0)
+        assertFalse(order.canCancel)
+    }
+
+    @Test
     fun cancelsByParentAcceptanceIdAndAllowsRetryAfterFailure() {
         val service = service()
         service.refresh()
