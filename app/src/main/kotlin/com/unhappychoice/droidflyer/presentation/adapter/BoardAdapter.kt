@@ -22,11 +22,19 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     val clickItems = PublishSubject.create<Order>()
 
     private var rows = emptyList<Row>()
+    private var groupingSize = 1L
+    private var myOrders = emptyList<ChildOrder>()
+    private var outstandingSizes = emptyMap<Long, Double>()
 
     fun applyRows(orders: List<Order>, groupingSize: Long, myOrders: List<ChildOrder>) {
+        if (this.groupingSize != groupingSize || this.myOrders !== myOrders) {
+            outstandingSizes = type.personalOutstandingSizes(myOrders, groupingSize)
+            this.groupingSize = groupingSize
+            this.myOrders = myOrders
+        }
         val previous = rows
         val next = orders.map { order ->
-            Row(order, groupingSize, type.personalOutstandingSize(myOrders, order.price, groupingSize))
+            Row(order, groupingSize, outstandingSizes[order.price])
         }
         if (previous == next) return
         val diff = DiffUtil.calculateDiff(RowDiff(previous, next))
@@ -99,16 +107,17 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
 }
 
 sealed class BoardType(private val side: String) {
-    internal fun personalOutstandingSize(orders: List<ChildOrder>, price: Long, groupSize: Long): Double? =
-        orders.filter { it.side == side && groupedPrice(it, groupSize) == price }
-            .takeIf { it.isNotEmpty() }
-            ?.sumOf { it.outstandingSize }
-
     abstract fun groupedPrice(order: ChildOrder, size: Long): Long
     abstract fun groupBySize(orders: List<Order>, size: Long): List<Order>
     abstract fun sizeDirection(): Int
     abstract fun priceDirection(): Int
     abstract fun color(): Int
+
+    internal fun personalOutstandingSizes(orders: List<ChildOrder>, groupSize: Long): Map<Long, Double> =
+        orders.asSequence()
+            .filter { it.side == side }
+            .groupingBy { groupedPrice(it, groupSize) }
+            .fold(0.0) { total, order -> total + order.outstandingSize }
 
     object Ask : BoardType("SELL") {
         override fun groupedPrice(order: ChildOrder, size: Long) = order.ceiledPrice(size)

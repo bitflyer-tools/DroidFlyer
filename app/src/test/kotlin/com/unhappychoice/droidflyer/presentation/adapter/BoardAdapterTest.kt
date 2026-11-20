@@ -107,6 +107,69 @@ class BoardAdapterTest {
         assertEquals("", mineSize.text.toString())
     }
 
+    @Test
+    fun personalQuantityTracksOrderChangesAndRegroupingAcrossBoardUpdates() {
+        val context = RuntimeEnvironment.getApplication()
+        val adapter = BoardAdapter(context, BoardType.Ask)
+        val holder = createHolder(adapter)
+        val row = holder.view
+        val personalSize = row.findViewById<TextView>(R.id.mineSize)
+        val order = personalBid().copy(side = "SELL", outstandingSize = 0.08)
+        adapter.applyRows(listOf(Order(110L, 1.0)), groupingSize = 10L, myOrders = listOf(order))
+
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.VISIBLE, personalSize.visibility)
+        assertEquals("0.08", personalSize.text.toString())
+
+        val partiallyFilled = listOf(order.copy(outstandingSize = 0.03))
+        adapter.applyRows(listOf(Order(110L, 2.0)), groupingSize = 10L, myOrders = partiallyFilled)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals("0.03", personalSize.text.toString())
+
+        adapter.applyRows(listOf(Order(101L, 1.0), Order(103L, 2.0)), groupingSize = 1L, myOrders = partiallyFilled)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.VISIBLE, personalSize.visibility)
+        assertEquals("0.03", personalSize.text.toString())
+        adapter.onBindViewHolder(holder, 1)
+        assertEquals(View.GONE, personalSize.visibility)
+
+        adapter.applyRows(listOf(Order(110L, 2.0)), groupingSize = 10L, myOrders = partiallyFilled)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.VISIBLE, personalSize.visibility)
+        assertEquals("0.03", personalSize.text.toString())
+
+        adapter.applyRows(listOf(Order(110L, 2.0)), groupingSize = 10L, myOrders = emptyList())
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.GONE, personalSize.visibility)
+        assertEquals("", personalSize.text.toString())
+    }
+
+    @Test
+    fun publicBoardUpdatesReusePersonalQuantitiesWithoutReadingOrders() {
+        val context = RuntimeEnvironment.getApplication()
+        val adapter = BoardAdapter(context, BoardType.Bid)
+        val holder = createHolder(adapter)
+        val row = holder.view
+        var orderReads = 0
+        val personalOrders = object : AbstractList<ChildOrder>() {
+            override val size = 1
+
+            override fun get(index: Int): ChildOrder {
+                orderReads++
+                return personalBid().copy(price = 100, outstandingSize = 0.04)
+            }
+        }
+        adapter.applyRows(listOf(Order(100L, 1.0)), groupingSize = 1L, myOrders = personalOrders)
+        val indexedOrderReads = orderReads
+
+        listOf(2.0, 3.0).forEach { size ->
+            adapter.applyRows(listOf(Order(100L, size)), groupingSize = 1L, myOrders = personalOrders)
+            adapter.onBindViewHolder(holder, 0)
+            assertEquals("0.04", row.findViewById<TextView>(R.id.mineSize).text.toString())
+        }
+        assertEquals(indexedOrderReads, orderReads)
+    }
+
     private fun BoardAdapter.recordChanges() = mutableListOf<String>().also { changes ->
         registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
             override fun onChanged() { changes.add("invalidate") }
