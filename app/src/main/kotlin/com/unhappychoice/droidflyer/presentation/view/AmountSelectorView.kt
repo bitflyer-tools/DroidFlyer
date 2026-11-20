@@ -7,14 +7,14 @@ import android.text.Spanned
 import android.text.method.NumberKeyListener
 import android.util.AttributeSet
 import android.view.LayoutInflater
-import com.jakewharton.rxbinding2.view.clicks
-import com.jakewharton.rxbinding2.widget.textChanges
 import com.unhappychoice.droidflyer.databinding.AmountSelectorViewBinding
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.clicks
+import com.unhappychoice.droidflyer.presentation.view.core.textChanges
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 import java.math.BigDecimal

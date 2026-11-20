@@ -22,7 +22,7 @@ class ChartView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         super.onAttachedToWindow()
         presenter.takeView(this)
         binding.chartRetry.setOnClickListener { loadPrices() }
-        loadPrices()
+        presenter.cachedPrices()?.let(::showPrices) ?: loadPrices()
     }
 
     override fun onDetachedFromWindow() {
@@ -46,6 +46,7 @@ class ChartView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
         )
         binding.priceChart.showPrices(prices)
         binding.chartLoading.isVisible = false
+        binding.chartError.isVisible = false
         binding.chartContent.isVisible = true
     }
 

@@ -16,15 +16,26 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
     val activity: MainActivity by instance()
     val presenter: OrderPresenter by instance()
     private val binding by lazy { OrderViewBinding.bind(this) }
+    private var pagerConfigured = false
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
 
         setupStyle()
-
         binding.header.inject(activity.module)
+        if (!pagerConfigured) {
+            setupPager()
+            pagerConfigured = true
+        }
+    }
 
+    override fun onDetachedFromWindow() {
+        presenter.dropView(this)
+        super.onDetachedFromWindow()
+    }
+
+    private fun setupPager() {
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.market)))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.limit)))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.orders)))
@@ -45,11 +56,6 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
 
         binding.viewPager.adapter = OrderViewPagerAdapter(context, activity.module)
         binding.viewPager.addOnPageChangeListener(TabLayout.TabLayoutOnPageChangeListener(binding.tabLayout))
-    }
-
-    override fun onDetachedFromWindow() {
-        presenter.dropView(this)
-        super.onDetachedFromWindow()
     }
 
     private fun setupStyle() {
