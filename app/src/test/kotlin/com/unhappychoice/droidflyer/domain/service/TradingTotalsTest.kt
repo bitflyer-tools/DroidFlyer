@@ -49,4 +49,16 @@ class TradingTotalsTest {
             TradingTotals(-5L, -11L, 1495L)
         )
     }
+
+    @Test
+    fun shortPositionSpreadIsPositiveBelowEntryAndNegativeAboveEntry() {
+        positions.value = listOf(position.copy(side = "SELL"))
+        price.value = 80.75
+
+        totals.assertValues(
+            TradingTotals(0L, 120L, 1000L),
+            TradingTotals(-10L, -20L, 990L),
+            TradingTotals(10L, 20L, 1010L)
+        )
+    }
 }

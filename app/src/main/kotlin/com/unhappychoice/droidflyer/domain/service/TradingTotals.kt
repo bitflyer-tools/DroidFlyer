@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Observable
 import io.reactivex.rxkotlin.Observables
 
@@ -15,5 +16,7 @@ internal fun observeTradingTotals(
 ): Observable<TradingTotals> = Observables.combineLatest(prices, positions, collateral) { price, position, balance ->
     val currentPrice = price.toLong()
     val profit = position.profit(currentPrice).toLong()
-    TradingTotals(profit, currentPrice - position.average().toLong(), balance.toLong() + profit)
+    val priceChange = currentPrice - position.average().toLong()
+    val spread = if (position.wholeSize() < 0.0) -priceChange else priceChange
+    TradingTotals(profit, spread, balance.toLong() + profit)
 }
