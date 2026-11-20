@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
@@ -12,9 +13,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChi
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
-import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
@@ -26,15 +26,14 @@ class MarketOrderPresenter internal constructor(
     constructor(apiClient: APIClientV1, currentStatusService: CurrentStatusService) : this(
         apiClient,
         currentStatusService,
-        MarketOrderPresenter::showMessage
+        notify = MarketOrderPresenter::showMessage
     )
 
     override val isLoading = Variable(false)
     override val unitSize = Variable(1.0)
     override val amount = Variable(0.0)
 
-    private val closeConfirmation = SerialDisposable()
-    private val bag = CompositeDisposable(closeConfirmation)
+    private val bag = CompositeDisposable()
 
     override fun onExitScope() {
         bag.dispose()
@@ -52,44 +51,43 @@ class MarketOrderPresenter internal constructor(
         confirmed: CloseConfirmation,
         reconfirm: (CloseConfirmation) -> Unit
     ) {
+        if (isLoading.value) return
         val state = currentStatusService.privateState
-        val order = state.closePosition(confirmed, reconfirm) ?: return
-        submit(order) {
-            if (!state.isCurrent(confirmed)) return@submit
-            reportAcceptance()
-            awaitPositionClose()
-            currentStatusService.updateStatus()
-        }
-    }
+        val close = state.closePosition(confirmed, onAccepted = {
+            AndroidSchedulers.mainThread().scheduleDirect {
+                if (state.isCurrent(confirmed)) notify(R.string.market_order_accepted)
+            }.addTo(bag)
+        }, reconfirm = reconfirm) ?: return
 
-    private fun submit(side: String, size: Double) {
-        if (size == 0.0) return
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
-        submit(apiClient.sendChildOrder(request)) {
-            reportAcceptance()
-            currentStatusService.updateStatus()
-        }
-    }
-
-    private fun submit(order: Observable<Map<String, Any>>, onAccepted: () -> Unit) {
-        order
-            .subscribeOnIoObserveOnUI()
+        close.map { R.string.cleared_all_positions }
+            .onErrorReturn { error ->
+                if (error is ClosePositionService.InitialOrderSubmissionException) R.string.market_order_failed
+                else R.string.close_positions_incomplete
+            }
             .startLoading()
-            .subscribe({ onAccepted() }, { notify(R.string.market_order_failed) })
+            .subscribeNext { message ->
+                currentStatusService.updateStatus()
+                notify(message)
+            }
             .addTo(bag)
     }
 
-    private fun reportAcceptance() = notify(R.string.market_order_accepted)
-
-    private fun awaitPositionClose() {
-        closeConfirmation.set(currentStatusService.privateState.observeNewPositionResponses()
-            .filter { positions -> positions.isEmpty() }
-            .take(1)
-            .subscribeNext { notify(R.string.cleared_all_positions) })
+    private fun submit(side: String, size: Double) {
+        if (isLoading.value || size == 0.0) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
+        apiClient.sendChildOrder(request)
+            .subscribeOnIoObserveOnUI()
+            .startLoading()
+            .subscribe({
+                notify(R.string.market_order_accepted)
+                currentStatusService.updateStatus()
+            }, { notify(R.string.market_order_failed) })
+            .addTo(bag)
     }
 
     private fun showMessage(message: Int) {
         val currentView = view ?: return
-        Snackbar.make(currentView, message, Snackbar.LENGTH_SHORT).show()
+        val duration = if (message == R.string.market_order_accepted) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
+        Snackbar.make(currentView, message, duration).show()
     }
 }

@@ -21,7 +21,7 @@ abstract class BaseView(context: Context?, attr: AttributeSet?) : LinearLayout(c
     }
 
     override fun onDetachedFromWindow() {
-        bag.dispose()
+        bag.clear()
         super.onDetachedFromWindow()
     }
 }

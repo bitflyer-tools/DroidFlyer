@@ -1,0 +1,98 @@
+package com.unhappychoice.droidflyer.domain.service
+
+import com.unhappychoice.droidflyer.extension.round
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
+import io.reactivex.Observable
+import io.reactivex.Scheduler
+import io.reactivex.Single
+import io.reactivex.schedulers.Schedulers
+import java.util.concurrent.TimeUnit
+import kotlin.math.abs
+import kotlin.math.sign
+
+internal class ClosePositionService(
+    private val apiClient: APIClientV1,
+    private val scheduler: Scheduler = Schedulers.io()
+) {
+    fun close(confirmedSize: Double, onAccepted: () -> Unit = {}): Single<Unit> =
+        positionSize().flatMap { size ->
+            check(size == 0.0 || size == confirmedSize) { "Position changed since confirmation" }
+            closeRemaining(size, confirmedSize, onAccepted)
+        }
+
+    private fun closeRemaining(
+        size: Double,
+        confirmedSize: Double,
+        onFirstAccepted: (() -> Unit)? = null
+    ): Single<Unit> {
+        if (size == 0.0) return Single.just(Unit)
+        if (size.sign != confirmedSize.sign || abs(size) > abs(confirmedSize)) {
+            return Single.error(IllegalStateException("Position changed since confirmation"))
+        }
+
+        val quantity = abs(size)
+        if (quantity < MIN_ORDER_SIZE) {
+            return Single.error(IllegalStateException("Position is below the minimum close order size"))
+        }
+
+        val side = if (size > 0.0) "SELL" else "BUY"
+        val request = SendChildOrderRequest(
+            PRODUCT_CODE, "MARKET", side, null, nextOrderSize(quantity), timeInForce = "IOC"
+        )
+        return apiClient.sendChildOrder(request).singleOrError()
+            .onErrorResumeNext { error ->
+                Single.error(if (onFirstAccepted != null) InitialOrderSubmissionException(error) else error)
+            }
+            .flatMap { response ->
+                val acceptanceId = response["child_order_acceptance_id"] as? String
+                check(!acceptanceId.isNullOrBlank()) { "Missing close order acceptance ID" }
+                onFirstAccepted?.invoke()
+                executedSize(acceptanceId)
+            }
+            .flatMap { filled ->
+                check(filled > 0.0 && filled <= request.size) { "Invalid close order fill size" }
+                val expected = (abs(size) - filled).round(8)
+                poll({ positionSize().toObservable() }) {
+                    abs(it) <= expected || it.sign != size.sign
+                }.flatMap { remaining -> closeRemaining(remaining, size) }
+            }
+    }
+
+    private fun nextOrderSize(quantity: Double): Double {
+        if (quantity <= ORDER_SIZE_LIMIT) return quantity
+        val remainder = (quantity - ORDER_SIZE_LIMIT).round(8)
+        return if (remainder < MIN_ORDER_SIZE) (quantity - MIN_ORDER_SIZE).round(8) else ORDER_SIZE_LIMIT
+    }
+
+    private fun executedSize(acceptanceId: String): Single<Double> =
+        poll({ apiClient.getChildOrders(PRODUCT_CODE, null, acceptanceId).flatMapIterable { it } }) {
+            it.childOrderAcceptanceId == acceptanceId &&
+                it.childOrderState in finalOrderStates && it.outstandingSize == 0.0
+        }.map { it.executedSize }
+
+    private fun positionSize(): Single<Double> =
+        apiClient.getPositions(PRODUCT_CODE).singleOrError().map { positions ->
+            val size = positions.wholeSize()
+            check(size != 0.0 || positions.isEmpty()) { "Offsetting positions remain open" }
+            size
+        }
+
+    private fun <T : Any> poll(read: () -> Observable<T>, ready: (T) -> Boolean): Single<T> =
+        Observable.defer(read)
+            .filter(ready)
+            .repeatWhen { it.delay(1, TimeUnit.SECONDS, scheduler) }
+            .firstOrError()
+            .timeout(15, TimeUnit.SECONDS, scheduler)
+
+    class InitialOrderSubmissionException(cause: Throwable) : RuntimeException(cause)
+
+    companion object {
+        const val ORDER_SIZE_LIMIT = 10.0
+
+        private const val MIN_ORDER_SIZE = 0.001
+        private const val PRODUCT_CODE = "FX_BTC_JPY"
+        private val finalOrderStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
+    }
+}
