@@ -23,9 +23,8 @@ class BoardAdapterTest {
         val context = RuntimeEnvironment.getApplication()
         val adapter = BoardAdapter(context, BoardType.Ask)
         val exactAsk = Order(100L, 1.0)
-        val offBucketAsk = Order(101L, 2.0)
-        adapter.groupSize.value = 10L
-        adapter.items.value = listOf(exactAsk, offBucketAsk)
+        val roundedAsk = Order(110L, 2.0)
+        adapter.applyRows(listOf(exactAsk, roundedAsk), groupingSize = 10L)
 
         val row = orderRow(context)
         val holder = adapter.ViewHolder(row)
@@ -36,7 +35,7 @@ class BoardAdapterTest {
         adapter.onBindViewHolder(holder, 1)
         row.performClick()
 
-        selectedAsks.assertValues(exactAsk, offBucketAsk.copy(price = 110L))
+        selectedAsks.assertValues(exactAsk, roundedAsk)
     }
 
     @Test
@@ -49,8 +48,7 @@ class BoardAdapterTest {
             childOrderState = "ACTIVE", childOrderAcceptanceId = "acceptance",
             outstandingSize = 0.1, cancelSize = 0.0, executedSize = 0.0, totalCommission = 0.0
         )
-        adapter.groupSize.value = 10L
-        adapter.items.value = listOf(Order(110L, 1.0), Order(101L, 2.0))
+        adapter.applyRows(listOf(Order(110L, 1.0), Order(100L, 2.0)), groupingSize = 10L)
         adapter.updateMyOrders(listOf(activeOrder))
         val row = orderRow(context)
         val holder = adapter.ViewHolder(row)

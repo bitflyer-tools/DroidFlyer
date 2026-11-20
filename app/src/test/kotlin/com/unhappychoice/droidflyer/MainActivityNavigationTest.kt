@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer
 
 import android.view.View
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
@@ -10,10 +11,14 @@ import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Socket
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.kodein.di.direct
+import org.kodein.di.instance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -30,6 +35,7 @@ import org.robolectric.annotation.RealObject
 class MainActivityNavigationTest {
     @Before
     fun pauseBackgroundRequests() {
+        DisconnectedSocket.connections.clear()
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
     }
@@ -72,6 +78,22 @@ class MainActivityNavigationTest {
         }
     }
 
+    @Test
+    fun recreationReplacesTheRealtimeClientAndDetachesItsSocketListeners() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val oldClient = controller.get().module.direct.instance<RealtimeClient>()
+            val oldSocket = DisconnectedSocket.connections.single()
+            assertTrue(oldSocket.hasListeners("child_order_events"))
+
+            controller.recreate()
+
+            val newClient = controller.get().module.direct.instance<RealtimeClient>()
+            assertNotSame(oldClient, newClient)
+            assertFalse(oldSocket.hasListeners("child_order_events"))
+            assertTrue(DisconnectedSocket.connections.last().hasListeners("child_order_events"))
+        }
+    }
+
     private fun MainActivity.tapTab(itemId: Int) {
         binding.bottomNavigation.findViewById<View>(itemId).performClick()
     }
@@ -90,6 +112,10 @@ class MainActivityNavigationTest {
         private lateinit var socket: Socket
 
         @Implementation
-        fun connect(): Socket = socket
+        fun connect(): Socket = socket.also { connections.add(it) }
+
+        companion object {
+            val connections = mutableListOf<Socket>()
+        }
     }
 }
