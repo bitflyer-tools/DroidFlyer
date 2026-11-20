@@ -74,7 +74,7 @@ class BoardAdapterTest {
     @Test
     fun groupingAndPersonalOrderChangesUpdateTheDisplayedQuantity() {
         val adapter = BoardAdapter(RuntimeEnvironment.getApplication(), BoardType.Bid)
-        val orders = listOf(Order(100, 1.0))
+        val orders = listOf(Order(100, 1.0), Order(90, 2.0))
         val personal = personalBid()
         adapter.applyRows(orders, 1, listOf(personal))
         val holder = createHolder(adapter)
@@ -84,17 +84,17 @@ class BoardAdapterTest {
         val changes = adapter.recordChanges()
 
         adapter.applyRows(orders, 2, emptyList())
-        assertEquals(listOf("change 0 1"), changes)
+        assertEquals(listOf("change 0 2"), changes)
         changes.clear()
 
         adapter.applyRows(orders, 10, listOf(personal))
-        assertEquals(listOf("change 0 1"), changes)
+        assertEquals(listOf("change 0 2"), changes)
         adapter.onBindViewHolder(holder, 0)
         assertEquals(View.VISIBLE, mineSize.visibility)
         assertEquals("0.1", mineSize.text.toString())
         changes.clear()
 
-        adapter.applyRows(orders, 10, listOf(personal.copy(outstandingSize = 0.04)))
+        adapter.applyRows(orders, 10, listOf(personal.copy(outstandingSize = 0.04, executedSize = 0.06)))
         assertEquals(listOf("change 0 1"), changes)
         adapter.onBindViewHolder(holder, 0)
         assertEquals("0.04", mineSize.text.toString())
@@ -104,6 +104,7 @@ class BoardAdapterTest {
         assertEquals(listOf("change 0 1"), changes)
         adapter.onBindViewHolder(holder, 0)
         assertEquals(View.GONE, mineSize.visibility)
+        assertEquals("", mineSize.text.toString())
     }
 
     private fun BoardAdapter.recordChanges() = mutableListOf<String>().also { changes ->
