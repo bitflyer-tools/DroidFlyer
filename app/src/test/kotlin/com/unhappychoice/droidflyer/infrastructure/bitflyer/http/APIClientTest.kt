@@ -5,7 +5,7 @@ import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -105,7 +105,7 @@ class APIClientTest {
     }
 
     private fun client(origin: MockWebServer): APIClientV1 {
-        val preference = APITokenPreference(RuntimeEnvironment.getApplication()).apply {
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
             save(APICredentials("dummy-key", "dummy-secret"))
         }
         val transport = OkHttpClient.Builder().followRedirects(true).build()
