@@ -3,11 +3,6 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import android.app.Application
 import android.view.ContextThemeWrapper
 import android.widget.FrameLayout
-import com.nhaarman.mockito_kotlin.any
-import com.nhaarman.mockito_kotlin.mock
-import com.nhaarman.mockito_kotlin.verify
-import com.nhaarman.mockito_kotlin.verifyNoMoreInteractions
-import com.nhaarman.mockito_kotlin.whenever
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -24,7 +19,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.never
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -65,8 +65,9 @@ class LimitOrderPresenterTest {
         presenter.amount.value = 0.0001
 
         assertFalse(presenter.canSubmitOrder)
-        presenter.buy(100)
-        presenter.sell(200)
+        presenter.amount.value = 0.001
+        submit(LimitOrderSide.BUY, 100, size = 0.0001)
+        submit(LimitOrderSide.SELL, 200, size = 0.0001)
 
         verify(apiClient, never()).sendChildOrder(any())
         assertFalse(presenter.isLoading.value)
@@ -74,9 +75,9 @@ class LimitOrderPresenterTest {
 
     @Test
     fun buyCanBeSubmittedAgainAfterSuccess() {
-        presenter.buy(100)
-        presenter.buy(100)
-        presenter.sell(200)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.SELL, 200)
 
         verifyPendingOrder("BUY", 100)
         pending.onNext(mapOf("child_order_acceptance_id" to "test"))
@@ -84,23 +85,26 @@ class LimitOrderPresenterTest {
         pending.onComplete()
 
         assertTrue(presenter.canSubmitOrder)
-        presenter.buy(101)
+        submit(LimitOrderSide.BUY, 101)
         verify(apiClient).sendChildOrder(request("BUY", 101))
     }
 
     @Test
     fun sellCanBeSubmittedAgainAfterFailure() {
-        presenter.sell(200)
-        presenter.sell(200)
-        presenter.buy(100)
+        submit(LimitOrderSide.SELL, 200)
+        submit(LimitOrderSide.SELL, 200)
+        submit(LimitOrderSide.BUY, 100)
 
         verifyPendingOrder("SELL", 200)
         pending.onError(IllegalStateException("Order failed"))
 
         assertTrue(presenter.canSubmitOrder)
-        presenter.sell(201)
+        submit(LimitOrderSide.SELL, 201)
         verify(apiClient).sendChildOrder(request("SELL", 201))
     }
+
+    private fun submit(side: LimitOrderSide, price: Long, size: Double = 0.001) =
+        presenter.submitOrder(LimitOrderTerms(side, price, size))
 
     private fun verifyPendingOrder(side: String, price: Long) {
         assertFalse(presenter.canSubmitOrder)

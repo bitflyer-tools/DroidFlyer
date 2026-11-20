@@ -1,6 +1,5 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.nhaarman.mockito_kotlin.any
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
@@ -20,6 +19,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import org.mockito.kotlin.any
 import retrofit2.HttpException
 import retrofit2.Response
 
