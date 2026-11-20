@@ -3,8 +3,6 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
-import com.nhaarman.mockito_kotlin.mock
-import com.nhaarman.mockito_kotlin.whenever
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
@@ -13,7 +11,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -30,6 +28,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -40,7 +40,7 @@ import java.util.Date
 class RealtimeClientTest {
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
     private val socket = RecordingSocket()
-    private val preference = APITokenPreference(RuntimeEnvironment.getApplication())
+    private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
 
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
@@ -124,6 +124,12 @@ class RealtimeClientTest {
                 TradingTotals(null, null, 200_000L),
                 TradingTotals(10_000L, 100_000L, 210_000L)
             ).assertNoErrors()
+
+            socket.receive(channel, JSONArray())
+            assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
+
+            socket.receive(channel, JSONArray("""[{"price":10200000.0}]"""))
+            assertEquals(10_200_000.0, service.currentPrice.value.yen!!, 0.0)
         } finally {
             RxAndroidPlugins.reset()
             RxJavaPlugins.reset()

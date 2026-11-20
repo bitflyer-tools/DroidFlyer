@@ -39,7 +39,6 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .addTo(bag)
 
         currentStatusService.tradingTotals
-            .throttleLast(100, TimeUnit.MILLISECONDS)
             .subscribeOnComputationObserveOnUI()
             .subscribeNext { totals ->
                 val hasPosition = currentStatusService.position.value.wholeSize() != 0.0
