@@ -5,6 +5,7 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager.widget.ViewPager
 import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
@@ -13,9 +14,11 @@ import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
+import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter.Companion.LIMIT_POSITION
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
@@ -66,8 +69,12 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                     .show()
             }.addTo(bag)
 
-        observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable())
-            .observeOn(AndroidSchedulers.mainThread())
+        observeLimitOrderRows(
+            observePageSelection(),
+            currentStatusService.board.asObservable(),
+            presenter.groupingSize.asObservable(),
+            AndroidSchedulers.mainThread()
+        )
             .subscribeNext {
                 askAdapter.applyRows(it.asks, it.groupingSize)
                 bidAdapter.applyRows(it.bids, it.groupingSize)
@@ -96,6 +103,20 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun observePageSelection(): Observable<Boolean> {
+        val pager = parent as? ViewPager ?: return Observable.just(false)
+        return Observable.create { emitter ->
+            val listener = object : ViewPager.SimpleOnPageChangeListener() {
+                override fun onPageSelected(position: Int) {
+                    emitter.onNext(position == LIMIT_POSITION)
+                }
+            }
+            pager.addOnPageChangeListener(listener)
+            emitter.setCancellable { pager.removeOnPageChangeListener(listener) }
+            emitter.onNext(pager.currentItem == LIMIT_POSITION)
+        }
     }
 
     private fun setupStyle() {
