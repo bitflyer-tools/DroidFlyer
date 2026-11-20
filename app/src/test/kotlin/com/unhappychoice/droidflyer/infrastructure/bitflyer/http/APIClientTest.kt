@@ -5,7 +5,7 @@ import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -54,6 +54,31 @@ class APIClientTest {
         }
     }
 
+    @Test
+    fun collateralHistoryUsesDocumentedEndpointAndDecodesResponse() {
+        MockWebServer().use { origin ->
+            val body = """
+                [{"id":42,"currency_code":"BTC","change":-0.25,"amount":1.5,
+                  "reason_code":"EXCHANGE_COLL","date":"2025-01-15T12:30:45.123"}]
+            """.trimIndent()
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body(body).build())
+
+            val history = client(origin).getCollateralHistory().blockingSingle()
+
+            assertSignedRequest(origin, "GET", "/v1/me/getcollateralhistory", "")
+            val entry = mapOf(
+                "id" to 42.0,
+                "currency_code" to "BTC",
+                "change" to -0.25,
+                "amount" to 1.5,
+                "reason_code" to "EXCHANGE_COLL",
+                "date" to "2025-01-15T12:30:45.123"
+            )
+            assertEquals(listOf(entry), history)
+        }
+    }
+
     private fun assertRedirectBlocked(
         status: Int,
         responseBody: String,
@@ -80,7 +105,7 @@ class APIClientTest {
     }
 
     private fun client(origin: MockWebServer): APIClientV1 {
-        val preference = APITokenPreference(RuntimeEnvironment.getApplication()).apply {
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
             save(APICredentials("dummy-key", "dummy-secret"))
         }
         val transport = OkHttpClient.Builder().followRedirects(true).build()
