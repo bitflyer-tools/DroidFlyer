@@ -100,10 +100,16 @@ class PrivateTradingStateTest {
         assertNull(state.closePosition(oldConfirmation) { error("Reconfirmed on another account") })
 
         val confirmation = checkNotNull(state.closeConfirmation())
-        checkNotNull(state.closePosition(confirmation)).test().assertComplete()
+        val result = checkNotNull(state.closePosition(confirmation)).test()
+        scheduler.triggerActions()
+        accountB.positions.onNext(listOf(position))
+        scheduler.triggerActions()
+        accountB.positions.onNext(emptyList())
+        scheduler.triggerActions()
+        result.assertComplete()
         assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
         assertEquals(
-            listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5)),
+            listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5, timeInForce = "IOC")),
             accountB.sent
         )
     }
@@ -121,8 +127,14 @@ class PrivateTradingStateTest {
         assertNull(state.closePosition(original) { updated = it })
         assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
 
-        checkNotNull(state.closePosition(checkNotNull(updated))).test().assertComplete()
-        assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0)), accountA.sent)
+        val result = checkNotNull(state.closePosition(checkNotNull(updated))).test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(state.position.value)
+        scheduler.triggerActions()
+        accountA.positions.onNext(emptyList())
+        scheduler.triggerActions()
+        result.assertComplete()
+        assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0, timeInForce = "IOC")), accountA.sent)
     }
 
     private fun assertPrivateData(positions: List<Position>, balance: Double, orders: List<ChildOrder>) {
@@ -144,10 +156,13 @@ class PrivateTradingStateTest {
             when (method.name) {
                 "getPositions" -> positions.take(1)
                 "getCollateral" -> collateral.take(1)
-                "getChildOrders" -> orders.take(1)
+                "getChildOrders" -> if (args[2] == null) orders.take(1) else Observable.just(listOf(
+                    ChildOrder(1, "order", "FX_BTC_JPY", sent.last().side, "MARKET", 0, 0,
+                        sent.last().size, "COMPLETED", "acceptance", 0.0, 0.0, sent.last().size, 0.0)
+                ))
                 "sendChildOrder" -> Observable.fromCallable {
                     sent.add(args[0] as SendChildOrderRequest)
-                    emptyMap<String, Any>()
+                    mapOf<String, Any>("child_order_acceptance_id" to "acceptance")
                 }
                 "cancelChildOrder" -> Completable.fromAction {
                     cancelled.add(args[0] as CancelChildOrderRequest)

@@ -3,9 +3,9 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
-import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.bindTo
@@ -16,6 +16,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
@@ -86,9 +87,15 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
     private fun showCloseConfirmation(confirmation: CloseConfirmation) {
         val order = confirmation.order
         val side = context.getString(if (order.side == "SELL") R.string.sell else R.string.buy)
+        val summary = "$side / ${order.size}"
+        val message = if (order.size > ClosePositionService.ORDER_SIZE_LIMIT) {
+            "$summary\n\n" + context.getString(R.string.close_positions_multiple_orders)
+        } else {
+            summary
+        }
         AlertDialog.Builder(context, R.style.DialogStyle)
             .setTitle(R.string.clear_all_positions)
-            .setMessage("$side / ${order.size}")
+            .setMessage(message)
             .setPositiveButton(R.string.ok) { _, _ ->
                 presenter.clearPosition(confirmation, ::showCloseConfirmation)
             }
