@@ -26,7 +26,7 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
     bindSingleton<ChartPresenter> { ChartPresenter(instance<APIClientV1>()::getExecutionPrices) }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
-    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance()) }
+    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance()) }
+    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState) }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

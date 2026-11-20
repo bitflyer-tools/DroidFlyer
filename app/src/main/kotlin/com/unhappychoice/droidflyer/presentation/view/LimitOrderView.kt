@@ -28,6 +28,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     private val bidAdapter by lazy { BoardAdapter(context, BoardType.Bid) }
     private val binding by lazy { LimitOrderViewBinding.bind(this) }
 
+    private var confirmationDialog: AlertDialog? = null
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
@@ -44,27 +46,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             adapter = bidAdapter
         }
 
-        askAdapter.clickItems
-            .filter { presenter.canSubmitOrder }
-            .subscribeNext {
-                AlertDialog.Builder(context, R.style.DialogStyle)
-                    .setTitle(R.string.create_limit_order)
-                    .setMessage("${context.getString(R.string.sell)} / ${it.price} / ${presenter.amount.value}")
-                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.sell(it.price) }
-                    .setNegativeButton(context.getString(R.string.cancel), null)
-                    .show()
-            }.addTo(bag)
-
-        bidAdapter.clickItems
-            .filter { presenter.canSubmitOrder }
-            .subscribeNext {
-                AlertDialog.Builder(context, R.style.DialogStyle)
-                    .setTitle(R.string.create_limit_order)
-                    .setMessage("${context.getString(R.string.buy)} / ${it.price} / ${presenter.amount.value}")
-                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.buy(it.price) }
-                    .setNegativeButton(context.getString(R.string.cancel), null)
-                    .show()
-            }.addTo(bag)
+        askAdapter.clickItems.subscribeNext { confirmOrder(it.price, "SELL", R.string.sell) }.addTo(bag)
+        bidAdapter.clickItems.subscribeNext { confirmOrder(it.price, "BUY", R.string.buy) }.addTo(bag)
 
         observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable())
             .observeOn(AndroidSchedulers.mainThread())
@@ -94,8 +77,27 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     }
 
     override fun onDetachedFromWindow() {
+        confirmationDialog?.dismiss()
+        confirmationDialog = null
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun confirmOrder(price: Long, side: String, sideLabel: Int) {
+        val order = presenter.prepareOrder(price, side) ?: return
+        confirmationDialog?.dismiss()
+        val dialog = AlertDialog.Builder(context, R.style.DialogStyle)
+            .setTitle(R.string.create_limit_order)
+            .setMessage("${context.getString(sideLabel)} / $price / ${order.request.size}")
+            .setPositiveButton(R.string.ok) { _, _ -> presenter.submitOrder(order) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+        confirmationDialog = dialog
+        val sessionEnd = order.sessionEnded.subscribe { dialog.dismiss() }
+        dialog.setOnDismissListener {
+            sessionEnd.dispose()
+            if (confirmationDialog === dialog) confirmationDialog = null
+        }
     }
 
     private fun setupStyle() {

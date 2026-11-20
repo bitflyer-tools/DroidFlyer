@@ -4,6 +4,7 @@ import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
@@ -61,6 +62,22 @@ internal class PrivateTradingState(
             .addTo(requests)
     }
 
+    fun prepareOrder(request: SendChildOrderRequest): NewOrder? =
+        if (requests.isDisposed) null else NewOrder(session, request)
+
+    fun submitOrder(order: NewOrder): Observable<Map<String, Any>>? {
+        val current = order.session
+        if (requests.isDisposed || current !== session) return null
+
+        return Observable.defer {
+            if (current.ended.hasComplete()) Observable.empty()
+            else current.client.sendChildOrder(order.request)
+        }
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .takeUntil(order.sessionEnded.toObservable<Unit>())
+    }
+
     fun isCurrent(confirmation: CloseConfirmation): Boolean = !requests.isDisposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
@@ -99,6 +116,10 @@ internal class PrivateTradingState(
             .observeOn(stateScheduler)
             .subscribeNext { if (current === session) target.value = it }
             .addTo(requests)
+    }
+
+    class NewOrder internal constructor(internal val session: Session, val request: SendChildOrderRequest) {
+        val sessionEnded: Completable get() = session.ended
     }
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
