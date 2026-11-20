@@ -2,6 +2,8 @@ require "yaml"
 
 config = YAML.safe_load_file(File.expand_path("../../.circleci/config.yml", __dir__))
 build, test = config.fetch("jobs").values_at("build", "test")
+abort "Expected the APK build to use the large resource class" unless build.fetch("resource_class") == "large"
+
 build_steps = build.fetch("steps")
 assemble_step = build_steps.index do |step|
   step.is_a?(Hash) && step.dig("run", "command") == "./gradlew assembleDebug assembleDebugUnitTest"

@@ -79,7 +79,7 @@ class SettingsViewTest {
 
         settings.saveButton.performClick()
         assertEquals(cycle + 1, host.applyRequests)
-        val saved = APITokenPreference(host).read()
+        val saved = testAPITokenPreference(host).read()
         assertEquals(key, saved.key)
         assertEquals(secret, saved.secret)
     }
