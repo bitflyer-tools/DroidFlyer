@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -9,11 +10,16 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import java.io.IOException
+import java.math.BigDecimal
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 class CurrentStatusServiceTest {
@@ -23,15 +29,16 @@ class CurrentStatusServiceTest {
     private val deltas = PublishSubject.create<Board>()
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
+    private val api = mock(APIClientV1::class.java)
     private lateinit var service: CurrentStatusService
 
     @Before
     fun setUp() {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
         RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
 
-        val api = mock(APIClientV1::class.java)
         `when`(api.getBoard("FX_BTC_JPY")).thenReturn(responses.take(1))
         `when`(api.getPositions()).thenReturn(Observable.empty())
         `when`(api.getCollateral()).thenReturn(Observable.empty())
@@ -79,6 +86,43 @@ class CurrentStatusServiceTest {
         scheduler.triggerActions()
 
         assertBook(initialBook, 100)
+    }
+
+    @Test
+    fun fundingRefreshesWhileVisibleAndRetainsTheLastQuoteAfterFailure() {
+        val settlement = "2024-04-15T13:00:00"
+        val zero = FundingRate(BigDecimal.ZERO, settlement)
+        val negative = FundingRate(BigDecimal("-0.00375"), settlement)
+        val failure = Observable.error<FundingRate>(IOException("Offline"))
+        `when`(api.getFundingRate("FX_BTC_JPY")).thenReturn(
+            failure, Observable.just(zero), Observable.just(zero.copy(ratio = null)), Observable.just(negative)
+        )
+        val visible = PublishSubject.create<Boolean>()
+        val funding = service.observeFunding(visible).test()
+        val zeroQuote = NextFunding(BigDecimal.ZERO, 1713186000000L)
+        val negativeQuote = zeroQuote.copy(ratio = BigDecimal("-0.00375"))
+
+        visible.onNext(true)
+        scheduler.triggerActions()
+        funding.assertValues(FundingStatus())
+
+        scheduler.advanceTimeBy(59, TimeUnit.SECONDS)
+        verify(api).getFundingRate("FX_BTC_JPY")
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        funding.assertValues(FundingStatus(), FundingStatus(zeroQuote))
+
+        scheduler.advanceTimeBy(1, TimeUnit.MINUTES)
+        visible.onNext(false)
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES)
+        verify(api, times(3)).getFundingRate("FX_BTC_JPY")
+        funding.assertValues(FundingStatus(), FundingStatus(zeroQuote), FundingStatus(zeroQuote, stale = true))
+
+        visible.onNext(true)
+        scheduler.triggerActions()
+        funding.assertValues(
+            FundingStatus(), FundingStatus(zeroQuote), FundingStatus(zeroQuote, stale = true), FundingStatus(negativeQuote)
+        )
+        funding.dispose()
     }
 
     private fun assertBook(expected: Board, bestAsk: Long) {

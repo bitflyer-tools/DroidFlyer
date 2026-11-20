@@ -1,6 +1,8 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ExecutionPrice
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
+import java.math.BigDecimal
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
@@ -54,6 +56,17 @@ class APIClientV1Test {
             .assertNoValues()
             .assertNotComplete()
             .assertError { it is HttpException && it.code() == 503 }
+    }
+
+    @Test
+    fun getFundingRateRequestsCryptoCfdAndParsesAnExplicitZero() {
+        val api = apiReturning(
+            "/v1/getfundingrate?product_code=FX_BTC_JPY",
+            """{"current_funding_rate":0.000000000000,"next_funding_rate_settledate":"2024-04-15T13:00:00"}"""
+        )
+
+        api.getFundingRate("FX_BTC_JPY").test()
+            .assertResult(FundingRate(BigDecimal("0.000000000000"), "2024-04-15T13:00:00"))
     }
 
     private fun apiReturning(target: String, body: String, status: Int = 200): APIClientV1 {

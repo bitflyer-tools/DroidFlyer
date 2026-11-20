@@ -39,4 +39,7 @@
     <string name="chart_retry">Retry</string>
     <string name="chart_price_range">%1$s–%2$s JPY</string>
     <string name="chart_execution_order">Recent trades (oldest to newest)</string>
+    <string name="funding_unavailable">Next funding rate unavailable</string>
+    <string name="funding_details">Next funding %1$s · %2$s</string>
+    <string name="funding_stale">%1$s (stale)</string>
 </resources>

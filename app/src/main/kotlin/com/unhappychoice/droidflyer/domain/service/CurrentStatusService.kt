@@ -87,6 +87,23 @@ class CurrentStatusService internal constructor(
         refreshBoard()
     }
 
+    internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
+        visibility.distinctUntilChanged()
+            .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
+            .scan(FundingStatus()) { last, update ->
+                if (update.funding != null) update else last.copy(stale = last.funding != null)
+            }
+            .distinctUntilChanged()
+
+    private fun pollFunding(): Observable<FundingStatus> =
+        Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }
+            .firstOrError()
+            .map { FundingStatus(it.toNextFunding()) }
+            .onErrorReturnItem(FundingStatus())
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .repeatWhen { it.delay(1, TimeUnit.MINUTES) }
+
     private fun refreshBoard() {
         val requestRevision = realtimeBoardRevision.get()
         apiClient.getBoard("FX_BTC_JPY")
