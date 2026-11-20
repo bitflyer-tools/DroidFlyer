@@ -62,6 +62,17 @@ class OrderAdapterTest {
     }
 
     @Test
+    fun partiallyFilledActiveOrderShowsOutstandingQuantity() {
+        val order = firstOrder.copy(outstandingSize = 0.04, executedSize = 0.06)
+        val row = createRow()
+
+        updateOrders(listOf(order))
+        adapter.onBindViewHolder(adapter.ViewHolder(row), 0)
+
+        assertEquals("0.04 ɃFX", row.findViewById<TextView>(R.id.size).text.toString())
+    }
+
+    @Test
     fun boundCancelActionUsesItsOriginalAccountAndOrderAfterRefresh() {
         val state = PrivateTradingState(client)
         val presenter = OrdersPresenter(state) {}
