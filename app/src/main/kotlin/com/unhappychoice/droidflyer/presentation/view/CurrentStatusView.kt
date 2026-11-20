@@ -37,7 +37,6 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .addTo(bag)
 
         currentStatusService.tradingTotals
-            .throttleLast(100, TimeUnit.MILLISECONDS)
             .subscribeOnComputationObserveOnUI()
             .subscribeNext { totals ->
                 binding.profit.text = totals.profit.splitByComma()
