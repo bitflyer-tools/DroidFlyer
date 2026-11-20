@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -12,6 +11,7 @@ import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -45,6 +45,7 @@ class CurrentStatusService internal constructor(
     val orders = privateState.orders
 
     private val bag = CompositeDisposable()
+    private val realtimeBoardRevision = AtomicLong()
 
     init {
         executions
@@ -54,6 +55,7 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
 
         boardUpdates
+            .doOnNext { realtimeBoardRevision.incrementAndGet() }
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { update -> board.value = update(board.value) }
             .addTo(bag)
@@ -82,9 +84,16 @@ class CurrentStatusService internal constructor(
 
         privateState.refresh()
 
+        refreshBoard()
+    }
+
+    private fun refreshBoard() {
+        val requestRevision = realtimeBoardRevision.get()
         apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .bindTo(board)
+            .subscribeNext { snapshot ->
+                if (realtimeBoardRevision.get() == requestRevision) board.value = snapshot
+            }
             .addTo(bag)
     }
 }
