@@ -18,7 +18,9 @@ class CurrentStatusService internal constructor(
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<(Board) -> Board>,
     orderEvents: Observable<Unit>,
-    privateClient: APIClientV1 = apiClient
+    privateClient: APIClientV1 = apiClient,
+    parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
+    privateChannelsReady: Observable<Unit> = Observable.empty()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
@@ -28,7 +30,9 @@ class CurrentStatusService internal constructor(
             realtimeClient.childOrderEvents.map { Unit },
             realtimeClient.parentOrderEvents.map { Unit }
         ),
-        privateClient
+        privateClient,
+        realtimeClient.parentOrderEvents,
+        realtimeClient.privateChannelsReady
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -69,6 +73,18 @@ class CurrentStatusService internal constructor(
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
             .subscribeNext { updateStatus() }
+            .addTo(bag)
+
+        val stopOrders = privateState.stopOrders
+        val stopUpdates = parentEvents
+            .observeOn(AndroidSchedulers.mainThread())
+            .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
+            .doOnNext(stopOrders::onEvents)
+            .debounce(1, TimeUnit.SECONDS)
+            .map { false }
+        Observable.merge(stopUpdates, privateChannelsReady.map { true })
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext { recoverTriggers -> stopOrders.refreshIfEnabled(recoverTriggers) }
             .addTo(bag)
 
         updateStatus()

@@ -1,0 +1,32 @@
+package com.unhappychoice.droidflyer.domain.service
+
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
+
+internal data class StopOrder(
+    val parent: ParentOrder,
+    val triggerPrice: Long?,
+    val event: String? = null
+) {
+    val acceptanceId get() = parent.parentOrderAcceptanceId
+    val canCancel get() = triggerPrice != null && status == StopOrderStatus.WAITING
+
+    val status: StopOrderStatus
+        get() = when {
+            parent.executedSize >= parent.size && parent.size > 0 -> StopOrderStatus.EXECUTED
+            parent.executedSize > 0 -> StopOrderStatus.PARTIALLY_EXECUTED
+            parent.parentOrderState == "CANCELED" || event == "CANCEL" -> StopOrderStatus.CANCELED
+            parent.parentOrderState == "EXPIRED" || event == "EXPIRE" -> StopOrderStatus.EXPIRED
+            parent.parentOrderState == "REJECTED" || event == "ORDER_FAILED" -> StopOrderStatus.REJECTED
+            parent.parentOrderState == "COMPLETED" || event in triggeredEvents -> StopOrderStatus.TRIGGERED
+            parent.parentOrderState == "ACTIVE" -> StopOrderStatus.WAITING
+            else -> StopOrderStatus.UNKNOWN
+        }
+
+    companion object {
+        private val triggeredEvents = setOf("TRIGGER", "COMPLETE")
+    }
+}
+
+internal enum class StopOrderStatus {
+    WAITING, TRIGGERED, PARTIALLY_EXECUTED, EXECUTED, CANCELED, EXPIRED, REJECTED, UNKNOWN
+}

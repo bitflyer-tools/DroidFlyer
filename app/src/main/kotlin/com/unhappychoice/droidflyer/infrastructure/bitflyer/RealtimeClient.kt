@@ -36,6 +36,8 @@ class RealtimeClient internal constructor(
     val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
+    val privateChannelsReady = PublishSubject.create<Unit>()
+
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
@@ -83,7 +85,12 @@ class RealtimeClient internal constructor(
     private fun onAuthenticated(args: Array<out Any?>) {
         if (disconnected) return
         val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
-        if (error == null) subscribePrivateChannels() else Log.d("Socket", "Authentication failed: $error")
+        if (error == null) {
+            subscribePrivateChannels()
+            privateChannelsReady.onNext(Unit)
+        } else {
+            Log.d("Socket", "Authentication failed: $error")
+        }
     }
 
     private fun subscribePrivateChannels() =

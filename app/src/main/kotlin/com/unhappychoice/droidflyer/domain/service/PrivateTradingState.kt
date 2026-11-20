@@ -26,10 +26,13 @@ internal class PrivateTradingState(
     val balance = Variable(0.0)
     val orders = Variable<List<ChildOrder>>(emptyList())
 
+    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler)
+
     private var session = Session(client)
     private val requests = CompositeDisposable()
 
     fun dispose() {
+        stopOrders.dispose()
         requests.dispose()
         session.ended.onComplete()
     }
@@ -44,6 +47,7 @@ internal class PrivateTradingState(
         position.value = emptyList()
         balance.value = 0.0
         orders.value = emptyList()
+        stopOrders.switchAccount(client)
         refresh()
     }
 

@@ -69,6 +69,23 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun signalsPrivateChannelReadinessAfterEachAuthenticatedConnection() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        val ready = client.privateChannelsReady.test()
+
+        socket.receive(Socket.EVENT_CONNECT)
+        ready.assertNoValues()
+        socket.authAck!!.call(JSONObject.NULL)
+        ready.assertValueCount(1)
+
+        socket.receive(Socket.EVENT_CONNECT)
+        ready.assertValueCount(1)
+        socket.authAck!!.call(JSONObject.NULL)
+        ready.assertValues(Unit, Unit)
+    }
+
+    @Test
     fun ignoresAuthenticationAcknowledgementAfterDisconnect() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)

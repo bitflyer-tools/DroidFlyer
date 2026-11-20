@@ -35,4 +35,29 @@
     <string name="chart_retry">再試行</string>
     <string name="chart_price_range">%1$s〜%2$s 円</string>
     <string name="chart_execution_order">直近の約定（古い順）</string>
+
+    <string name="stop">ストップ</string>
+    <string name="stop_quantity">数量（BTC）</string>
+    <string name="stop_trigger_price">トリガー価格（JPY）</string>
+    <string name="stop_choose_side">買いまたは売りを選択してください</string>
+    <string name="stop_invalid_input">正の数量と整数のトリガー価格（JPY）を入力してください</string>
+    <string name="stop_review">ストップ注文の確認</string>
+    <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nトリガー価格：%3$,d JPY\n\nトリガー価格に達すると、bitFlyer が成行注文を出します。約定価格はトリガー価格と異なる場合があります。</string>
+    <string name="stop_submit">ストップ注文を送信</string>
+    <string name="stop_accepted">ストップ注文を受け付けました：%1$s</string>
+    <string name="stop_submit_unconfirmed">注文の受付を確認できませんでした。再送信する前に注文一覧を確認してください。</string>
+    <string name="stop_review_again">送信する前にストップ注文をもう一度確認してください</string>
+    <string name="stop_load_retry">ストップ注文を読み込めませんでした。タップして再試行できます。</string>
+    <string name="stop_price">トリガー：%1$,d JPY</string>
+    <string name="stop_price_unavailable">トリガー価格を取得できません</string>
+    <string name="stop_order_row">ストップ · %1$s %2$s BTC\n%3$s · %4$s\n%5$s</string>
+    <string name="stop_waiting">受付済み・発動待ち</string>
+    <string name="stop_triggered">発動済み</string>
+    <string name="stop_partially_executed">一部約定</string>
+    <string name="stop_executed">約定済み</string>
+    <string name="stop_canceled">キャンセル済み</string>
+    <string name="stop_expired">期限切れ</string>
+    <string name="stop_rejected">受付拒否</string>
+    <string name="stop_unknown">状態を取得できません</string>
+    <string name="stop_cancel_title">このストップ注文をキャンセルしますか？</string>
 </resources>

@@ -39,4 +39,29 @@
     <string name="chart_retry">Retry</string>
     <string name="chart_price_range">%1$s–%2$s JPY</string>
     <string name="chart_execution_order">Recent trades (oldest to newest)</string>
+
+    <string name="stop">Stop</string>
+    <string name="stop_quantity">Quantity (BTC)</string>
+    <string name="stop_trigger_price">Trigger price (JPY)</string>
+    <string name="stop_choose_side">Choose Buy or Sell</string>
+    <string name="stop_invalid_input">Enter a positive quantity and a whole JPY trigger price</string>
+    <string name="stop_review">Review stop order</string>
+    <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nTrigger price: %3$,d JPY\n\nWhen the trigger price is reached, bitFlyer submits a market order. The execution price may differ from the trigger price.</string>
+    <string name="stop_submit">Submit stop</string>
+    <string name="stop_accepted">Exchange accepted stop %1$s</string>
+    <string name="stop_submit_unconfirmed">Could not confirm stop submission. Check Orders before trying again.</string>
+    <string name="stop_review_again">Review the stop again before submitting</string>
+    <string name="stop_load_retry">Could not load stop orders. Tap to retry.</string>
+    <string name="stop_price">Trigger: %1$,d JPY</string>
+    <string name="stop_price_unavailable">Trigger price unavailable</string>
+    <string name="stop_order_row">Stop · %1$s %2$s BTC\n%3$s · %4$s\n%5$s</string>
+    <string name="stop_waiting">Accepted · waiting for trigger</string>
+    <string name="stop_triggered">Triggered</string>
+    <string name="stop_partially_executed">Partially executed</string>
+    <string name="stop_executed">Executed</string>
+    <string name="stop_canceled">Canceled</string>
+    <string name="stop_expired">Expired</string>
+    <string name="stop_rejected">Rejected</string>
+    <string name="stop_unknown">Status unavailable</string>
+    <string name="stop_cancel_title">Cancel this stop order?</string>
 </resources>
