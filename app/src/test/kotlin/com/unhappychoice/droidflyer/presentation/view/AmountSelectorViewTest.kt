@@ -20,13 +20,14 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class, qualifiers = "en-rUS")
 class AmountSelectorViewTest {
+    private lateinit var activity: Activity
     private lateinit var selector: AmountSelectorView
     private lateinit var field: EditText
 
     @Before
     fun setUp() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
-        val activity = controller.get()
+        activity = controller.get()
         selector = AmountSelectorView(activity, null)
         activity.setContentView(selector)
         field = selector.findViewById(R.id.amountTextView)
@@ -117,6 +118,22 @@ class AmountSelectorViewTest {
 
         selector.findViewById<View>(R.id.minusButton).performClick()
         assertEquals("0,0255", field.text.toString())
+    }
+
+    @Test
+    fun detachingStopsClickAndTextEvents() {
+        val incrementEvents = selector.didIncrement.test()
+        val plusButton = selector.findViewById<View>(R.id.plusButton)
+        field.setText("0.025")
+        plusButton.performClick()
+        incrementEvents.assertValue(Unit)
+
+        activity.setContentView(View(activity))
+        field.setText("0.035")
+        plusButton.performClick()
+
+        assertEquals(0.025, selector.amount.value, 0.0)
+        incrementEvents.assertValue(Unit).dispose()
     }
 
     private fun connectAmountButtons() {

@@ -13,6 +13,7 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.CompletableSubject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -48,14 +49,17 @@ class CurrentStatusService internal constructor(
     private val bag = CompositeDisposable()
     private var accountChanged = CompletableSubject.create()
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
+    private val realtimeBoardRevision = AtomicLong()
 
     init {
         executions
+            .filter { it.isNotEmpty() }
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
 
         boardUpdates
+            .doOnNext { realtimeBoardRevision.incrementAndGet() }
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { update -> board.value = update(board.value) }
             .addTo(bag)
@@ -97,13 +101,17 @@ class CurrentStatusService internal constructor(
 
     private fun refreshStatus(): Completable = Completable.ambArray(
         accountChanged,
-        Completable.mergeArray(
-            privateState.refresh(),
-            apiClient.getBoard("FX_BTC_JPY")
-                .subscribeOnIoObserveOnUI()
-                .publishStatus { board.value = it }
-        )
+        Completable.mergeArray(privateState.refresh(), refreshBoard())
     )
+
+    private fun refreshBoard(): Completable {
+        val requestRevision = realtimeBoardRevision.get()
+        return apiClient.getBoard("FX_BTC_JPY")
+            .subscribeOnIoObserveOnUI()
+            .publishStatus { snapshot ->
+                if (realtimeBoardRevision.get() == requestRevision) board.value = snapshot
+            }
+    }
 }
 
 internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {
