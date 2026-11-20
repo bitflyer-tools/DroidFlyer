@@ -115,14 +115,17 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
             }
         }.flatMap { rows ->
             Observable.fromIterable(rows).concatMap { row ->
-                val id = row.parentOrderAcceptanceId
-                val cached = previous[id]
-                loadStop(client, row, cached?.triggerPrice).concatMap { stop ->
-                    val updated = stop.copy(event = cached?.event)
-                    if (knownEvents[id] == null && stop.canCancel && (cached?.triggerPrice == null || recover)) {
-                        resolveTrigger(client, updated)
-                    } else {
-                        Observable.just(updated)
+                val cached = previous[row.parentOrderAcceptanceId]
+                val event = knownEvents[row.parentOrderAcceptanceId] ?: cached?.event
+                val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
+                loadStop(client, parent, cached?.triggerPrice).concatMap { stop ->
+                    val updated = stop.copy(event = event)
+                    when {
+                        updated.status == StopOrderStatus.TRIGGERED ||
+                            updated.status == StopOrderStatus.PARTIALLY_EXECUTED -> reconcileChildExecution(client, updated)
+                        event == null && updated.canCancel && (cached?.triggerPrice == null || recover) ->
+                            reconcileChildExecution(client, updated)
+                        else -> Observable.just(updated)
                     }
                 }
             }
@@ -140,13 +143,13 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private fun applyEvent(order: StopOrder): StopOrder =
         order.copy(event = events[order.acceptanceId]?.eventType ?: order.event)
 
-    private fun resolveTrigger(client: APIClientV1, stop: StopOrder): Observable<StopOrder> =
+    private fun reconcileChildExecution(client: APIClientV1, stop: StopOrder): Observable<StopOrder> =
         client.getParentChildOrders(stop.parent.parentOrderId)
             .map { children ->
                 val marketOrder = children.firstOrNull { it.childOrderType == "MARKET" }
                 if (marketOrder == null) stop else stop.copy(
-                    parent = stop.parent.copy(executedSize = marketOrder.executedSize),
-                    event = "TRIGGER"
+                    parent = stop.parent.copy(executedSize = maxOf(stop.parent.executedSize, marketOrder.executedSize)),
+                    event = stop.event ?: "TRIGGER"
                 )
             }
             .onErrorReturnItem(stop)

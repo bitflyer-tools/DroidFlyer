@@ -106,12 +106,14 @@ class StopOrderServiceTest {
                 scheduler.advanceTimeBy(1, SECONDS)
                 assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
 
+                executedSize = 0.0
+                childOrders = marketChild(0.005)
                 realtime.childOrderEvents.onNext(listOf(execution))
                 scheduler.advanceTimeBy(1, SECONDS)
                 assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
 
                 parentState = "COMPLETED"
-                executedSize = 0.01
+                childOrders = marketChild(0.01)
                 realtime.childOrderEvents.onNext(listOf(execution.copy(execId = 2)))
                 scheduler.advanceTimeBy(1, SECONDS)
                 assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
@@ -126,7 +128,7 @@ class StopOrderServiceTest {
 
     @Test
     fun reloadRecoversTriggerWithoutRealtimeEvent() {
-        childOrders = """[{"child_order_type":"MARKET","executed_size":0}]"""
+        childOrders = marketChild(0.0)
         val service = service()
 
         service.refresh()
@@ -135,6 +137,25 @@ class StopOrderServiceTest {
         val childRequest = requests.first { it.url.encodedPath == "/v1/me/getchildorders" }
         assertEquals("parent-1", childRequest.url.queryParameter("parent_order_id"))
         assertEquals("FX_BTC_JPY", childRequest.url.queryParameter("product_code"))
+    }
+
+    @Test
+    fun normalRefreshPreservesAndUpdatesExecutionRecoveredOnReconnect() {
+        val service = service()
+        service.refresh()
+
+        childOrders = marketChild(0.005)
+        service.refresh(recoverTriggers = true)
+        assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, service.orders.value.single().status)
+
+        childOrders = "[]"
+        service.refresh()
+        assertEquals(0.005, service.orders.value.single().parent.executedSize, 0.0)
+        assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, service.orders.value.single().status)
+
+        childOrders = marketChild(0.01)
+        service.refresh()
+        assertEquals(StopOrderStatus.EXECUTED, service.orders.value.single().status)
     }
 
     @Test
@@ -170,6 +191,8 @@ class StopOrderServiceTest {
     }
 
     private fun service() = StopOrderService(client(), Schedulers.trampoline(), Schedulers.trampoline())
+
+    private fun marketChild(size: Double) = """[{"child_order_type":"MARKET","executed_size":$size}]"""
 
     private fun stopRequest() = requireNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
 
