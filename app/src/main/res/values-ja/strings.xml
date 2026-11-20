@@ -61,4 +61,8 @@
     <string name="stop_rejected">受付拒否</string>
     <string name="stop_unknown">状態を取得できません</string>
     <string name="stop_cancel_title">このストップ注文をキャンセルしますか？</string>
+    <string name="stop_cancel_account_changed">アカウントが切り替わったため、注文 %1$s を取り消せません。</string>
+    <string name="stop_cancel_unavailable">注文 %1$s は現在の注文一覧にありません。</string>
+    <string name="stop_cancel_in_progress">注文 %1$s の取消処理は既に進行中です。</string>
+    <string name="stop_cancel_ineligible">注文 %1$s は現在取り消せない状態です。</string>
 </resources>

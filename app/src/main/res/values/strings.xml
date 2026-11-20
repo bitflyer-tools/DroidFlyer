@@ -65,4 +65,8 @@
     <string name="stop_rejected">Rejected</string>
     <string name="stop_unknown">Status unavailable</string>
     <string name="stop_cancel_title">Cancel this stop order?</string>
+    <string name="stop_cancel_account_changed">The account changed. Order %1$s was not canceled.</string>
+    <string name="stop_cancel_unavailable">Order %1$s is no longer available.</string>
+    <string name="stop_cancel_in_progress">Cancellation of order %1$s is already in progress.</string>
+    <string name="stop_cancel_ineligible">Order %1$s is no longer eligible for cancellation.</string>
 </resources>

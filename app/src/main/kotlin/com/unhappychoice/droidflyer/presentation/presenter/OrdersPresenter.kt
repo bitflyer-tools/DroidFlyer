@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.domain.service.StopOrder
+import com.unhappychoice.droidflyer.domain.service.StopOrderService
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
@@ -30,8 +31,13 @@ class OrdersPresenter internal constructor(
 
     internal fun refreshStops() = privateState.stopOrders.refresh(recoverTriggers = true)
 
-    internal fun cancelStop(order: StopOrder, failed: () -> Unit) =
-        privateState.stopOrders.cancel(order, failed)
+    internal fun stopCancellationConfirmation(order: StopOrder) =
+        privateState.stopOrders.cancellationConfirmation(order)
+
+    internal fun cancelStop(
+        confirmation: StopOrderService.CancellationConfirmation,
+        failed: (StopOrderService.CancellationFailure) -> Unit
+    ) = privateState.stopOrders.cancel(confirmation, failed)
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()
 

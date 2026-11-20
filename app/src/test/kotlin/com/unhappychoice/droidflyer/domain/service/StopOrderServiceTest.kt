@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import android.content.Context
+import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
@@ -33,6 +34,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
     private var parentState = "ACTIVE"
+    private var size = 0.01
     private var executedSize = 0.0
     private var childOrders = "[]"
     private var cancelStatus = 200
@@ -198,15 +200,15 @@ class StopOrderServiceTest {
     fun cancelsByParentAcceptanceIdAndAllowsRetryAfterFailure() {
         val service = service()
         service.refresh()
-        val order = service.orders.value.single()
-        var failures = 0
+        val confirmation = service.cancellationConfirmation(service.orders.value.single())
+        val failures = mutableListOf<CancellationFailure>()
         cancelStatus = 400
-        service.cancel(order) { failures++ }
-        assertEquals(1, failures)
+        service.cancel(confirmation) { failures += it }
+        assertEquals(listOf(CancellationFailure.REQUEST_FAILED), failures)
         assertTrue(service.orders.value.single().canCancel)
 
         cancelStatus = 200
-        service.cancel(order) { fail("Cancellation failed") }
+        service.cancel(confirmation) { fail("Cancellation failed: $it") }
         val cancellations = requests.filter { it.url.encodedPath == "/v1/me/cancelparentorder" }
         assertEquals(2, cancellations.size)
         cancellations.forEach {
@@ -214,6 +216,65 @@ class StopOrderServiceTest {
             assertJsonBody(it, """{"parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY"}""")
         }
         assertEquals(StopOrderStatus.CANCELED, service.orders.value.single().status)
+    }
+
+    @Test
+    fun cancellationUsesLatestEligibleOrderWithTheSameAcceptanceId() {
+        val service = service()
+        service.refresh()
+        val order = service.orders.value.single()
+        val confirmation = service.cancellationConfirmation(order)
+        size = 0.02
+        service.refresh()
+        assertNotEquals(order, service.orders.value.single())
+
+        service.cancel(confirmation) { fail("Cancellation failed: $it") }
+
+        assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
+    }
+
+    @Test
+    fun cancellationReportsWhenOrderPartiallyExecutesWhileDialogIsOpen() {
+        val service = service()
+        service.refresh()
+        val confirmation = service.cancellationConfirmation(service.orders.value.single())
+        executedSize = 0.005
+        service.refresh()
+        val failures = mutableListOf<CancellationFailure>()
+
+        service.cancel(confirmation) { failures += it }
+
+        assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+        assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+    }
+
+    @Test
+    fun cancellationReportsWhenOrderDisappearsWhileDialogIsOpen() {
+        val service = service()
+        service.refresh()
+        val confirmation = service.cancellationConfirmation(service.orders.value.single())
+        service.orders.value = emptyList()
+        val failures = mutableListOf<CancellationFailure>()
+
+        service.cancel(confirmation) { failures += it }
+
+        assertEquals(listOf(CancellationFailure.UNAVAILABLE), failures)
+        assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+    }
+
+    @Test
+    fun cancellationRejectsOldConfirmationEvenWhenNewAccountHasTheSameOrder() {
+        val service = service()
+        service.refresh()
+        val confirmation = service.cancellationConfirmation(service.orders.value.single())
+        service.switchAccount(client())
+        assertEquals(confirmation.acceptanceId, service.orders.value.single().acceptanceId)
+        val failures = mutableListOf<CancellationFailure>()
+
+        service.cancel(confirmation) { failures += it }
+
+        assertEquals(listOf(CancellationFailure.ACCOUNT_CHANGED), failures)
+        assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
     }
 
     @Test
@@ -305,7 +366,7 @@ class StopOrderServiceTest {
 
     private fun parentOrders() = """
         [{"parent_order_id":"parent-1","parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY",
-          "parent_order_type":"STOP","parent_order_state":"$parentState","side":"SELL","size":0.01,
+          "parent_order_type":"STOP","parent_order_state":"$parentState","side":"SELL","size":$size,
           "executed_size":$executedSize},
          {"parent_order_type":"STOP_LIMIT","product_code":"FX_BTC_JPY"},
          {"parent_order_type":"STOP","product_code":"BTC_JPY"}]

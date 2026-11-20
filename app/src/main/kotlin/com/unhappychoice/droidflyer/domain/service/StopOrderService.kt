@@ -65,17 +65,29 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         return true
     }
 
-    fun cancel(order: StopOrder, failed: () -> Unit) {
-        val id = order.acceptanceId
-        if (!order.canCancel || order !in orders.value || id in cancelling.value || requests.isDisposed) return
+    fun cancellationConfirmation(order: StopOrder): CancellationConfirmation =
+        CancellationConfirmation(account, order.acceptanceId)
+
+    fun cancel(confirmation: CancellationConfirmation, failed: (CancellationFailure) -> Unit) {
         val current = account
+        val id = confirmation.acceptanceId
+        val order = orders.value.firstOrNull { it.acceptanceId == id }
+        val rejection = when {
+            confirmation.account !== current -> CancellationFailure.ACCOUNT_CHANGED
+            requests.isDisposed || order == null -> CancellationFailure.UNAVAILABLE
+            id in cancelling.value -> CancellationFailure.IN_PROGRESS
+            !order.canCancel -> CancellationFailure.INELIGIBLE
+            else -> null
+        }
+        if (rejection != null) return failed(rejection)
+
         cancelling.value = cancelling.value + id
         current.client.cancelParentOrder(CancelParentOrderRequest(id))
             .subscribeOn(io).observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
             .doFinally { cancelling.value = cancelling.value - id }
             .subscribe({}, {
-                if (current === account) failed()
+                if (current === account) failed(CancellationFailure.REQUEST_FAILED)
             }, { if (current === account) refresh() })
             .addTo(requests)
     }
@@ -169,6 +181,10 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
 
     private fun isCryptoCfdStop(order: ParentOrder) =
         order.productCode == "FX_BTC_JPY" && order.parentOrderType == "STOP"
+
+    enum class CancellationFailure { ACCOUNT_CHANGED, UNAVAILABLE, IN_PROGRESS, INELIGIBLE, REQUEST_FAILED }
+
+    class CancellationConfirmation internal constructor(internal val account: Account, val acceptanceId: String)
 
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
 
