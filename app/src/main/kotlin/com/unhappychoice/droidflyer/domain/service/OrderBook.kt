@@ -10,7 +10,13 @@ import java.util.concurrent.TimeUnit
 
 internal enum class BoardSource { SNAPSHOT, DELTA, REST }
 
-internal data class BoardUpdate(val board: Board, val source: BoardSource)
+internal data class BoardUpdate(val board: Board, val source: BoardSource, val requestRevision: Long? = null)
+
+internal fun boardUpdates(snapshots: Observable<Board>, deltas: Observable<Board>): Observable<BoardUpdate> =
+    Observable.merge(
+        snapshots.map { BoardUpdate(it, BoardSource.SNAPSHOT) },
+        deltas.map { BoardUpdate(it, BoardSource.DELTA) }
+    )
 
 internal sealed class OrderBookEvent {
     data class Quotes(val bestAsk: Long, val bestBid: Long) : OrderBookEvent()
@@ -19,11 +25,12 @@ internal sealed class OrderBookEvent {
 
 internal fun observeOrderBook(
     updates: Observable<BoardUpdate>,
-    serialScheduler: Scheduler
+    serialScheduler: Scheduler,
+    isCurrent: (BoardUpdate) -> Boolean = { true }
 ): Observable<OrderBookEvent> = Observable.defer {
     val book = OrderBook()
     updates.observeOn(serialScheduler)
-        .filter(book::apply)
+        .filter { isCurrent(it) && book.apply(it) }
         .publish { applied ->
             Observable.merge<OrderBookEvent>(
                 applied.map { book.quotes() }.distinctUntilChanged(),

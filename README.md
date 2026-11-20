@@ -8,6 +8,12 @@ store](https://raw.githubusercontent.com/unhappychoice/Norimaki/image/google-pla
 
 DroidFlyer is a [bitFlyer Lightning](https://lightning.bitflyer.com) client for Android.
 
+## Features
+
+- Chart recent bitFlyer Crypto CFD trade prices in JPY.
+- Watch live bids and asks in the order book and adjust how price levels are grouped.
+- Place market and limit orders, and view or cancel active orders.
+
 ## Quick start
 
 1. Install [DroidFlyer from Google Play](https://play.google.com/store/apps/details?id=com.unhappychoice.droidflyer).

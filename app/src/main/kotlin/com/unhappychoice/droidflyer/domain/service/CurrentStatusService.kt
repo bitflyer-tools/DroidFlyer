@@ -13,6 +13,7 @@ import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -24,10 +25,7 @@ class CurrentStatusService internal constructor(
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
         realtimeClient.executions,
-        Observable.merge(
-            realtimeClient.boardSnapshot.map { BoardUpdate(it, BoardSource.SNAPSHOT) },
-            realtimeClient.board.map { BoardUpdate(it, BoardSource.DELTA) }
-        ),
+        boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
         Observable.merge(
             realtimeClient.childOrderEvents.map { Unit },
             realtimeClient.parentOrderEvents.map { Unit }
@@ -50,14 +48,19 @@ class CurrentStatusService internal constructor(
 
     private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
+    private val realtimeBoardRevision = AtomicLong()
 
     init {
         executions
+            .filter { it.isNotEmpty() }
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
 
-        observeOrderBook(Observable.merge(boardUpdates, restBoards), Schedulers.single())
+        val realtimeBoards = boardUpdates.doOnNext { realtimeBoardRevision.incrementAndGet() }
+        observeOrderBook(Observable.merge(realtimeBoards, restBoards), Schedulers.single()) { update ->
+            update.requestRevision?.let { it == realtimeBoardRevision.get() } ?: true
+        }
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { event ->
                 when (event) {
@@ -79,12 +82,24 @@ class CurrentStatusService internal constructor(
         updateStatus()
     }
 
+    fun dispose() {
+        bag.dispose()
+        privateState.dispose()
+    }
+
     fun updateStatus() {
+        if (bag.isDisposed) return
+
         privateState.refresh()
 
+        refreshBoard()
+    }
+
+    private fun refreshBoard() {
+        val requestRevision = realtimeBoardRevision.get()
         apiClient.getBoard("FX_BTC_JPY")
             .subscribeOn(Schedulers.io())
-            .subscribeNext { restBoards.onNext(BoardUpdate(it, BoardSource.REST)) }
+            .subscribeNext { restBoards.onNext(BoardUpdate(it, BoardSource.REST, requestRevision)) }
             .addTo(bag)
     }
 }

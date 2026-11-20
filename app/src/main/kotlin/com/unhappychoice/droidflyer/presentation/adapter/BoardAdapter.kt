@@ -9,54 +9,41 @@ import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.floorBySize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
-import io.reactivex.Scheduler
-import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.Observables
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 
-class BoardAdapter internal constructor(
-    val context: Context,
-    val type: BoardType,
-    groupingScheduler: Scheduler
-) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
-    constructor(context: Context, type: BoardType) : this(context, type, Schedulers.computation())
-
-    val myOrders = Variable<List<ChildOrder>>(listOf())
-    val items = Variable<List<Order>>(listOf())
+class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val clickItems = PublishSubject.create<Order>()
-    val groupSize = Variable(1L)
 
-    private var groupedRows = GroupedRows(1L, emptyList())
+    private var rows = emptyList<Order>()
+    private var groupingSize = 1L
+    private var myOrders = emptyList<ChildOrder>()
 
-    private val bag = CompositeDisposable()
-
-    init {
-        Observables.combineLatest(items.asObservable(), groupSize.asObservable())
-            .observeOn(groupingScheduler)
-            .map { (orders, size) -> GroupedRows(size, type.groupBySize(orders, size).take(50)) }
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext {
-                groupedRows = it
-                notifyDataSetChanged()
-            }
-            .addTo(bag)
+    fun applyRows(rows: List<Order>, groupingSize: Long) {
+        this.rows = rows
+        this.groupingSize = groupingSize
+        notifyDataSetChanged()
     }
 
-    override fun getItemCount() = groupedRows.orders.size
+    override fun getItemCount() = rows.size
+
+    fun updateMyOrders(orders: List<ChildOrder>) {
+        val previousOrders = myOrders
+        myOrders = orders
+        rows.forEachIndexed { position, item ->
+            val previousSize = type.personalOutstandingSize(previousOrders, item.price, groupingSize)
+            val currentSize = type.personalOutstandingSize(orders, item.price, groupingSize)
+            if (previousSize != currentSize) notifyItemChanged(position)
+        }
+    }
 
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
-        val item = groupedRows.orders[position]
+        val item = rows[position]
         holder.bind(item)
         holder.view.setOnClickListener { clickItems.onNext(item) }
     }
@@ -82,7 +69,7 @@ class BoardAdapter internal constructor(
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val outstandingSize = type.personalOutstandingSize(myOrders.value, order.price, groupedRows.size)
+            val outstandingSize = type.personalOutstandingSize(myOrders, order.price, groupingSize)
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
@@ -103,7 +90,6 @@ class BoardAdapter internal constructor(
         private val sizeTextView = view.findViewById<TextView>(R.id.size)
         private val backgroundView = view.findViewById<View>(R.id.backgroundView)
     }
-    private data class GroupedRows(val size: Long, val orders: List<Order>)
 }
 
 sealed class BoardType(private val side: String) {
