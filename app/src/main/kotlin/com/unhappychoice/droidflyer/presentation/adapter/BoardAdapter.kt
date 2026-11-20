@@ -9,7 +9,6 @@ import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
@@ -19,19 +18,32 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import io.reactivex.subjects.PublishSubject
 
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
-    val myOrders = Variable<List<ChildOrder>>(listOf())
     val clickItems = PublishSubject.create<Order>()
 
     private var rows = emptyList<Order>()
     private var groupingSize = 1L
+    private var myOrders = emptyList<ChildOrder>()
+    private var outstandingSizes = emptyMap<Long, Double>()
 
     fun applyRows(rows: List<Order>, groupingSize: Long) {
         this.rows = rows
-        this.groupingSize = groupingSize
+        if (this.groupingSize != groupingSize) {
+            this.groupingSize = groupingSize
+            outstandingSizes = type.personalOutstandingSizes(myOrders, groupingSize)
+        }
         notifyDataSetChanged()
     }
 
     override fun getItemCount() = rows.size
+
+    fun updateMyOrders(orders: List<ChildOrder>) {
+        val previousSizes = outstandingSizes
+        myOrders = orders
+        outstandingSizes = type.personalOutstandingSizes(orders, groupingSize)
+        rows.forEachIndexed { position, item ->
+            if (previousSizes[item.price] != outstandingSizes[item.price]) notifyItemChanged(position)
+        }
+    }
 
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
         val item = rows[position]
@@ -60,7 +72,7 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val outstandingSize = type.personalOutstandingSize(myOrders.value, order.price, groupingSize)
+            val outstandingSize = outstandingSizes[order.price]
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
@@ -84,16 +96,17 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
 }
 
 sealed class BoardType(private val side: String) {
-    internal fun personalOutstandingSize(orders: List<ChildOrder>, price: Long, groupSize: Long): Double? =
-        orders.filter { it.side == side && groupedPrice(it, groupSize) == price }
-            .takeIf { it.isNotEmpty() }
-            ?.sumOf { it.outstandingSize }
-
     abstract fun groupedPrice(order: ChildOrder, size: Long): Long
     abstract fun groupBySize(orders: List<Order>, size: Long): List<Order>
     abstract fun sizeDirection(): Int
     abstract fun priceDirection(): Int
     abstract fun color(): Int
+
+    internal fun personalOutstandingSizes(orders: List<ChildOrder>, groupSize: Long): Map<Long, Double> =
+        orders.asSequence()
+            .filter { it.side == side }
+            .groupingBy { groupedPrice(it, groupSize) }
+            .fold(0.0) { total, order -> total + order.outstandingSize }
 
     object Ask : BoardType("SELL") {
         override fun groupedPrice(order: ChildOrder, size: Long) = order.ceiledPrice(size)

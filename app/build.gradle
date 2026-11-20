@@ -136,6 +136,10 @@ play {
     if (playAccount != null) serviceAccountCredentials.set(playAccountFile)
 }
 
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation fileTree(include: ['*.jar'], dir: 'libs')
@@ -147,11 +151,8 @@ dependencies {
     implementation 'com.github.unhappychoice:rxsnackbar:2.0.1'
     implementation 'com.google.android.material:material:1.14.0'
     implementation 'com.google.code.gson:gson:2.15.0'
-    implementation 'com.jakewharton.rxbinding2:rxbinding-kotlin:2.2.0'
-    implementation 'com.jakewharton.rxbinding2:rxbinding-support-v4-kotlin:2.2.0'
-    implementation 'com.jakewharton.rxbinding2:rxbinding-appcompat-v7-kotlin:2.2.0'
-    implementation 'com.jakewharton.rxbinding2:rxbinding-design-kotlin:2.2.0'
-    implementation 'com.jakewharton.rxbinding2:rxbinding-recyclerview-v7-kotlin:2.2.0'
+    implementation 'com.jakewharton.rxbinding4:rxbinding:4.0.0'
+    implementation 'com.github.akarnokd:rxjava3-bridge:3.0.2'
     implementation 'com.pubnub:pubnub-gson:14.2.0'
     implementation 'com.squareup.flow:flow:1.0.0-alpha3'
     implementation 'com.squareup.mortar:mortar:0.20'
@@ -169,7 +170,7 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'com.squareup.okhttp3:mockwebserver3:5.5.1'
-    testImplementation('com.nhaarman:mockito-kotlin:1.6.0') { exclude group: 'org.jetbrains.kotlin' }
+    testImplementation 'org.mockito.kotlin:mockito-kotlin:6.4.0'
     testImplementation('com.winterbe:expekt:0.5.0') { exclude group: 'org.jetbrains.kotlin' }
     testImplementation 'org.robolectric:robolectric:4.18'
 
