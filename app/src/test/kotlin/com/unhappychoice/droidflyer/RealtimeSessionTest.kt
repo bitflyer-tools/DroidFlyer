@@ -8,7 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -122,7 +122,7 @@ class RealtimeSessionTest {
             }
         } as APIClientV1
         private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
-        val preference = APITokenPreference(RuntimeEnvironment.getApplication()).apply {
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
             save(APICredentials("key", "secret"))
         }
         private val client = RealtimeClient(gson, preference, listOf(socket, replacement).iterator()::next)

@@ -14,7 +14,6 @@ import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
-import io.reactivex.subjects.PublishSubject
 import io.reactivex.subjects.ReplaySubject
 
 // Access the session and its cached data on the UI thread.
@@ -48,17 +47,7 @@ internal class PrivateTradingState(
         if (requests.isDisposed) return
 
         val current = session ?: return
-        val requestId = ++current.positionRequestId
-        current.client.getPositions()
-            .subscribeOn(requestScheduler)
-            .observeOn(stateScheduler)
-            .subscribeNext { positions ->
-                if (current === session) {
-                    position.value = positions
-                    current.positionResponses.onNext(requestId to positions)
-                }
-            }
-            .addTo(requests)
+        bind(current, current.client.getPositions(), position)
         bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
         // Unchanged rows keep their order references for cancellation.
         current.client.getChildOrders("FX_BTC_JPY")
@@ -68,15 +57,7 @@ internal class PrivateTradingState(
             .addTo(requests)
     }
 
-    fun observeNewPositionResponses(): Observable<List<Position>> {
-        val current = session ?: return Observable.empty()
-        val latestRequestId = current.positionRequestId
-        return current.positionResponses
-            .filter { (requestId, _) -> requestId > latestRequestId }
-            .map { (_, positions) -> positions }
-    }
-
-    fun isCurrent(confirmation: CloseConfirmation): Boolean = confirmation.session === session
+    fun isCurrent(confirmation: CloseConfirmation): Boolean = !requests.isDisposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
         val current = session ?: return null
@@ -85,15 +66,17 @@ internal class PrivateTradingState(
 
     fun closePosition(
         confirmation: CloseConfirmation,
+        onAccepted: () -> Unit = {},
         reconfirm: (CloseConfirmation) -> Unit = {}
-    ): Observable<Map<String, Any>>? {
+    ): Observable<Unit>? {
         val current = session ?: return null
         if (!isCurrent(confirmation)) return null
         return confirmation.order.confirm(
             PositionCloseOrder.from(position.value.wholeSize()),
             submit = {
-                val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", it.side, null, it.size)
-                withinSession(current, current.client.sendChildOrder(request))
+                withinSession(current, Observable.defer {
+                    ClosePositionService(current.client, requestScheduler).close(it.positionSize, onAccepted).toObservable()
+                })
             },
             reconfirm = { reconfirm(CloseConfirmation(current, it)) }
         )
@@ -116,7 +99,6 @@ internal class PrivateTradingState(
         session = next
         requests.clear()
         previous?.ended?.onNext(Unit)
-        previous?.positionResponses?.onComplete()
         position.value = emptyList()
         balance.value = 0.0
         orders.value = emptyList()
@@ -137,7 +119,5 @@ internal class PrivateTradingState(
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1) {
         val ended = ReplaySubject.createWithSize<Unit>(1)
-        var positionRequestId = 0L
-        val positionResponses = PublishSubject.create<Pair<Long, List<Position>>>()
     }
 }

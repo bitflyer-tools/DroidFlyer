@@ -37,7 +37,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .addTo(bag)
 
         currentStatusService.tradingTotals
-            .distinctUntilChanged()
+            .subscribeOnComputationObserveOnUI()
             .subscribeNext { totals ->
                 binding.profit.text = totals.profit.splitByComma()
                 binding.profit.setCoefficientColor(totals.profit)

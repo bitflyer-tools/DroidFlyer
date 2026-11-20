@@ -42,18 +42,14 @@ class LimitOrderPresenter(
         groupingSizes.getOrNull(index - 1)?.let { groupingSize.value = it }
     }
 
-    fun buy(price: Long) = submitOrder(price, "BUY", R.string.ordered_buy)
+    internal fun submitOrder(terms: LimitOrderTerms) {
+        if (isLoading.value || terms.size == 0.0) return
 
-    fun sell(price: Long) = submitOrder(price, "SELL", R.string.ordered_sell)
-
-    private fun submitOrder(price: Long, side: String, messageRes: Int) {
-        if (!canSubmitOrder) return
-
-        val size = Math.abs(amount.value)
-        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, size)
+        val (side, price, size) = terms
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, size)
         val order = submit(request) ?: return
         val orderView = view
-        val message = orderView.context.getString(messageRes, size, price)
+        val message = orderView.context.getString(side.orderedMessage, size, price)
 
         isLoading.value = true
         order
@@ -61,4 +57,11 @@ class LimitOrderPresenter(
             .subscribeNextWithSnackBar(orderView, message)
             .addTo(bag)
     }
+}
+
+internal data class LimitOrderTerms(val side: LimitOrderSide, val price: Long, val size: Double)
+
+internal enum class LimitOrderSide(val label: Int, val orderedMessage: Int) {
+    BUY(R.string.buy, R.string.ordered_buy),
+    SELL(R.string.sell, R.string.ordered_sell)
 }

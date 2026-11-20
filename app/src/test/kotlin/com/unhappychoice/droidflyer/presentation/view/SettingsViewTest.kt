@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.app.Activity
 import android.os.Bundle
 import android.os.Parcelable
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import com.google.gson.Gson
@@ -10,12 +11,19 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
+import io.reactivex.android.plugins.RxAndroidPlugins
+import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.schedulers.Schedulers
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -32,6 +40,52 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class SettingsViewTest {
     @Test
+    fun reattachingSettingsRestoresFieldAndApplySubscriptionsExactlyOnce() {
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        try {
+            Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+                val host = controller.get()
+                val settings = host.openSettings()
+                repeat(3) { cycle -> assertSettingsReattachment(host, settings, cycle) }
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    private fun assertSettingsReattachment(host: SettingsHost, settings: SettingsViewBinding, cycle: Int) {
+        val presenter = settings.root.presenter
+        val parent = settings.root.parent as ViewGroup
+        val previousKey = presenter.key.value
+        val previousSecret = presenter.secret.value
+        parent.removeView(settings.root)
+        settings.apiTokenTextView.setText("detached-key")
+        settings.apiSecretTextView.setText("detached-secret")
+        settings.saveButton.performClick()
+        assertEquals(previousKey, presenter.key.value)
+        assertEquals(previousSecret, presenter.secret.value)
+        assertEquals(cycle, host.applyRequests)
+        parent.addView(settings.root)
+
+        val key = "key-$cycle"
+        val secret = "secret-$cycle"
+        val keys = presenter.key.asObservable().skip(1).test()
+        val secrets = presenter.secret.asObservable().skip(1).test()
+        settings.apiTokenTextView.setText(key)
+        settings.apiSecretTextView.setText(secret)
+        keys.assertValues(key).dispose()
+        secrets.assertValues(secret).dispose()
+
+        settings.saveButton.performClick()
+        assertEquals(cycle + 1, host.applyRequests)
+        val saved = testAPITokenPreference(host).read()
+        assertEquals(key, saved.key)
+        assertEquals(secret, saved.secret)
+    }
+
+    @Test
     fun credentialsAreOmittedFromActivityAndFlowStateAndReloadedOnReopen() {
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val activity = controller.get()
@@ -46,7 +100,7 @@ class SettingsViewTest {
             assertCredentialsOmitted(settings, Bundle().also { controller.saveInstanceState(it) }, flowState)
 
             activity.setContentView(LinearLayout(activity))
-            APITokenPreference(activity).save(APICredentials("updated-key", "updated-secret"))
+            testAPITokenPreference(activity).save(APICredentials("updated-key", "updated-secret"))
             val reopened = activity.openSettings()
             flowState.restore(reopened.root)
             assertEquals("updated-key", reopened.apiTokenTextView.text.toString())
@@ -93,16 +147,29 @@ class SettingsViewTest {
     }
 
     class SettingsHost : Activity() {
+        var applyRequests = 0
+            private set
+
         private val scope by lazy {
             MortarScope.buildRootScope()
                 .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
                 .build("settings_test")
         }
-        private val module by lazy {
-            val preference = APITokenPreference(this).apply {
+        private val di by lazy {
+            val preference = testAPITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
-            val presenter = SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {}
+            val transport = OkHttpClient.Builder().addInterceptor { chain ->
+                applyRequests++
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("Test response")
+                    .body("[]".toResponseBody())
+                    .build()
+            }.build()
+            val presenter = SettingsPresenter(APIClient(Gson(), preference, transport), preference, switchAccount = {}) {}
             DI { bindInstance { presenter } }
         }
 
@@ -110,7 +177,7 @@ class SettingsViewTest {
             if (scope.hasService(name)) scope.getService(name) else super.getSystemService(name)
 
         fun openSettings(): SettingsViewBinding = SettingsViewBinding.inflate(layoutInflater).also {
-            it.root.inject(module)
+            it.root.inject(di)
             setContentView(it.root)
         }
     }
