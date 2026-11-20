@@ -20,7 +20,8 @@ class CurrentStatusService internal constructor(
     orderEvents: Observable<Unit>,
     privateClient: APIClientV1 = apiClient,
     parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
-    privateChannelsReady: Observable<Unit> = Observable.empty()
+    privateChannelsReady: Observable<Unit> = Observable.empty(),
+    childEvents: Observable<List<ChildOrderEvent>> = Observable.empty()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
@@ -32,7 +33,8 @@ class CurrentStatusService internal constructor(
         ),
         privateClient,
         realtimeClient.parentOrderEvents,
-        realtimeClient.privateChannelsReady
+        realtimeClient.privateChannelsReady,
+        realtimeClient.childOrderEvents
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -76,10 +78,15 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
 
         val stopOrders = privateState.stopOrders
-        val stopUpdates = parentEvents
+        val parentUpdates = parentEvents
             .observeOn(AndroidSchedulers.mainThread())
             .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
             .doOnNext(stopOrders::onEvents)
+            .map { Unit }
+        val childExecutions = childEvents
+            .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" && it.isExecution() } }
+            .map { Unit }
+        val stopUpdates = Observable.merge(parentUpdates, childExecutions)
             .debounce(1, TimeUnit.SECONDS)
             .map { false }
         Observable.merge(stopUpdates, privateChannelsReady.map { true })

@@ -1,13 +1,21 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import android.content.Context
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.android.plugins.RxAndroidPlugins
+import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
+import io.socket.client.Socket
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -16,9 +24,11 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import org.junit.Assert.*
 import org.junit.Test
+import org.mockito.Mockito.mock
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit.SECONDS
 
 class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
@@ -60,24 +70,58 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun parentEventDistinguishesTriggerFromPartialAndFullExecutionAfterReload() {
-        val service = service()
-        service.refresh()
-        service.onEvents(listOf(triggerEvent().copy(productCode = "BTC_JPY")))
-        assertEquals(StopOrderStatus.WAITING, service.orders.value.single().status)
+    fun childExecutionsRefreshTriggeredStopThroughPartialAndFullExecution() {
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
+        try {
+            val api = client()
+            val preference = APITokenPreference(mock(Context::class.java))
+            val realtime = RealtimeClient(GsonBuilder().create(), preference, mock(Socket::class.java))
+            val status = CurrentStatusService(api, realtime, api)
+            try {
+                val stops = status.privateState.stopOrders
+                stops.refresh()
+                scheduler.triggerActions()
+                assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
 
-        service.onEvents(listOf(triggerEvent()))
-        assertEquals(StopOrderStatus.TRIGGERED, service.orders.value.single().status)
-        assertFalse(service.orders.value.single().canCancel)
+                realtime.parentOrderEvents.onNext(listOf(triggerEvent().copy(productCode = "BTC_JPY")))
+                scheduler.triggerActions()
+                assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
 
-        executedSize = 0.005
-        service.refreshIfEnabled()
-        assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, service.orders.value.single().status)
+                realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
+                scheduler.triggerActions()
+                assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+                assertFalse(stops.orders.value.single().canCancel)
+                scheduler.advanceTimeBy(1, SECONDS)
 
-        parentState = "COMPLETED"
-        executedSize = 0.01
-        service.refreshIfEnabled()
-        assertEquals(StopOrderStatus.EXECUTED, service.orders.value.single().status)
+                executedSize = 0.005
+                val execution = childExecution()
+                realtime.childOrderEvents.onNext(listOf(
+                    execution.copy(productCode = "BTC_JPY"),
+                    execution.copy(eventType = "ORDER")
+                ))
+                scheduler.advanceTimeBy(1, SECONDS)
+                assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+
+                realtime.childOrderEvents.onNext(listOf(execution))
+                scheduler.advanceTimeBy(1, SECONDS)
+                assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
+
+                parentState = "COMPLETED"
+                executedSize = 0.01
+                realtime.childOrderEvents.onNext(listOf(execution.copy(execId = 2)))
+                scheduler.advanceTimeBy(1, SECONDS)
+                assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
+            } finally {
+                status.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
     }
 
     @Test
@@ -134,6 +178,11 @@ class StopOrderServiceTest {
         "TRIGGER", null, null, "MARKET", 1, "child-1", "SELL", null, 0.01, null
     )
 
+    private fun childExecution() = ChildOrderEvent(
+        "FX_BTC_JPY", "child-1", "child-acceptance-1", "2026-01-01T00:00:01Z",
+        "EXECUTION", null, null, null, 1, "SELL", 5000000, 0.005, null, null
+    )
+
     private fun client(): APIClientV1 {
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
@@ -150,6 +199,9 @@ class StopOrderServiceTest {
     }
 
     private fun respond(request: Request): Pair<Int, String> = when (request.url.encodedPath) {
+        "/v1/board" -> 200 to """{"mid_price":0,"bids":[],"asks":[]}"""
+        "/v1/me/getpositions" -> 200 to "[]"
+        "/v1/me/getcollateral" -> 200 to """{"collateral":0}"""
         "/v1/me/sendparentorder" -> 200 to """{"parent_order_acceptance_id":"acceptance-1"}"""
         "/v1/me/getparentorders" -> {
             assertEquals("FX_BTC_JPY", request.url.queryParameter("product_code"))
