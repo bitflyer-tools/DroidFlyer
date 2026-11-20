@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
+import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
@@ -73,8 +74,8 @@ class MarketOrderPresenter internal constructor(
     }
 
     private fun submit(side: String, size: Double) {
-        if (isLoading.value || size == 0.0) return
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
+        if (isLoading.value || !CryptoCfdOrderSize.isValid(size)) return
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, size)
         apiClient.sendChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()

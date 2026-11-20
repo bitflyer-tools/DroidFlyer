@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import com.nhaarman.mockito_kotlin.any
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
@@ -15,6 +16,7 @@ import io.reactivex.subjects.PublishSubject
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
@@ -51,9 +53,21 @@ class MarketOrderPresenterTest {
     }
 
     @Test
+    fun belowMinimumDoesNotSubmitMarketOrders() {
+        presenter.amount.value = 0.0001
+
+        presenter.buy()
+        presenter.sell()
+        scheduler.triggerActions()
+
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(any())
+        assertFalse(presenter.isLoading.value)
+    }
+
+    @Test
     fun acceptanceIdReportsMarketBuyAcceptance() {
         stubAcceptance("BUY")
-        presenter.amount.value = 0.5
+        presenter.amount.value = 0.001
 
         presenter.buy()
         scheduler.triggerActions()
@@ -64,7 +78,7 @@ class MarketOrderPresenterTest {
     @Test
     fun acceptanceIdReportsMarketSellAcceptance() {
         stubAcceptance("SELL")
-        presenter.amount.value = 0.5
+        presenter.amount.value = 0.001
 
         presenter.sell()
         scheduler.triggerActions()
@@ -204,7 +218,7 @@ class MarketOrderPresenterTest {
     }
 
     private fun stubAcceptance(side: String) {
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5)
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.001)
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
     }
 

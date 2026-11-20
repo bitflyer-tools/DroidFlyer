@@ -26,6 +26,7 @@
     <string name="close_positions_multiple_orders">This will submit multiple market orders, checking the remaining position after each order.</string>
     <string name="close_positions_incomplete">Could not confirm that all positions were closed. Check your positions and orders.</string>
     <string name="cleared_all_positions">Cleared all positions</string>
+    <string name="minimum_order_size">Minimum order quantity is %1$s BTC-CFD</string>
     <string name="market_order_accepted">Market order accepted</string>
     <string name="market_order_failed">Could not submit market order</string>
     <string name="ordered_buy">Ordered BUY / %1$f / %2$d</string>

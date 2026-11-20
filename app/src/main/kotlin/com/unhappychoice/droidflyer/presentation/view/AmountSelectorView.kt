@@ -7,9 +7,12 @@ import android.text.Spanned
 import android.text.method.NumberKeyListener
 import android.util.AttributeSet
 import android.view.LayoutInflater
+import androidx.core.view.isVisible
 import com.jakewharton.rxbinding2.view.clicks
 import com.jakewharton.rxbinding2.widget.textChanges
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.AmountSelectorViewBinding
+import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -45,6 +48,12 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         }
         amountField.keyListener = AmountKeyListener(amountSymbols)
         amountField.setText(formatAmount(amount.value))
+
+        binding.minimumOrderSizeMessage.text =
+            context.getString(R.string.minimum_order_size, formatAmount(CryptoCfdOrderSize.MINIMUM))
+        amount.asObservable()
+            .subscribeNext { binding.minimumOrderSizeMessage.isVisible = it != 0.0 && !CryptoCfdOrderSize.isValid(it) }
+            .addTo(bag)
 
         size.asObservable()
             .subscribeNext { select(it) }

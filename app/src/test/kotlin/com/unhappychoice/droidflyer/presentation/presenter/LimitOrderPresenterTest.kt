@@ -24,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.never
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -49,7 +50,7 @@ class LimitOrderPresenterTest {
         val view = LimitOrderView(context, null)
         FrameLayout(context).addView(view)
         presenter.takeView(view)
-        presenter.amount.value = 0.01
+        presenter.amount.value = 0.001
     }
 
     @After
@@ -57,6 +58,18 @@ class LimitOrderPresenterTest {
         scope.destroy()
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun belowMinimumDoesNotSubmitLimitOrders() {
+        presenter.amount.value = 0.0001
+
+        assertFalse(presenter.canSubmitOrder)
+        presenter.buy(100)
+        presenter.sell(200)
+
+        verify(apiClient, never()).sendChildOrder(any())
+        assertFalse(presenter.isLoading.value)
     }
 
     @Test
@@ -96,5 +109,5 @@ class LimitOrderPresenterTest {
     }
 
     private fun request(side: String, price: Long) =
-        SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, 0.01)
+        SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, 0.001)
 }
