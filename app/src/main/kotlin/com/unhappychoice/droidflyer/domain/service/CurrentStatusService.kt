@@ -12,6 +12,7 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -45,14 +46,17 @@ class CurrentStatusService internal constructor(
     val orders = privateState.orders
 
     private val bag = CompositeDisposable()
+    private val realtimeBoardRevision = AtomicLong()
 
     init {
         executions
+            .filter { it.isNotEmpty() }
             .subscribeOnIoObserveOnUI()
             .subscribeNext { currentPrice.value = it.first().price }
             .addTo(bag)
 
         boardUpdates
+            .doOnNext { realtimeBoardRevision.incrementAndGet() }
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { update -> board.value = update(board.value) }
             .addTo(bag)
@@ -81,9 +85,16 @@ class CurrentStatusService internal constructor(
 
         privateState.refresh()
 
+        refreshBoard()
+    }
+
+    private fun refreshBoard() {
+        val requestRevision = realtimeBoardRevision.get()
         apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .subscribeRefresh(bag) { board.value = it }
+            .subscribeRefresh(bag) { snapshot ->
+                if (realtimeBoardRevision.get() == requestRevision) board.value = snapshot
+            }
     }
 }
 

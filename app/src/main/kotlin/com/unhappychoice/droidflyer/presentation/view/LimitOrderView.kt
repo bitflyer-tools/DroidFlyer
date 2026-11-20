@@ -5,20 +5,21 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderTerms
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.clicks
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
-import java.util.concurrent.TimeUnit
 import org.kodein.di.instance
 
 class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, attr) {
@@ -47,49 +48,26 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
 
         askAdapter.clickItems
             .filter { presenter.canSubmitOrder }
-            .subscribeNext {
-                AlertDialog.Builder(context, R.style.DialogStyle)
-                    .setTitle(R.string.create_limit_order)
-                    .setMessage("${context.getString(R.string.sell)} / ${it.price} / ${presenter.amount.value}")
-                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.sell(it.price) }
-                    .setNegativeButton(context.getString(R.string.cancel), null)
-                    .show()
-            }.addTo(bag)
+            .subscribeNext { confirmOrder(LimitOrderSide.SELL, it.price) }.addTo(bag)
 
         bidAdapter.clickItems
             .filter { presenter.canSubmitOrder }
+            .subscribeNext { confirmOrder(LimitOrderSide.BUY, it.price) }.addTo(bag)
+
+        observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable())
+            .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext {
-                AlertDialog.Builder(context, R.style.DialogStyle)
-                    .setTitle(R.string.create_limit_order)
-                    .setMessage("${context.getString(R.string.buy)} / ${it.price} / ${presenter.amount.value}")
-                    .setPositiveButton(context.getString(R.string.ok)) { _, _ -> presenter.buy(it.price) }
-                    .setNegativeButton(context.getString(R.string.cancel), null)
-                    .show()
+                askAdapter.applyRows(it.asks, it.groupingSize)
+                bidAdapter.applyRows(it.bids, it.groupingSize)
+                binding.groupingTextView.text = it.groupingSize.toString()
             }.addTo(bag)
 
-        currentStatusService.board.asObservable()
-            .throttleLast(300, TimeUnit.MILLISECONDS)
-            .subscribeOnComputationObserveOnUI()
-            .subscribeNext {
-                askAdapter.items.value = it.asks.sortedBy { it.price }
-                bidAdapter.items.value = it.bids.sortedByDescending { it.price }
-                askAdapter.notifyDataSetChanged()
-                bidAdapter.notifyDataSetChanged()
-            }.addTo(bag)
-
-        currentStatusService.orders.asObservable().bindTo(askAdapter.myOrders).addTo(bag)
-        currentStatusService.orders.asObservable().bindTo(bidAdapter.myOrders).addTo(bag)
+        currentStatusService.orders.asObservable().subscribeNext {
+            askAdapter.updateMyOrders(it)
+            bidAdapter.updateMyOrders(it)
+        }.addTo(bag)
 
         presenter.apply {
-            groupingSize.asObservable()
-                .subscribeNext {
-                    binding.groupingTextView.text = it.toString()
-                    askAdapter.groupSize.value = it
-                    bidAdapter.groupSize.value = it
-                    askAdapter.notifyDataSetChanged()
-                    bidAdapter.notifyDataSetChanged()
-                }.addTo(bag)
-
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
             unitSize.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.size).addTo(bag)
         }
@@ -108,6 +86,16 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun confirmOrder(side: LimitOrderSide, price: Long) {
+        val terms = LimitOrderTerms(side, price, Math.abs(presenter.amount.value))
+        AlertDialog.Builder(context, R.style.DialogStyle)
+            .setTitle(R.string.create_limit_order)
+            .setMessage("${context.getString(terms.side.label)} / ${terms.price} / ${terms.size}")
+            .setPositiveButton(R.string.ok) { _, _ -> presenter.submitOrder(terms) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun setupStyle() {
