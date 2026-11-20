@@ -93,14 +93,18 @@ class CurrentStatusService internal constructor(
         Observable.defer {
             visibility.distinctUntilChanged()
                 .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
-                .map { update ->
-                    fundingStatus.updateAndGet { last ->
-                        if (update.funding != null) update else last.copy(stale = last.funding != null)
-                    }
-                }
+                .map(::updateFundingStatus)
                 .startWith(fundingStatus.get())
                 .distinctUntilChanged()
         }
+
+    private fun updateFundingStatus(update: FundingStatus): FundingStatus {
+        do {
+            val previous = fundingStatus.get()
+            val next = if (update.funding != null) update else previous.copy(stale = previous.funding != null)
+            if (fundingStatus.compareAndSet(previous, next)) return next
+        } while (true)
+    }
 
     private fun pollFunding(): Observable<FundingStatus> =
         Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }

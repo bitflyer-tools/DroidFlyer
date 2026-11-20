@@ -116,6 +116,9 @@ class CurrentStatusServiceTest {
         scheduler.advanceTimeBy(5, TimeUnit.MINUTES)
         verify(api, times(3)).getFundingRate("FX_BTC_JPY")
         funding.assertValues(FundingStatus(), FundingStatus(zeroQuote), FundingStatus(zeroQuote, stale = true))
+        service.observeFunding(Observable.just(false)).test()
+            .assertValue(FundingStatus(zeroQuote, stale = true))
+            .dispose()
 
         visible.onNext(true)
         scheduler.triggerActions()
