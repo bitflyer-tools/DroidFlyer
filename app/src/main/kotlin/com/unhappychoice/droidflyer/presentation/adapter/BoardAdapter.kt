@@ -9,7 +9,6 @@ import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
@@ -19,11 +18,11 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import io.reactivex.subjects.PublishSubject
 
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
-    val myOrders = Variable<List<ChildOrder>>(listOf())
     val clickItems = PublishSubject.create<Order>()
 
     private var rows = emptyList<Order>()
     private var groupingSize = 1L
+    private var myOrders = emptyList<ChildOrder>()
 
     fun applyRows(rows: List<Order>, groupingSize: Long) {
         this.rows = rows
@@ -32,6 +31,16 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     }
 
     override fun getItemCount() = rows.size
+
+    fun updateMyOrders(orders: List<ChildOrder>) {
+        val previousOrders = myOrders
+        myOrders = orders
+        rows.forEachIndexed { position, item ->
+            val previousSize = type.personalOutstandingSize(previousOrders, item.price, groupingSize)
+            val currentSize = type.personalOutstandingSize(orders, item.price, groupingSize)
+            if (previousSize != currentSize) notifyItemChanged(position)
+        }
+    }
 
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
         val item = rows[position]
@@ -60,7 +69,7 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val outstandingSize = type.personalOutstandingSize(myOrders.value, order.price, groupingSize)
+            val outstandingSize = type.personalOutstandingSize(myOrders, order.price, groupingSize)
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
