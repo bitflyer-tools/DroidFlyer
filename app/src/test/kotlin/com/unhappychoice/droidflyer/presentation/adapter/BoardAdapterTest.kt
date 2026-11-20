@@ -3,13 +3,22 @@ package com.unhappychoice.droidflyer.presentation.adapter
 import android.view.View
 import android.widget.RelativeLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.presentation.view.observeLimitOrderRows
+import io.reactivex.Observable
+import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit.MILLISECONDS
 
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
@@ -20,22 +29,119 @@ class BoardAdapterTest {
         val adapter = BoardAdapter(context, BoardType.Ask)
         val exactAsk = Order(100L, 1.0)
         val roundedAsk = Order(110L, 2.0)
-        adapter.applyRows(listOf(exactAsk, roundedAsk), groupingSize = 10L)
+        adapter.applyRows(listOf(exactAsk, roundedAsk), groupingSize = 10L, myOrders = emptyList())
 
-        val row = RelativeLayout(context).apply {
+        val holder = createHolder(adapter)
+        val selectedAsks = adapter.clickItems.test()
+
+        adapter.onBindViewHolder(holder, 0)
+        holder.view.performClick()
+        adapter.onBindViewHolder(holder, 1)
+        holder.view.performClick()
+
+        selectedAsks.assertValues(exactAsk, roundedAsk)
+    }
+
+    @Test
+    fun onlyChangedVisibleBidNotifiesAcrossBothSides() {
+        val context = RuntimeEnvironment.getApplication()
+        val asks = BoardAdapter(context, BoardType.Ask)
+        val bids = BoardAdapter(context, BoardType.Bid)
+        val boards = PublishSubject.create<Board>()
+        val scheduler = TestScheduler()
+        observeLimitOrderRows(boards, Observable.just(1L), scheduler).subscribe { rows ->
+            asks.applyRows(rows.asks, rows.groupingSize, emptyList())
+            bids.applyRows(rows.bids, rows.groupingSize, emptyList())
+        }
+        val board = Board(0.0, bids = (100L downTo 50L).map { Order(it, 1.0) }, asks = listOf(Order(200, 1.0)))
+        boards.onNext(board)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        val askChanges = asks.recordChanges()
+        val bidChanges = bids.recordChanges()
+
+        val outsideDepth = board.copy(bids = board.bids.dropLast(1) + Order(50, 2.0))
+        boards.onNext(outsideDepth)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertEquals(emptyList<String>(), askChanges)
+        assertEquals(emptyList<String>(), bidChanges)
+
+        boards.onNext(outsideDepth.copy(bids = listOf(Order(100, 3.0)) + outsideDepth.bids.drop(1)))
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertEquals(emptyList<String>(), askChanges)
+        assertEquals(listOf("change 0 1"), bidChanges)
+    }
+
+    @Test
+    fun groupingAndPersonalOrderChangesUpdateTheDisplayedQuantity() {
+        val adapter = BoardAdapter(RuntimeEnvironment.getApplication(), BoardType.Bid)
+        val orders = listOf(Order(100, 1.0))
+        val personal = personalBid()
+        adapter.applyRows(orders, 1, listOf(personal))
+        val holder = createHolder(adapter)
+        val mineSize = holder.view.findViewById<TextView>(R.id.mineSize)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.GONE, mineSize.visibility)
+        val changes = adapter.recordChanges()
+
+        adapter.applyRows(orders, 2, emptyList())
+        assertEquals(listOf("change 0 1"), changes)
+        changes.clear()
+
+        adapter.applyRows(orders, 10, listOf(personal))
+        assertEquals(listOf("change 0 1"), changes)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.VISIBLE, mineSize.visibility)
+        assertEquals("0.1", mineSize.text.toString())
+        changes.clear()
+
+        adapter.applyRows(orders, 10, listOf(personal.copy(outstandingSize = 0.04)))
+        assertEquals(listOf("change 0 1"), changes)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals("0.04", mineSize.text.toString())
+        changes.clear()
+
+        adapter.applyRows(orders, 10, emptyList())
+        assertEquals(listOf("change 0 1"), changes)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.GONE, mineSize.visibility)
+    }
+
+    private fun BoardAdapter.recordChanges() = mutableListOf<String>().also { changes ->
+        registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onChanged() { changes.add("invalidate") }
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) {
+                changes.add("change $positionStart $itemCount")
+            }
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) { changes.add("insert") }
+            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) { changes.add("remove") }
+            override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) { changes.add("move") }
+        })
+    }
+
+    private fun createHolder(adapter: BoardAdapter): BoardAdapter.ViewHolder {
+        val context = adapter.context
+        return adapter.ViewHolder(RelativeLayout(context).apply {
             listOf(R.id.price, R.id.size, R.id.mineSize).forEach { id ->
                 addView(TextView(context).apply { this.id = id })
             }
             addView(View(context).apply { id = R.id.backgroundView })
-        }
-        val holder = adapter.ViewHolder(row)
-        val selectedAsks = adapter.clickItems.test()
-
-        adapter.onBindViewHolder(holder, 0)
-        row.performClick()
-        adapter.onBindViewHolder(holder, 1)
-        row.performClick()
-
-        selectedAsks.assertValues(exactAsk, roundedAsk)
+        })
     }
+
+    private fun personalBid() = ChildOrder(
+        id = 1,
+        childOrderId = "order",
+        productCode = "BTC_JPY",
+        side = "BUY",
+        childOrderType = "LIMIT",
+        price = 101,
+        average_price = 101,
+        size = 0.1,
+        childOrderState = "ACTIVE",
+        childOrderAcceptanceId = "acceptance",
+        outstandingSize = 0.1,
+        cancelSize = 0.0,
+        executedSize = 0.0,
+        totalCommission = 0.0
+    )
 }
