@@ -76,14 +76,14 @@ class MarketOrderPresenterTest {
     fun rejectedBuyReportsFailureAndRestoresControls() {
         presenter.amount.value = 0.5
 
-        assertRejected("BUY", submit = presenter::buy)
+        assertSubmissionFailure("BUY", submit = presenter::buy)
     }
 
     @Test
     fun rejectedSellReportsFailureAndRestoresControls() {
         presenter.amount.value = 0.5
 
-        assertRejected("SELL", submit = presenter::sell)
+        assertSubmissionFailure("SELL", submit = presenter::sell)
     }
 
     @Test
@@ -93,7 +93,25 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
             .thenReturn(Observable.just(status.position.value))
 
-        assertRejected("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+        assertSubmissionFailure("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+    }
+
+    @Test
+    fun uncertainMarketOrderPromptsOrderCheck() {
+        presenter.amount.value = 0.5
+
+        assertSubmissionFailure("BUY", statusCode = 503, message = R.string.order_acceptance_uncertain,
+            submit = presenter::buy)
+    }
+
+    @Test
+    fun uncertainCloseOrderPromptsOrderCheck() {
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
+            .thenReturn(Observable.just(status.position.value))
+
+        assertSubmissionFailure("SELL", timeInForce = "IOC", statusCode = 503,
+            message = R.string.order_acceptance_uncertain, submit = ::confirmPositionClose)
     }
 
     @Test
@@ -179,7 +197,13 @@ class MarketOrderPresenterTest {
         assertEquals(listOf(R.string.market_order_accepted), messages)
     }
 
-    private fun assertRejected(side: String, timeInForce: String = "GTC", submit: () -> Unit) {
+    private fun assertSubmissionFailure(
+        side: String,
+        timeInForce: String = "GTC",
+        statusCode: Int = 400,
+        message: Int = R.string.market_order_failed,
+        submit: () -> Unit
+    ) {
         val response = PublishSubject.create<Map<String, Any>>()
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5, timeInForce = timeInForce)
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(response)
@@ -190,10 +214,10 @@ class MarketOrderPresenterTest {
         loading.assertValues(false, true)
         assertEquals(emptyList<Int>(), messages)
 
-        response.onError(HttpException(Response.error<Any>(400, "".toResponseBody())))
+        response.onError(HttpException(Response.error<Any>(statusCode, "".toResponseBody())))
 
         loading.assertValues(false, true, false)
-        assertEquals(listOf(R.string.market_order_failed), messages)
+        assertEquals(listOf(message), messages)
     }
 
     private fun confirmPositionClose() {

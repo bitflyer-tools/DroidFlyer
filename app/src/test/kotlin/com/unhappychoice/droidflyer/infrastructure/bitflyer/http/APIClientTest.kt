@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.SocketEffect
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -18,6 +19,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import retrofit2.HttpException
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -39,6 +41,24 @@ class APIClientTest {
     }
 
     @Test
+    fun orderPostIsNotResentAfterServiceUnavailableWithImmediateRetry() {
+        val response = MockResponse.Builder().code(503).addHeader("Retry-After", "0").build()
+        assertOrderSentOnce(response) { it is HttpException && it.code() == 503 }
+    }
+
+    @Test
+    fun orderPostIsNotResentWhenServerClosesConnectionAfterReadingBody() {
+        val response = MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
+        assertOrderSentOnce(response) { it is IOException }
+    }
+
+    @Test
+    fun orderAcceptanceIsUncertainWhenSuccessResponseHasNoAcceptanceId() {
+        assertOrderSentOnce(MockResponse.Builder().body("{}").build()) { it == null }
+        assertOrderSentOnce(MockResponse.Builder().code(204).build()) { it is NullPointerException }
+    }
+
+    @Test
     fun directRequestsCarrySignedAccessHeaders() {
         MockWebServer().use { origin ->
             origin.start()
@@ -51,6 +71,21 @@ class APIClientTest {
 
             assertSignedRequest(origin, "GET", "/v1/me/getpositions?product_code=FX_BTC_JPY", "")
             assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+        }
+    }
+
+    private fun assertOrderSentOnce(response: MockResponse, expectedCause: (Throwable?) -> Boolean) {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(response)
+            origin.enqueue(MockResponse.Builder().body("""{"child_order_acceptance_id":"retry"}""").build())
+
+            client(origin).submitChildOrder(order).test()
+                .assertNoValues()
+                .assertError { it is OrderAcceptanceUncertainException && expectedCause(it.cause) }
+
+            assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+            assertEquals(1, origin.requestCount)
         }
     }
 

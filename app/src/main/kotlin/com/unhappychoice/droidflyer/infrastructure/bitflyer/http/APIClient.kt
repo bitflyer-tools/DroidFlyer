@@ -57,6 +57,7 @@ class APIClient internal constructor(
     private fun createClient(credentials: APICredentials?): APIClientV1 = Retrofit.Builder()
         .client(authenticatedTransport(credentials))
         .baseUrl(baseUrl)
+        .addConverterFactory(OrderRequestBodyConverterFactory())
         .addConverterFactory(GsonConverterFactory.create(gson))
         .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
         .build()
