@@ -12,6 +12,7 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -46,6 +47,7 @@ class CurrentStatusService internal constructor(
 
     private val bag = CompositeDisposable()
     private val realtimeBoardRevision = AtomicLong()
+    private val fundingStatus = AtomicReference(FundingStatus())
 
     init {
         executions
@@ -88,12 +90,17 @@ class CurrentStatusService internal constructor(
     }
 
     internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
-        visibility.distinctUntilChanged()
-            .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
-            .scan(FundingStatus()) { last, update ->
-                if (update.funding != null) update else last.copy(stale = last.funding != null)
-            }
-            .distinctUntilChanged()
+        Observable.defer {
+            visibility.distinctUntilChanged()
+                .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
+                .map { update ->
+                    fundingStatus.updateAndGet { last ->
+                        if (update.funding != null) update else last.copy(stale = last.funding != null)
+                    }
+                }
+                .startWith(fundingStatus.get())
+                .distinctUntilChanged()
+        }
 
     private fun pollFunding(): Observable<FundingStatus> =
         Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }

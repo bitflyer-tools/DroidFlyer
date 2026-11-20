@@ -13,10 +13,12 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import java.io.IOException
 import java.math.BigDecimal
 import java.util.Locale
 import java.util.TimeZone
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,17 +50,17 @@ class CurrentStatusViewTest {
         whenever(api.getPositions()).thenReturn(Observable.empty())
         whenever(api.getCollateral()).thenReturn(Observable.empty())
         whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        val refresh = PublishSubject.create<FundingRate>()
         whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(
             Observable.just(FundingRate(BigDecimal("0.00375"), "2024-04-15T13:00:00")),
-            Observable.error(IOException("Offline"))
+            refresh
         )
         val service = CurrentStatusService(api, Observable.empty(), Observable.empty(), Observable.empty())
         try {
             Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
                 val activity = controller.get()
-                val header = CurrentStatusView(activity, null).apply {
-                    inject(DI { bindSingleton { service } })
-                }
+                val di = DI { bindSingleton { service } }
+                val header = CurrentStatusView(activity, null).apply { inject(di) }
                 val container = FrameLayout(activity).apply { addView(header) }
                 activity.setContentView(container)
                 shadowOf(Looper.getMainLooper()).idle()
@@ -71,11 +73,18 @@ class CurrentStatusViewTest {
                 assertTrue(text.text.toString(), text.text.contains("+0.375%"))
                 assertTrue(text.text.toString(), text.text.contains("6:00"))
 
-                container.visibility = View.GONE
-                container.visibility = View.VISIBLE
+                val details = text.text.toString()
+                container.removeView(header)
+                val replacement = CurrentStatusView(activity, null).apply { inject(di) }
+                container.addView(replacement)
                 scheduler.triggerActions()
-                assertTrue(text.text.toString(), text.text.contains("stale"))
-                assertTrue(text.text.toString(), text.text.contains("+0.375%"))
+
+                val restored = replacement.findViewById<TextView>(R.id.funding)
+                assertEquals(details, restored.text.toString())
+
+                refresh.onError(IOException("Offline"))
+                scheduler.triggerActions()
+                assertEquals(activity.getString(R.string.funding_stale, details), restored.text.toString())
             }
         } finally {
             service.dispose()
