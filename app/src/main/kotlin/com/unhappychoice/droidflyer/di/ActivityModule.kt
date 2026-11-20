@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.di
 
+import android.os.SystemClock
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -24,7 +25,9 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         }
     }
     bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
-    bindSingleton<ChartPresenter> { ChartPresenter(instance<APIClientV1>()::getExecutionPrices) }
+    bindSingleton<ChartPresenter> {
+        ChartPresenter(SystemClock::elapsedRealtimeNanos, instance<APIClientV1>()::getExecutionPrices)
+    }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
     bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance()) }
     bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState) }

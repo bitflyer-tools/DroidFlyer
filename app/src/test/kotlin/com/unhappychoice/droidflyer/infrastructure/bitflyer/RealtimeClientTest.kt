@@ -3,15 +3,13 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
-import com.nhaarman.mockito_kotlin.mock
-import com.nhaarman.mockito_kotlin.whenever
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -26,6 +24,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -36,7 +36,7 @@ import java.util.Date
 class RealtimeClientTest {
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
     private val socket = RecordingSocket()
-    private val preference = APITokenPreference(RuntimeEnvironment.getApplication())
+    private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
 
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
@@ -83,7 +83,7 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun executionUpdatesTradingPrice() {
+    fun executionUpdatesTradingPriceAfterEmptyBatch() {
         val client = RealtimeClient(gson, preference, socket)
         val api = mock<APIClientV1>()
         whenever(api.getPositions()).thenReturn(Observable.empty())
@@ -98,6 +98,12 @@ class RealtimeClientTest {
             socket.receive(Socket.EVENT_CONNECT)
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":123456.0}]"""))
             assertEquals(123456.0, service.currentPrice.value, 0.0)
+
+            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray())
+            assertEquals(123456.0, service.currentPrice.value, 0.0)
+
+            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":234567.0}]"""))
+            assertEquals(234567.0, service.currentPrice.value, 0.0)
         } finally {
             RxAndroidPlugins.reset()
             RxJavaPlugins.reset()

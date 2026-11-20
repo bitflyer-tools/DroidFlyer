@@ -22,6 +22,17 @@ class OrderAdapterTest {
     private val secondOrder = order(2)
 
     @Test
+    fun partiallyFilledActiveOrderShowsOutstandingQuantity() {
+        val order = firstOrder.copy(outstandingSize = 0.04, executedSize = 0.06)
+        val row = createRow()
+
+        adapter.updateOrders(listOf(order))
+        adapter.onBindViewHolder(adapter.ViewHolder(row), 0)
+
+        assertEquals("0.04 ɃFX", row.findViewById<TextView>(R.id.size).text.toString())
+    }
+
+    @Test
     fun equalResponsesNotifyOnlyOnceAndKeepTheOriginalOrderForCancellation() {
         var updates = 0
         adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {

@@ -3,12 +3,6 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import android.app.Application
 import android.view.ContextThemeWrapper
 import android.widget.FrameLayout
-import com.nhaarman.mockito_kotlin.any
-import com.nhaarman.mockito_kotlin.mock
-import com.nhaarman.mockito_kotlin.never
-import com.nhaarman.mockito_kotlin.verify
-import com.nhaarman.mockito_kotlin.verifyNoMoreInteractions
-import com.nhaarman.mockito_kotlin.whenever
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
@@ -28,6 +22,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -67,9 +67,11 @@ class LimitOrderPresenterTest {
 
     @Test
     fun buyCanBeSubmittedAgainAfterSuccess() {
-        submit("BUY", 100)
-        submit("BUY", 100)
-        submit("SELL", 200)
+        val openSell = requireNotNull(presenter.prepareOrder(LimitOrderSide.SELL, 200))
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.BUY, 100)
+        presenter.submitOrder(openSell)
+        scheduler.triggerActions()
 
         verifyPendingOrder("BUY", 100)
         pending.onNext(mapOf("child_order_acceptance_id" to "test"))
@@ -77,29 +79,29 @@ class LimitOrderPresenterTest {
         pending.onComplete()
 
         assertTrue(presenter.canSubmitOrder)
-        submit("BUY", 101)
+        submit(LimitOrderSide.BUY, 101)
         verify(apiClient).sendChildOrder(request("BUY", 101))
     }
 
     @Test
     fun sellCanBeSubmittedAgainAfterFailure() {
-        submit("SELL", 200)
-        submit("SELL", 200)
-        submit("BUY", 100)
+        submit(LimitOrderSide.SELL, 200)
+        submit(LimitOrderSide.SELL, 200)
+        submit(LimitOrderSide.BUY, 100)
 
         verifyPendingOrder("SELL", 200)
         pending.onError(IllegalStateException("Order failed"))
 
         assertTrue(presenter.canSubmitOrder)
-        submit("SELL", 201)
+        submit(LimitOrderSide.SELL, 201)
         verify(apiClient).sendChildOrder(request("SELL", 201))
     }
 
     @Test
     fun switchingAccountsInvalidatesOpenAndQueuedLimitOrders() {
-        val queued = requireNotNull(presenter.prepareOrder(100, "BUY"))
-        val open = requireNotNull(presenter.prepareOrder(200, "SELL"))
-        val sessionEnd = open.sessionEnded.test()
+        val queued = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
+        val open = requireNotNull(presenter.prepareOrder(LimitOrderSide.SELL, 200))
+        val sessionEnd = open.order.sessionEnded.test()
         presenter.submitOrder(queued)
         assertFalse(presenter.canSubmitOrder)
 
@@ -116,13 +118,13 @@ class LimitOrderPresenterTest {
         verifyNoMoreInteractions(apiClient)
         verify(newAccount, never()).sendChildOrder(any())
         assertTrue(presenter.canSubmitOrder)
-        submit("SELL", 200)
+        submit(LimitOrderSide.SELL, 200)
         verify(newAccount).sendChildOrder(request("SELL", 200))
     }
 
     @Test
     fun submissionUsesTheAmountDisplayedInTheConfirmation() {
-        val confirmation = requireNotNull(presenter.prepareOrder(100, "BUY"))
+        val confirmation = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
         presenter.amount.value = 0.02
         presenter.submitOrder(confirmation)
         scheduler.triggerActions()
@@ -130,8 +132,8 @@ class LimitOrderPresenterTest {
         verifyPendingOrder("BUY", 100)
     }
 
-    private fun submit(side: String, price: Long) {
-        presenter.prepareOrder(price, side)?.let(presenter::submitOrder)
+    private fun submit(side: LimitOrderSide, price: Long) {
+        presenter.prepareOrder(side, price)?.let(presenter::submitOrder)
         scheduler.triggerActions()
     }
 

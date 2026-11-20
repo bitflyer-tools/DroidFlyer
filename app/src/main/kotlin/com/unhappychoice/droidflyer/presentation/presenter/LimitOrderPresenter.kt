@@ -41,22 +41,30 @@ class LimitOrderPresenter internal constructor(private val state: PrivateTrading
         groupingSizes.getOrNull(index - 1)?.let { groupingSize.value = it }
     }
 
-    internal fun prepareOrder(price: Long, side: String): NewOrder? {
+    internal fun prepareOrder(side: LimitOrderSide, price: Long): LimitOrderConfirmation? {
         if (!canSubmitOrder) return null
-        return state.prepareOrder(SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, Math.abs(amount.value)))
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, Math.abs(amount.value))
+        return state.prepareOrder(request)?.let { LimitOrderConfirmation(side, it) }
     }
 
-    internal fun submitOrder(order: NewOrder) {
+    internal fun submitOrder(confirmation: LimitOrderConfirmation) {
         if (isLoading.value) return
         val orderView = view ?: return
+        val order = confirmation.order
         val submission = state.submitOrder(order) ?: return
         val request = order.request
-        val messageRes = if (request.side == "BUY") R.string.ordered_buy else R.string.ordered_sell
-        val message = orderView.context.getString(messageRes, request.size, request.price)
+        val message = orderView.context.getString(confirmation.side.orderedMessage, request.size, request.price)
 
         isLoading.value = true
         submission.doFinally { isLoading.value = false }
             .subscribeNextWithSnackBar(orderView, message)
             .addTo(bag)
     }
+}
+
+internal class LimitOrderConfirmation(val side: LimitOrderSide, val order: NewOrder)
+
+internal enum class LimitOrderSide(val label: Int, val orderedMessage: Int) {
+    BUY(R.string.buy, R.string.ordered_buy),
+    SELL(R.string.sell, R.string.ordered_sell)
 }
