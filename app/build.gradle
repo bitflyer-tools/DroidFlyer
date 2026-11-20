@@ -173,6 +173,9 @@ dependencies {
     testImplementation('com.winterbe:expekt:0.5.0') { exclude group: 'org.jetbrains.kotlin' }
     testImplementation 'org.robolectric:robolectric:4.18'
 
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+
     debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.14'
 }
 
