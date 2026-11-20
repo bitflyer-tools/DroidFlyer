@@ -74,8 +74,10 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
                 binding.groupingTextView.text = it.groupingSize.toString()
             }.addTo(bag)
 
-        currentStatusService.orders.asObservable().bindTo(askAdapter.myOrders).addTo(bag)
-        currentStatusService.orders.asObservable().bindTo(bidAdapter.myOrders).addTo(bag)
+        currentStatusService.orders.asObservable().subscribeNext {
+            askAdapter.updateMyOrders(it)
+            bidAdapter.updateMyOrders(it)
+        }.addTo(bag)
 
         presenter.apply {
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
