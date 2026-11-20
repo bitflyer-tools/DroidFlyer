@@ -5,18 +5,41 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Observable
+import io.reactivex.Scheduler
 import io.reactivex.rxkotlin.Observables
+import io.reactivex.schedulers.Schedulers
+import java.util.concurrent.TimeUnit
 
 data class TradingTotals(val profit: Long, val spread: Long, val balance: Long)
 
 internal fun observeTradingTotals(
     prices: Observable<Double>,
     positions: Observable<List<Position>>,
-    collateral: Observable<Double>
-): Observable<TradingTotals> = Observables.combineLatest(prices, positions, collateral) { price, position, balance ->
-    val currentPrice = price.toLong()
-    val profit = position.profit(currentPrice).toLong()
-    val priceChange = currentPrice - position.average().toLong()
-    val spread = if (position.wholeSize() < 0.0) -priceChange else priceChange
-    TradingTotals(profit, spread, balance.toLong() + profit)
+    collateral: Observable<Double>,
+    scheduler: Scheduler = Schedulers.computation()
+): Observable<TradingTotals> {
+    val entries = positions.map { Entry(it, it.average().toLong(), it.wholeSize() < 0.0) }
+    val account = Observables.combineLatest(entries, collateral, ::Account)
+    return Observables.combineLatest(prices.map { it.toLong() }, account, ::Valuation)
+        .publish { latest ->
+            val accountChanges = latest.distinctUntilChanged { it.account }.map { Unit }
+            val priceWindows = latest.sample(100, TimeUnit.MILLISECONDS, scheduler).map { Unit }
+            Observable.merge(accountChanges, priceWindows)
+                .withLatestFrom(latest) { _, valuation -> valuation }
+        }
+        .distinctUntilChanged()
+        .map { it.totals() }
+}
+
+private class Entry(val positions: List<Position>, val average: Long, val isShort: Boolean)
+
+private class Account(val entry: Entry, val collateral: Double)
+
+private data class Valuation(val price: Long, val account: Account) {
+    fun totals(): TradingTotals {
+        val profit = account.entry.positions.profit(price).toLong()
+        val priceChange = price - account.entry.average
+        val spread = if (account.entry.isShort) -priceChange else priceChange
+        return TradingTotals(profit, spread, account.collateral.toLong() + profit)
+    }
 }
