@@ -5,7 +5,6 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.jakewharton.rxbinding2.view.clicks
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -16,6 +15,7 @@ import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
