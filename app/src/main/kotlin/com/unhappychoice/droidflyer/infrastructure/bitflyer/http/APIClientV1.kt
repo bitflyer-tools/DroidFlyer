@@ -95,7 +95,8 @@ interface APIClientV1 {
     @GET("me/getchildorders")
     fun getChildOrders(
         @Query("product_code") productCode: String = "BTC_JPY",
-        @Query("child_order_state") orderState: String = "ACTIVE"
+        @Query("child_order_state") orderState: String? = "ACTIVE",
+        @Query("child_order_acceptance_id") acceptanceId: String? = null
     ): Observable<List<ChildOrder>>
 
     // @GET("me/getparentorders")
@@ -112,7 +113,7 @@ interface APIClientV1 {
         @Query("product_code") productCode: String = "FX_BTC_JPY"
     ): Observable<List<Position>>
 
-    @GET("me/getmycollateralhistory")
+    @GET("me/getcollateralhistory")
     fun getCollateralHistory(): Observable<List<Map<String, Any>>>
 
     @GET("me/gettradingcommission")
