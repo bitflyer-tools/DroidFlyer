@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.app.Activity
 import android.os.Bundle
 import android.os.Parcelable
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import com.google.gson.Gson
@@ -14,8 +15,15 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
+import io.reactivex.android.plugins.RxAndroidPlugins
+import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.schedulers.Schedulers
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -30,6 +38,52 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SettingsViewTest {
+    @Test
+    fun reattachingSettingsRestoresFieldAndApplySubscriptionsExactlyOnce() {
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        try {
+            Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+                val host = controller.get()
+                val settings = host.openSettings()
+                repeat(3) { cycle -> assertSettingsReattachment(host, settings, cycle) }
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    private fun assertSettingsReattachment(host: SettingsHost, settings: SettingsViewBinding, cycle: Int) {
+        val presenter = settings.root.presenter
+        val parent = settings.root.parent as ViewGroup
+        val previousKey = presenter.key.value
+        val previousSecret = presenter.secret.value
+        parent.removeView(settings.root)
+        settings.apiTokenTextView.setText("detached-key")
+        settings.apiSecretTextView.setText("detached-secret")
+        settings.saveButton.performClick()
+        assertEquals(previousKey, presenter.key.value)
+        assertEquals(previousSecret, presenter.secret.value)
+        assertEquals(cycle, host.applyRequests)
+        parent.addView(settings.root)
+
+        val key = "key-$cycle"
+        val secret = "secret-$cycle"
+        val keys = presenter.key.asObservable().skip(1).test()
+        val secrets = presenter.secret.asObservable().skip(1).test()
+        settings.apiTokenTextView.setText(key)
+        settings.apiSecretTextView.setText(secret)
+        keys.assertValues(key).dispose()
+        secrets.assertValues(secret).dispose()
+
+        settings.saveButton.performClick()
+        assertEquals(cycle + 1, host.applyRequests)
+        val saved = APITokenPreference(host).read()
+        assertEquals(key, saved.key)
+        assertEquals(secret, saved.secret)
+    }
+
     @Test
     fun credentialsAreOmittedFromActivityAndFlowStateAndReloadedOnReopen() {
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
@@ -73,6 +127,9 @@ class SettingsViewTest {
     }
 
     class SettingsHost : Activity() {
+        var applyRequests = 0
+            private set
+
         private val scope by lazy {
             MortarScope.buildRootScope()
                 .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -82,9 +139,18 @@ class SettingsViewTest {
             val preference = APITokenPreference(this).apply {
                 save(APICredentials("stored-key", "stored-secret"))
             }
-            DI {
-                bindInstance { SettingsPresenter(APIClient(Gson(), preference), preference, switchAccount = {}) {} }
-            }
+            val transport = OkHttpClient.Builder().addInterceptor { chain ->
+                applyRequests++
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("Test response")
+                    .body("[]".toResponseBody())
+                    .build()
+            }.build()
+            val presenter = SettingsPresenter(APIClient(Gson(), preference, transport), preference, switchAccount = {}) {}
+            DI { bindInstance { presenter } }
         }
 
         override fun getSystemService(name: String): Any? =

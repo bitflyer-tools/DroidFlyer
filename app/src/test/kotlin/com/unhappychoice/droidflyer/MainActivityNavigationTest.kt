@@ -1,6 +1,9 @@
 package com.unhappychoice.droidflyer
 
 import android.view.View
+import androidx.viewpager.widget.ViewPager
+import com.google.android.material.tabs.TabLayout
+import com.unhappychoice.droidflyer.databinding.OrderViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
@@ -25,6 +28,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.RealObject
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -59,6 +63,36 @@ class MainActivityNavigationTest {
             assertDestination(activity, R.id.orderIcon, OrderView::class.java, 2)
             activity.onBackPressed()
             assertDestination(activity, R.id.chartIcon, ChartView::class.java, 1)
+        }
+    }
+
+    @Test
+    fun reattachingOrderKeepsOnePagerAndOneListenerInEachDirection() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.tapTab(R.id.orderIcon)
+            val parent = activity.binding.containerView
+            val order = OrderViewBinding.bind(parent.getChildAt(0))
+            val adapter = order.viewPager.adapter
+
+            repeat(3) {
+                parent.removeView(order.root)
+                parent.addView(order.root)
+
+                assertEquals(adapter, order.viewPager.adapter)
+                assertEquals(3, order.tabLayout.tabCount)
+                assertEquals(3, order.viewPager.adapter?.count)
+                assertEquals(1, ReflectionHelpers.getField<List<TabLayout.OnTabSelectedListener>>(
+                    order.tabLayout, "selectedListeners"
+                ).size)
+                assertEquals(1, ReflectionHelpers.getField<List<ViewPager.OnPageChangeListener>>(
+                    order.viewPager, "mOnPageChangeListeners"
+                ).size)
+                order.tabLayout.getTabAt(1)?.select()
+                assertEquals(1, order.viewPager.currentItem)
+                order.viewPager.setCurrentItem(0, false)
+                assertEquals(0, order.tabLayout.selectedTabPosition)
+            }
         }
     }
 
