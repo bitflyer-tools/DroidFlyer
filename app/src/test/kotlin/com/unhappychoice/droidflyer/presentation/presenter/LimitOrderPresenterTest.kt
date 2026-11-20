@@ -61,9 +61,9 @@ class LimitOrderPresenterTest {
 
     @Test
     fun buyCanBeSubmittedAgainAfterSuccess() {
-        presenter.buy(100)
-        presenter.buy(100)
-        presenter.sell(200)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.SELL, 200)
 
         verifyPendingOrder("BUY", 100)
         pending.onNext(mapOf("child_order_acceptance_id" to "test"))
@@ -71,23 +71,26 @@ class LimitOrderPresenterTest {
         pending.onComplete()
 
         assertTrue(presenter.canSubmitOrder)
-        presenter.buy(101)
+        submit(LimitOrderSide.BUY, 101)
         verify(apiClient).sendChildOrder(request("BUY", 101))
     }
 
     @Test
     fun sellCanBeSubmittedAgainAfterFailure() {
-        presenter.sell(200)
-        presenter.sell(200)
-        presenter.buy(100)
+        submit(LimitOrderSide.SELL, 200)
+        submit(LimitOrderSide.SELL, 200)
+        submit(LimitOrderSide.BUY, 100)
 
         verifyPendingOrder("SELL", 200)
         pending.onError(IllegalStateException("Order failed"))
 
         assertTrue(presenter.canSubmitOrder)
-        presenter.sell(201)
+        submit(LimitOrderSide.SELL, 201)
         verify(apiClient).sendChildOrder(request("SELL", 201))
     }
+
+    private fun submit(side: LimitOrderSide, price: Long) =
+        presenter.submitOrder(LimitOrderTerms(side, price, 0.01))
 
     private fun verifyPendingOrder(side: String, price: Long) {
         assertFalse(presenter.canSubmitOrder)
