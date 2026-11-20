@@ -15,16 +15,11 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 
 fun applicationModule(application: DroidFlyerApplication) = DI.Module("application") {
-    import(restModule(application))
-
-    bindProvider<Style> { DefaultStyle }
-}
-
-internal fun restModule(application: DroidFlyerApplication) = DI.Module("rest") {
     bindSingleton<Gson> { createGson() }
     bindSingleton<APITokenPreference> { APITokenPreference(application) }
     bindSingleton<APIClient> { APIClient(instance(), instance()) }
     bindSingleton<APIClientV1> { instance<APIClient>().client() }
+    bindProvider<Style> { DefaultStyle }
 }
 
 private fun createGson() = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
