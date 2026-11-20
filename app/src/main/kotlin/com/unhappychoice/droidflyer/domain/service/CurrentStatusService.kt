@@ -82,14 +82,13 @@ class CurrentStatusService internal constructor(
             .observeOn(AndroidSchedulers.mainThread())
             .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
             .doOnNext(stopOrders::onEvents)
-            .map { Unit }
         val childExecutions = childEvents
             .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" && it.isExecution() } }
-            .map { Unit }
-        val stopUpdates = Observable.merge(parentUpdates, childExecutions)
-            .debounce(1, TimeUnit.SECONDS)
-            .map { false }
-        Observable.merge(stopUpdates, privateChannelsReady.map { true })
+        Observable.merge(
+            parentUpdates.debounce(1, TimeUnit.SECONDS).map { false },
+            childExecutions.debounce(1, TimeUnit.SECONDS).map { true },
+            privateChannelsReady.map { true }
+        )
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { recoverTriggers -> stopOrders.refreshIfEnabled(recoverTriggers) }
             .addTo(bag)

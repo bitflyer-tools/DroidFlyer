@@ -70,61 +70,66 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun childExecutionsRefreshTriggeredStopThroughPartialAndFullExecution() {
-        val scheduler = TestScheduler()
-        RxJavaPlugins.setIoSchedulerHandler { scheduler }
-        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
-        RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
-        try {
-            val api = client()
-            val preference = APITokenPreference(mock(Context::class.java))
-            val realtime = RealtimeClient(GsonBuilder().create(), preference, mock(Socket::class.java))
-            val status = CurrentStatusService(api, realtime, api)
-            try {
-                val stops = status.privateState.stopOrders
-                stops.refresh()
-                scheduler.triggerActions()
-                assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+    fun childExecutionsRefreshTriggeredStopThroughPartialAndFullExecution() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
 
-                realtime.parentOrderEvents.onNext(listOf(triggerEvent().copy(productCode = "BTC_JPY")))
-                scheduler.triggerActions()
-                assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            realtime.parentOrderEvents.onNext(listOf(triggerEvent().copy(productCode = "BTC_JPY")))
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
 
-                realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
-                scheduler.triggerActions()
-                assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
-                assertFalse(stops.orders.value.single().canCancel)
-                scheduler.advanceTimeBy(1, SECONDS)
+            realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            assertFalse(stops.orders.value.single().canCancel)
+            scheduler.advanceTimeBy(1, SECONDS)
 
-                executedSize = 0.005
-                val execution = childExecution()
-                realtime.childOrderEvents.onNext(listOf(
-                    execution.copy(productCode = "BTC_JPY"),
-                    execution.copy(eventType = "ORDER")
-                ))
-                scheduler.advanceTimeBy(1, SECONDS)
-                assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            executedSize = 0.005
+            val execution = childExecution()
+            realtime.childOrderEvents.onNext(listOf(
+                execution.copy(productCode = "BTC_JPY"),
+                execution.copy(eventType = "ORDER")
+            ))
+            scheduler.advanceTimeBy(1, SECONDS)
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
 
-                executedSize = 0.0
-                childOrders = marketChild(0.005)
-                realtime.childOrderEvents.onNext(listOf(execution))
-                scheduler.advanceTimeBy(1, SECONDS)
-                assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
+            executedSize = 0.0
+            childOrders = marketChild(0.005)
+            realtime.childOrderEvents.onNext(listOf(execution))
+            scheduler.advanceTimeBy(1, SECONDS)
+            assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
 
-                parentState = "COMPLETED"
-                childOrders = marketChild(0.01)
-                realtime.childOrderEvents.onNext(listOf(execution.copy(execId = 2)))
-                scheduler.advanceTimeBy(1, SECONDS)
-                assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
-            } finally {
-                status.dispose()
-            }
-        } finally {
-            RxAndroidPlugins.reset()
-            RxJavaPlugins.reset()
+            parentState = "COMPLETED"
+            childOrders = marketChild(0.01)
+            realtime.childOrderEvents.onNext(listOf(execution.copy(execId = 2)))
+            scheduler.advanceTimeBy(1, SECONDS)
+            assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
         }
-    }
+
+    @Test
+    fun childExecutionRecoversMissedTriggerWhileParentIsStillActive() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            assertTrue(stops.orders.value.single().canCancel)
+            requests.clear()
+
+            childOrders = marketChild(0.005)
+            realtime.childOrderEvents.onNext(listOf(childExecution()))
+            scheduler.advanceTimeBy(1, SECONDS)
+
+            val order = stops.orders.value.single()
+            assertEquals("ACTIVE", order.parent.parentOrderState)
+            assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, order.status)
+            assertFalse(order.canCancel)
+            assertTrue(requests.any {
+                it.url.encodedPath == "/v1/me/getchildorders" &&
+                    it.url.queryParameter("parent_order_id") == "parent-1"
+            })
+        }
 
     @Test
     fun reloadRecoversTriggerWithoutRealtimeEvent() {
@@ -221,6 +226,28 @@ class StopOrderServiceTest {
         assertTrue(requests.isEmpty())
     }
 
+    private fun withRealtimeStops(test: (StopOrderService, RealtimeClient, TestScheduler) -> Unit) {
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
+        try {
+            val api = client()
+            val preference = APITokenPreference(mock(Context::class.java))
+            val realtime = RealtimeClient(GsonBuilder().create(), preference, mock(Socket::class.java))
+            val status = CurrentStatusService(api, realtime, api)
+            try {
+                test(status.privateState.stopOrders, realtime, scheduler)
+            } finally {
+                status.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
     private fun service() = StopOrderService(client(), Schedulers.trampoline(), Schedulers.trampoline())
 
     private fun marketChild(size: Double) = """[{"child_order_type":"MARKET","executed_size":$size}]"""
@@ -267,7 +294,8 @@ class StopOrderServiceTest {
             200 to """{"order_method":"SIMPLE","parameters":[{"product_code":"FX_BTC_JPY",
                     "condition_type":"STOP","trigger_price":5000000}]}"""
         }
-        "/v1/me/getchildorders" -> 200 to childOrders
+        "/v1/me/getchildorders" -> 200 to
+            if (request.url.queryParameter("parent_order_id") == "parent-1") childOrders else "[]"
         "/v1/me/cancelparentorder" -> {
             if (cancelStatus == 200) parentState = "CANCELED"
             cancelStatus to ""
