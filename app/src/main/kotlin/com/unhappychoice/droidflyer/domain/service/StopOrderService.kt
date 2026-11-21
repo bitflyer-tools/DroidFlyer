@@ -40,6 +40,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
+    private var channelGapObserved = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val refreshReads = StopOrderFallbackReads(io)
@@ -59,6 +60,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         pendingRealtimeRefresh = null
         privateChannelsUnavailable = true
         channelGapOpen = false
+        channelGapObserved = false
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -191,6 +193,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         }
         privateChannelsUnavailable = !ready
         channelGapOpen = !ready
+        channelGapObserved = channelGapObserved || !ready
         if (enabled) refresh(recoverTriggers = true)
     }
 
@@ -235,7 +238,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
-        val channelsReady = !privateChannelsUnavailable
+        val restWaitingAllowed = allowRestWaiting
         refreshRequest.set(null)
         val request = loadActiveParents(client, reads = refreshReads).toList().toObservable().concatMap { active ->
             refreshReads.read { client.getParentOrders() }.map { recent ->
@@ -256,7 +259,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                     val updated = stop.copy(
                         event = event,
                         childTermination = cached?.childTermination,
-                        waitingConfirmed = parent.hasWaitingEvidence(realtimeEvent, channelsReady)
+                        waitingConfirmed = parent.hasWaitingEvidence(realtimeEvent, restWaitingAllowed)
                     )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
@@ -358,14 +361,16 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
         return order.copy(
             event = event?.eventType?.takeUnless { it == "ORDER" } ?: order.event,
-            waitingConfirmed = order.parent.hasWaitingEvidence(event?.eventType, !privateChannelsUnavailable),
+            waitingConfirmed = order.parent.hasWaitingEvidence(event?.eventType, allowRestWaiting),
             childTermination = childTermination ?: order.childTermination
         )
     }
 
     // An empty child list can also mean that an unfilled market child expired.
-    private fun ParentOrder.hasWaitingEvidence(eventType: String?, channelsReady: Boolean): Boolean =
-        eventType == "ORDER" || (channelsReady && isFullyOutstanding())
+    private val allowRestWaiting get() = !privateChannelsUnavailable && !channelGapObserved
+
+    private fun ParentOrder.hasWaitingEvidence(eventType: String?, allowRestWaiting: Boolean): Boolean =
+        eventType == "ORDER" || (allowRestWaiting && isFullyOutstanding())
 
     private fun ParentOrder.isFullyOutstanding(): Boolean =
         parentOrderState == "ACTIVE" && size > 0 && outstandingSize == size &&
