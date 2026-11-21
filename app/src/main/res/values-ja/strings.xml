@@ -50,6 +50,7 @@
     <string name="stop_submit">ストップ注文を送信</string>
     <string name="stop_accepted">ストップ注文を受け付けました：%1$s</string>
     <string name="stop_submit_reconciling">ストップ注文が受け付けられたか確認中です。注文一覧に表示されるまで、ストップ注文は送信できません。</string>
+    <string name="stop_submit_rejected">bitFlyerがストップ注文を拒否しました。再度送信できます。</string>
     <string name="stop_submit_check_failed">既存の注文を確認できませんでした。ストップ注文は送信されていません。</string>
     <string name="stop_review_again">送信する前にストップ注文をもう一度確認してください</string>
     <string name="stop_load_retry">ストップ注文を読み込めませんでした。タップして再試行できます。</string>

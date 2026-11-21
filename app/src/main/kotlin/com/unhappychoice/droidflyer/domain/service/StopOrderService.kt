@@ -16,9 +16,12 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.CompletableSubject
+import retrofit2.HttpException
 import java.util.concurrent.TimeUnit
 
 internal class StopOrderService(client: APIClientV1?, private val io: Scheduler, private val main: Scheduler) {
+    class SubmissionRejected(cause: HttpException) : RuntimeException("bitFlyer rejected the stop order", cause)
+
     val orders = Variable<List<StopOrder>>(emptyList())
     val loadFailed = Variable(false)
     val submitting = Variable(false)
@@ -83,7 +86,13 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
             Observable.defer { client.sendParentOrder(SendParentOrderRequest(confirmation.order)) }
                 .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
                 .map { SubmissionResult(Result.success(it)) }
-                .onErrorReturn { SubmissionResult(Result.failure(it), pending) }
+                .onErrorReturn { error ->
+                    if (error is HttpException && error.code() in 400..499 && error.code() != 408) {
+                        SubmissionResult(Result.failure(SubmissionRejected(error)))
+                    } else {
+                        SubmissionResult(Result.failure(error), pending)
+                    }
+                }
         }
             .subscribeOn(io).observeOn(main)
             .takeUntil(current.ended.toObservable<Unit>())

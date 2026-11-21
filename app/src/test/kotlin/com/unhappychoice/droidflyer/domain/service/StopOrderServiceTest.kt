@@ -37,6 +37,7 @@ class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
     private var parentOrderStatus = 200
     private var parentId = 100L
+    private var submissionStatus = 200
     private var loseSubmissionResponse = false
     private var parentState = "ACTIVE"
     private var size = 0.01
@@ -79,6 +80,29 @@ class StopOrderServiceTest {
         assertEquals(StopOrderStatus.WAITING, order.status)
         assertTrue(order.canCancel)
         assertTrue(requests.any { it.url.queryParameter("parent_order_state") == "ACTIVE" })
+    }
+
+    @Test
+    fun rejectedSubmissionAllowsResendingWithoutWaitingForAnOrder() {
+        val service = service()
+        val confirmation = service.confirmation(stopRequest())
+        val results = mutableListOf<Result<String>>()
+        submissionStatus = 400
+
+        assertTrue(service.submit(confirmation) { results += it })
+        serviceScheduler.triggerActions()
+
+        assertTrue(results.single().exceptionOrNull() is StopOrderService.SubmissionRejected)
+        assertFalse(service.submitting.value)
+        assertFalse(service.reconcilingSubmission.value)
+        assertEquals(1, requests.count { it.method == "POST" })
+
+        submissionStatus = 200
+        assertTrue(service.submit(confirmation) { results += it })
+        serviceScheduler.triggerActions()
+
+        assertEquals("acceptance-1", results.last().getOrThrow())
+        assertEquals(2, requests.count { it.method == "POST" })
     }
 
     @Test
@@ -1110,7 +1134,8 @@ class StopOrderServiceTest {
         "/v1/me/getcollateral" -> 200 to """{"collateral":0}"""
         "/v1/me/sendparentorder" -> {
             if (loseSubmissionResponse) throw IOException("Connection closed before receiving the response")
-            200 to """{"parent_order_acceptance_id":"acceptance-1"}"""
+            if (submissionStatus == 200) 200 to """{"parent_order_acceptance_id":"acceptance-1"}"""
+            else submissionStatus to """{"status":-1,"error_message":"Invalid order"}"""
         }
         "/v1/me/getparentorders" -> {
             assertEquals("FX_BTC_JPY", request.url.queryParameter("product_code"))
