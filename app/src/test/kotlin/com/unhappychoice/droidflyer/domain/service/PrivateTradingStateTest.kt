@@ -11,6 +11,7 @@ import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -63,13 +64,14 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         initial.assertComplete()
         assertPrivateData(listOf(position), 10.0, listOf(order))
+        val previousRow = displayedRows().single()
 
         state.refresh().test()
         scheduler.triggerActions()
         state.switchAccount(accountB.client)
         state.refresh().test()
         assertPrivateData(emptyList(), null, emptyList())
-        assertNull(state.cancelOrder(order))
+        assertNull(state.cancelOrder(previousRow))
         scheduler.triggerActions()
 
         accountA.publish(position, 999.0, order)
@@ -81,37 +83,49 @@ class PrivateTradingStateTest {
         accountB.publish(newPosition, 20.0, newOrder)
         scheduler.triggerActions()
         assertPrivateData(listOf(newPosition), 20.0, listOf(newOrder))
-        assertNull(state.cancelOrder(order))
-        checkNotNull(state.cancelOrder(newOrder)).test().assertComplete()
+        val displayedRow = displayedRows().single()
+        state.refresh().test()
+        scheduler.triggerActions()
+        accountB.publish(newPosition, 20.0, newOrder.copy())
+        scheduler.triggerActions()
+        assertSame(displayedRow.order, state.orders.value.single())
+        assertNull(state.cancelOrder(previousRow))
+        checkNotNull(state.cancelOrder(displayedRow)).test().assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
     }
 
     @Test
-    fun equalOrderRefreshKeepsDisplayedCancellationValidOnlyForTheCurrentAccount() {
+    fun switchingToAnUnconfiguredAccountClearsPrivateDataAndSkipsRefresh() {
         state.refresh().test()
         scheduler.triggerActions()
-        accountA.orders.onNext(listOf(order))
-        scheduler.triggerActions()
-        val previousAccountOrder = state.orders.value.single()
-
-        state.switchAccount(accountB.client)
-        state.refresh().test()
-        scheduler.triggerActions()
-        accountB.orders.onNext(listOf(order.copy()))
-        scheduler.triggerActions()
-        val displayedOrder = state.orders.value.single()
-
-        state.refresh().test()
-        scheduler.triggerActions()
-        accountB.orders.onNext(listOf(order.copy()))
+        accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
 
-        assertSame(displayedOrder, state.orders.value.single())
-        assertNull(state.cancelOrder(previousAccountOrder))
-        checkNotNull(state.cancelOrder(displayedOrder)).test().assertComplete()
+        val previousRow = displayedRows().single()
+        state.switchAccount(null)
+        state.refresh().test().assertComplete()
+        scheduler.triggerActions()
+
+        assertNull(state.cancelOrder(previousRow))
+        assertFalse(accountA.positions.hasObservers())
+        assertFalse(accountA.collateral.hasObservers())
+        assertFalse(accountA.orders.hasObservers())
+        assertPrivateData(emptyList(), null, emptyList())
+    }
+
+    @Test
+    fun displayedCancellationRequiresAnActiveOrderWithBothIdentifiers() {
+        publishOrders(order)
+        val row = displayedRows().single()
+
+        publishOrders(
+            order.copy(productCode = "BTC_JPY"),
+            order.copy(childOrderAcceptanceId = "another-order")
+        )
+
+        assertNull(state.cancelOrder(row))
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
-        assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
     }
 
     @Test
@@ -168,6 +182,15 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         result.assertComplete()
         assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0, timeInForce = "IOC")), accountA.sent)
+    }
+
+    private fun displayedRows() = state.orderRows().blockingFirst()
+
+    private fun publishOrders(vararg orders: ChildOrder) {
+        state.refresh().test()
+        scheduler.triggerActions()
+        accountA.orders.onNext(orders.toList())
+        scheduler.triggerActions()
     }
 
     private fun assertPrivateData(positions: List<Position>, balance: Double?, orders: List<ChildOrder>) {
