@@ -129,6 +129,20 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun publishesExecutionsAfterInvalidPayload() {
+        val client = RealtimeClient(gson, preference, socket)
+        val observer = client.executions.test()
+        val callback = socket.listeners("lightning_executions_FX_BTC_JPY").single()
+
+        callback.call(JSONArray("""[{"price":101.0}]"""))
+        callback.call(JSONObject("""{"price":102.0}"""))
+        callback.call(JSONArray("""[{"price":103.0}]"""))
+
+        observer.assertValueCount(2).assertNoErrors().assertNotComplete()
+        assertEquals(listOf(101.0, 103.0), observer.values().map { it.single().price })
+    }
+
+    @Test
     fun publishesExecutionBatchWithoutIndentingPayload() {
         val client = RealtimeClient(gson, preference, socket)
         val payload = object : JSONArray(
