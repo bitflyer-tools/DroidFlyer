@@ -15,8 +15,9 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
-import io.reactivex.android.plugins.RxAndroidPlugins
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
@@ -41,7 +42,7 @@ class SettingsViewTest {
     @Test
     fun reattachingSettingsRestoresFieldAndApplySubscriptionsExactlyOnce() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
         try {
             Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
                 val host = controller.get()

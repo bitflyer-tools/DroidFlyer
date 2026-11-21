@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -8,7 +9,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Completable
 import io.reactivex.Observable
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
@@ -69,7 +69,7 @@ class CurrentStatusService internal constructor(
         observeOrderBook(Observable.merge(realtimeBoards, restBoards), Schedulers.single()) { update ->
             update.requestRevision?.let { it == realtimeBoardRevision.get() } ?: true
         }
-            .observeOn(AndroidSchedulers.mainThread())
+            .observeOn(androidMainThreadScheduler())
             .subscribeNext { event ->
                 when (event) {
                     is OrderBookEvent.View -> board.value = event.board
