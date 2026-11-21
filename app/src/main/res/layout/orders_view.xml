@@ -4,6 +4,12 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
+    <Button
+        android:id="@+id/retryStops"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/stop_load_retry"
+        android:visibility="gone"/>
     <TextView
         android:id="@+id/orderLimitWarning"
         android:layout_width="match_parent"

@@ -38,6 +38,7 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
     private fun setupPager() {
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.market)))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.limit)))
+        binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.stop)))
         binding.tabLayout.addTab(binding.tabLayout.newTab().setText(context.getString(R.string.orders)))
 
         binding.tabLayout.addOnTabSelectedListener(object: TabLayout.OnTabSelectedListener {

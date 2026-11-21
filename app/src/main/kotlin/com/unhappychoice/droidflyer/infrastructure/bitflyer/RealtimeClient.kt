@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEven
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -36,6 +37,9 @@ class RealtimeClient internal constructor(
     private val parentEvents = PublishSubject.create<PrivateEvent<List<ParentOrderEvent>>>()
     internal val childOrderEvents = childEvents.hide()
     internal val parentOrderEvents = parentEvents.hide()
+
+    private val availability = BehaviorSubject.create<PrivateEvent<Boolean>>()
+    internal val privateChannelAvailability = availability.hide()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
@@ -79,7 +83,7 @@ class RealtimeClient internal constructor(
         // Private channel messages carry no account identity, so each account needs its own socket.
         val connection = PrivateRealtimeConnection(gson, credentials, createPrivateSocket(), accountLock)
         account = connection
-        connection.connect(childEvents::onNext, parentEvents::onNext)
+        connection.connect(childEvents::onNext, parentEvents::onNext, availability::onNext)
     }
 
     private fun closeAccount() {

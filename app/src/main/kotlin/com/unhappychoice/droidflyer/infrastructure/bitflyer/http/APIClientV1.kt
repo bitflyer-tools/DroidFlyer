@@ -1,7 +1,9 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import io.reactivex.Completable
@@ -83,11 +85,11 @@ interface APIClientV1 {
     @POST("me/cancelchildorder")
     fun cancelChildOrder(@Body request: CancelChildOrderRequest): Completable
 
-    // @POST("me/sendparentorder")
-    // fun sendParentOrder()
+    @POST("me/sendparentorder")
+    fun sendParentOrder(@Body request: SendParentOrderRequest): Observable<ParentOrderAcceptance>
 
-    // @POST("me/cancelparentorder")
-    // fun cancelParentOrder(@Body request: CancelParentOrderRequest): Observable<Map<String, Any>>
+    @POST("me/cancelparentorder")
+    fun cancelParentOrder(@Body request: CancelParentOrderRequest): Completable
 
     // @POST("me/cancelallchildorders")
     // fun cancelAllChildOrders(@Body request: CancellAllChildOrderRequest): Observable<Map<String, Any>>
@@ -100,11 +102,24 @@ interface APIClientV1 {
         @Query("count") count: Int? = null
     ): Observable<List<ChildOrder>>
 
-    // @GET("me/getparentorders")
-    // fun getParentOrders(//): Observable<List<Map<String, Any>>>
+    @GET("me/getchildorders")
+    fun getParentChildOrders(
+        @Query("parent_order_id") parentOrderId: String,
+        @Query("product_code") productCode: String = "FX_BTC_JPY"
+    ): Observable<List<ChildOrder>>
 
-    // @GET("me/getparentorder")
-    // fun getParentOrder(//): Observable<Map<String, Any>>
+    @GET("me/getparentorders")
+    fun getParentOrders(
+        @Query("product_code") productCode: String = "FX_BTC_JPY",
+        @Query("parent_order_state") orderState: String? = null,
+        @Query("count") count: Int? = null,
+        @Query("before") before: Long? = null
+    ): Observable<List<ParentOrder>>
+
+    @GET("me/getparentorder")
+    fun getParentOrder(
+        @Query("parent_order_id") parentOrderId: String
+    ): Observable<ParentOrderDetails>
 
     // @GET("me/getexecutions")
     // fun getExecutions(//): Observable<List<Map<String, Any>>>

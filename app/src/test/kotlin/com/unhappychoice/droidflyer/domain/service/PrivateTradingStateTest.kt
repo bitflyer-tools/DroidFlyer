@@ -3,6 +3,8 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
@@ -172,6 +174,26 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         result.assertComplete()
         assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0, timeInForce = "IOC")), accountA.sent)
+    }
+
+    @Test
+    fun switchingAccountsInvalidatesAnOpenStopConfirmation() {
+        val request = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+        val confirmation = state.stopOrders.confirmation(request)
+
+        state.switchAccount(accountB.client)
+
+        assertFalse(state.stopOrders.submit(confirmation) { error("Stale stop submitted") })
+    }
+
+    @Test
+    fun disposingPrivateStateDisablesStopSubmission() {
+        val request = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+        val confirmation = state.stopOrders.confirmation(request)
+
+        state.dispose()
+
+        assertFalse(state.stopOrders.submit(confirmation) { error("Stop submitted after disposal") })
     }
 
     private fun displayedRows() = state.orderRows().blockingFirst()

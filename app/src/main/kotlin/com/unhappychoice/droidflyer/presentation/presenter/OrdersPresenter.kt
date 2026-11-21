@@ -2,6 +2,8 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
+import com.unhappychoice.droidflyer.domain.service.StopOrder
+import com.unhappychoice.droidflyer.domain.service.StopOrderService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
 import io.reactivex.Observable
@@ -20,6 +22,19 @@ class OrdersPresenter internal constructor(
         this(currentStatusService.privateState, currentStatusService::updateStatus)
 
     internal val orders = privateState.orderRows()
+    internal val stopOrders = privateState.stopOrders.orders.asObservable()
+    internal val stopLoadFailed = privateState.stopOrders.loadFailed.asObservable()
+    internal val stopCancellations = privateState.stopOrders.cancelling.asObservable()
+
+    internal fun refreshStops() = privateState.stopOrders.refresh(recoverTriggers = true)
+
+    internal fun stopCancellationConfirmation(order: StopOrder) =
+        privateState.stopOrders.cancellationConfirmation(order)
+
+    internal fun cancelStop(
+        confirmation: StopOrderService.CancellationConfirmation,
+        failed: (StopOrderService.CancellationFailure) -> Unit
+    ) = privateState.stopOrders.cancel(confirmation, failed)
     internal val ordersMayBeIncomplete = privateState.ordersMayBeIncomplete
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()

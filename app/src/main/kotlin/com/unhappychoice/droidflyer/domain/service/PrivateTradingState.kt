@@ -17,11 +17,14 @@ import io.reactivex.subjects.CompletableSubject
 internal class PrivateTradingState(
     client: APIClientV1?,
     private val requestScheduler: Scheduler = Schedulers.io(),
-    private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
+    private val stateScheduler: Scheduler = AndroidSchedulers.mainThread(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
 ) {
     val position = Variable<List<Position>>(emptyList())
     val balance = Variable(0.0)
     val orders = Variable<List<ChildOrder>>(emptyList())
+
+    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler, submissionGuard)
 
     private var session = Session(client)
     private var disposed = false
@@ -38,10 +41,15 @@ internal class PrivateTradingState(
 
     fun dispose() {
         disposed = true
+        stopOrders.dispose()
         session.ended.onComplete()
     }
 
-    fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
+    fun switchAccount(
+        client: APIClientV1?,
+        guard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+        onSwitched: () -> Unit = {}
+    ) {
         if (disposed) return
 
         val previous = session
@@ -50,6 +58,7 @@ internal class PrivateTradingState(
         position.value = emptyList()
         balance.value = 0.0
         try {
+            stopOrders.switchAccount(client, guard)
             onSwitched()
         } finally {
             previous.ended.onComplete()

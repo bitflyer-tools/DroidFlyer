@@ -75,7 +75,7 @@ class SettingsPresenterTest {
                 }.toResponseBody())
                 .build()
         }.build())
-    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { save ->
+    private val presenter = SettingsPresenter(api, preference, { client, _ -> switched.add(client) }) { save ->
         save()
         authenticated.add(savedCredentials())
     }
@@ -194,7 +194,7 @@ class SettingsPresenterTest {
             assertEquals(List(4) { "/v1/board" }, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, status::switchAccount) { it() }
+            val settings = SettingsPresenter(api, preference, { client, _ -> status.switchAccount(client) }) { it() }
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
             settings.saveCredentials().test().assertValueCount(1).assertComplete()

@@ -22,21 +22,30 @@ class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<BoardUpdate>,
-    orderEvents: Observable<PrivateEvent<*>>,
-    privateClient: APIClientV1? = apiClient
+    orderEvents: Observable<PrivateEvent<List<ChildOrderEvent>>>,
+    privateClient: APIClientV1? = apiClient,
+    parentEvents: Observable<PrivateEvent<List<ParentOrderEvent>>> = Observable.empty(),
+    privateChannelAvailability: Observable<PrivateEvent<Boolean>> = Observable.empty(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) :
+        this(apiClient, realtimeClient, privateClient, StopSubmissionGuard.inMemory())
+
+    internal constructor(
+        apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?,
+        submissionGuard: StopSubmissionGuard
+    ) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
-        Observable.merge(
-            realtimeClient.childOrderEvents,
-            realtimeClient.parentOrderEvents
-        ),
-        privateClient
+        realtimeClient.childOrderEvents,
+        privateClient,
+        realtimeClient.parentOrderEvents,
+        realtimeClient.privateChannelAvailability,
+        submissionGuard
     )
 
-    internal val privateState = PrivateTradingState(privateClient)
+    internal val privateState = PrivateTradingState(privateClient, submissionGuard = submissionGuard)
 
     internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)
@@ -82,11 +91,40 @@ class CurrentStatusService internal constructor(
             }
             .addTo(bag)
 
-        orderEvents
+        val parentUpdates = parentEvents.filter { batch -> batch.value.any { it.productCode == "FX_BTC_JPY" } }
+        Observable.merge<PrivateEvent<*>>(orderEvents, parentUpdates)
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
             .filter { it.isCurrent() }
             .subscribeNext { updateStatus() }
+            .addTo(bag)
+
+        val stopOrders = privateState.stopOrders
+        val childUpdates = orderEvents.filter { batch ->
+            batch.value.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
+        }
+        parentUpdates
+            .observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
+            .doOnNext { stopOrders.onEvents(it.value) }
+            .sample(1, TimeUnit.SECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
+            .subscribeNext { stopOrders.onParentUpdates() }
+            .addTo(bag)
+
+        childUpdates.observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
+            .doOnNext { stopOrders.onChildEvents(it.value) }
+            .sample(1, TimeUnit.SECONDS, true)
+            .observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
+            .subscribeNext { stopOrders.onChildUpdates() }
+            .addTo(bag)
+
+        privateChannelAvailability.observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
+            .subscribeNext { stopOrders.onPrivateChannelAvailability(it.value) }
             .addTo(bag)
 
         updateStatus()
@@ -102,12 +140,12 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
-    internal fun switchAccount(client: APIClientV1?) {
+    internal fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
         if (bag.isDisposed) return
 
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
-        privateState.switchAccount(client) {
+        privateState.switchAccount(client, guard) {
             // Queue the new account before ending an in-flight refresh.
             updateStatus()
             previous.onComplete()

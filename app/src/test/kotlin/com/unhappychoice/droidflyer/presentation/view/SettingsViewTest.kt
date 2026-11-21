@@ -150,7 +150,7 @@ class SettingsViewTest {
                     .build()
             }.build()
             val presenter = SettingsPresenter(
-                APIClient(Gson(), preference, transport), preference, switchAccount = {}, updateRealtimeAccount = { it() }
+                APIClient(Gson(), preference, transport), preference, switchAccount = { _, _ -> }, updateRealtimeAccount = { it() }
             )
             DI { bindInstance { presenter } }
         }
