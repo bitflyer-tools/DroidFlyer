@@ -117,5 +117,5 @@ interface APIClientV1 {
     fun getCollateralHistory(): Observable<List<Map<String, Any>>>
 
     @GET("me/gettradingcommission")
-    fun getTradingCommision(): Observable<Map<String, Any>>
+    fun getTradingCommision(@Query("product_code") productCode: String): Observable<Map<String, Any>>
 }
