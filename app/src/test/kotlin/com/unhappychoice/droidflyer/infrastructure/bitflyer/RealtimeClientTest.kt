@@ -29,6 +29,7 @@ import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.math.BigDecimal
 import java.util.Date
 
 @RunWith(RobolectricTestRunner::class)
@@ -66,6 +67,26 @@ class RealtimeClientTest {
         snapshot.assertValue(expectedBoard)
         childOrders.assertValue(emptyList())
         parentOrders.assertValue(emptyList())
+    }
+
+    @Test
+    fun publishesPrivateExecutionBatchWithFractionalAndIntegralPrices() {
+        val client = RealtimeClient(gson, preference, socket)
+        val observer = client.childOrderEvents.test()
+        val payload = JSONArray(
+            """
+                [{"product_code":"ETH_BTC","event_type":"EXECUTION","price":0.02744},
+                 {"product_code":"BTC_JPY","event_type":"EXECUTION","price":10000000}]
+            """.trimIndent()
+        )
+
+        socket.receive("child_order_events", payload)
+
+        observer.assertValue { events ->
+            events.all { it.isExecution() } &&
+                events.map { it.productCode to it.price } ==
+                listOf("ETH_BTC" to BigDecimal("0.02744"), "BTC_JPY" to BigDecimal("10000000"))
+        }
     }
 
     @Test
