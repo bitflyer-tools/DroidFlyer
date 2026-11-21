@@ -20,7 +20,7 @@ import mortar.ViewPresenter
 class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
-    private val switchAccount: (APIClientV1) -> Unit,
+    private val switchAccount: (APIClientV1?) -> Unit,
     private val authenticate: () -> Unit
 ) : ViewPresenter<SettingsView>() {
     constructor(
@@ -72,7 +72,7 @@ class SettingsPresenter internal constructor(
                 val saved = preference.read()
                 if (saved.key != submitted.key || saved.secret != submitted.secret) {
                     preference.save(submitted)
-                    switchAccount(client)
+                    switchAccount(client.takeIf { submitted.isConfigured })
                 }
                 authenticate()
             }

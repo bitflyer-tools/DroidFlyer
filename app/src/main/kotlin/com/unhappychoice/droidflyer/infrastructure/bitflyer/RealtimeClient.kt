@@ -118,7 +118,7 @@ class RealtimeClient internal constructor(
     @Synchronized
     private fun authenticate(connection: Socket) {
         val credentials = preference.read()
-        if (!credentials.isComplete || connection !== socket) return
+        if (!credentials.isConfigured || connection !== socket) return
         val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
         connection.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(connection, it) })
     }

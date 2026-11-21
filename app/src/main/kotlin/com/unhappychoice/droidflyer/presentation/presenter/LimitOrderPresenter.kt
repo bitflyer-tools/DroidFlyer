@@ -1,8 +1,9 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
+import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
@@ -55,7 +56,13 @@ class LimitOrderPresenter(
         isLoading.value = true
         order
             .doFinally { isLoading.value = false }
-            .subscribeNextWithSnackBar(orderView, message)
+            .subscribe({
+                Snackbar.make(orderView, message, Snackbar.LENGTH_SHORT).show()
+            }, { error ->
+                val messageResId = if (error is OrderAcceptanceUncertainException) R.string.order_acceptance_uncertain
+                else R.string.limit_order_failed
+                Snackbar.make(orderView, messageResId, Snackbar.LENGTH_LONG).show()
+            })
             .addTo(bag)
     }
 }

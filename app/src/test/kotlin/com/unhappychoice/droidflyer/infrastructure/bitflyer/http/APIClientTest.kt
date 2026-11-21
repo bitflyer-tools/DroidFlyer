@@ -8,10 +8,12 @@ import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.SocketEffect
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +33,7 @@ import java.util.concurrent.TimeUnit
 @Config(manifest = Config.NONE, sdk = [29])
 class APIClientTest {
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+    private val credentials = APICredentials("dummy-key", "dummy-secret")
     private val order = SendChildOrderRequest(childOrderType = "LIMIT", side = "BUY", price = 100L, size = 0.01)
     private val invalidAcceptanceBodies = listOf(
         "{}",
@@ -52,6 +55,24 @@ class APIClientTest {
         listOf(307, 308).forEach { status ->
             assertRedirectBlocked(status, "{}") { it.sendChildOrder(order) }
         }
+    }
+
+    @Test
+    fun orderPostIsNotResentAfterServiceUnavailableWithImmediateRetry() {
+        val response = MockResponse.Builder().code(503).addHeader("Retry-After", "0").build()
+        assertOrderSentOnce(response) { it is HttpException && it.code() == 503 }
+    }
+
+    @Test
+    fun orderPostIsNotResentWhenServerClosesConnectionAfterReadingBody() {
+        val response = MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
+        assertOrderSentOnce(response) { it is IOException }
+    }
+
+    @Test
+    fun orderAcceptanceIsUncertainWhenSuccessResponseHasNoAcceptanceId() {
+        assertOrderSentOnce(MockResponse.Builder().body("{}").build()) { it is JsonParseException }
+        assertOrderSentOnce(MockResponse.Builder().code(204).build()) { it is NullPointerException }
     }
 
     @Test
@@ -91,6 +112,25 @@ class APIClientTest {
     }
 
     @Test
+    fun sharedClientSignsRequestsWithUpdatedCredentials() {
+        MockWebServer().use { origin ->
+            origin.start()
+            repeat(2) { origin.enqueue(MockResponse.Builder().body("[]").build()) }
+            val preference = credentialPreference()
+            val client = client(origin, preference)
+            val target = "/v1/me/getpermissions"
+
+            client.getPermissions().test().assertComplete().assertNoErrors()
+            assertSignedRequest(origin, "GET", target, "")
+
+            val updated = APICredentials("updated-key", "updated-secret")
+            preference.save(updated)
+            client.getPermissions().test().assertComplete().assertNoErrors()
+            assertSignedRequest(origin, "GET", target, "", updated)
+        }
+    }
+
+    @Test
     fun invalidAcceptanceResponsesFailAtTheRestBoundary() {
         MockWebServer().use { origin ->
             origin.start()
@@ -115,7 +155,7 @@ class APIClientTest {
                 var accepted = false
 
                 service.close(0.5) { accepted = true }.test().assertError {
-                    it is ClosePositionService.InitialOrderSubmissionException && it.cause is JsonParseException
+                    it is OrderAcceptanceUncertainException && it.cause is JsonParseException
                 }
                 assertFalse(accepted)
                 assertEquals((index + 1) * 2, origin.requestCount)
@@ -148,6 +188,21 @@ class APIClientTest {
         }
     }
 
+    private fun assertOrderSentOnce(response: MockResponse, expectedCause: (Throwable?) -> Boolean) {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(response)
+            origin.enqueue(MockResponse.Builder().body("""{"child_order_acceptance_id":"retry"}""").build())
+
+            client(origin).submitChildOrder(order).test()
+                .assertNoValues()
+                .assertError { it is OrderAcceptanceUncertainException && expectedCause(it.cause) }
+
+            assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+            assertEquals(1, origin.requestCount)
+        }
+    }
+
     private fun assertRedirectBlocked(
         status: Int,
         responseBody: String,
@@ -173,24 +228,30 @@ class APIClientTest {
         }
     }
 
-    private fun client(origin: MockWebServer): APIClientV1 {
-        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
-            save(APICredentials("dummy-key", "dummy-secret"))
-        }
+    private fun credentialPreference() =
+        testAPITokenPreference(RuntimeEnvironment.getApplication()).apply { save(credentials) }
+
+    private fun client(origin: MockWebServer, preference: APITokenPreference = credentialPreference()): APIClientV1 {
         val transport = OkHttpClient.Builder().followRedirects(true).build()
         return APIClient(gson, preference, transport, origin.url("/v1/").toString()).client()
     }
 
-    private fun assertSignedRequest(origin: MockWebServer, method: String, target: String, body: String) {
+    private fun assertSignedRequest(
+        origin: MockWebServer,
+        method: String,
+        target: String,
+        body: String,
+        expected: APICredentials = credentials
+    ) {
         val request = checkNotNull(origin.takeRequest(5, TimeUnit.SECONDS))
         assertEquals(method, request.method)
         assertEquals(target, request.target)
         assertEquals(body, request.body?.utf8().orEmpty())
-        assertEquals("dummy-key", request.headers["Access-Key"])
+        assertEquals(expected.key, request.headers["Access-Key"])
         val timestamp = request.headers["Access-Timestamp"]
         assertNotNull(timestamp?.toLongOrNull())
         assertEquals(
-            (timestamp + method + target + body).toHmacSHA256("dummy-secret"),
+            (timestamp + method + target + body).toHmacSHA256(expected.secret),
             request.headers["Access-Sign"]
         )
     }

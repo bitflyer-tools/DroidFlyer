@@ -22,14 +22,19 @@ class APIClient internal constructor(
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, OkHttpClient())
 
-    fun client(): APIClientV1 = createClient(null)
+    fun client(): APIClientV1 = defaultClient
 
     fun client(credentials: APICredentials): APIClientV1 = createClient(credentials)
+
+    internal fun privateStatusClient(credentials: APICredentials): APIClientV1? =
+        credentials.takeIf { it.isConfigured }?.let(::client)
 
     private val okHttp = transport.newBuilder()
         .followRedirects(false)
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
+
+    private val defaultClient by lazy { createClient(null) }
 
     private fun authenticatedTransport(credentials: APICredentials?): OkHttpClient {
         val generation = preference.unlinkGeneration
@@ -53,7 +58,7 @@ class APIClient internal constructor(
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "application/json")
             .apply {
-                if (credentials.isComplete) {
+                if (credentials.isConfigured) {
                     addHeader("Access-Key", credentials.key)
                     addHeader("Access-Timestamp", timestamp)
                     addHeader("Access-Sign", sign(request, timestamp, credentials.secret))
@@ -64,6 +69,7 @@ class APIClient internal constructor(
     private fun createClient(credentials: APICredentials?): APIClientV1 = Retrofit.Builder()
         .client(authenticatedTransport(credentials))
         .baseUrl(baseUrl)
+        .addConverterFactory(OrderRequestBodyConverterFactory())
         .addConverterFactory(GsonConverterFactory.create(gson))
         .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
         .build()
