@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
@@ -45,7 +46,7 @@ import org.robolectric.shadows.ShadowDialog
 class LimitOrderViewTest {
     private val orderClient = mockAccount()
     private lateinit var presenter: LimitOrderPresenter
-    private val pending = PublishSubject.create<Map<String, Any>>()
+    private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private lateinit var status: CurrentStatusService
 
     @Before
@@ -89,7 +90,7 @@ class LimitOrderViewTest {
             val staleSell = view.confirmation(R.id.askList, R.string.sell, 201, 0.03)
             val newAccount = mockAccount()
             whenever(newAccount.sendChildOrder(any())).thenReturn(Observable.empty())
-            status.privateState.switchAccount(newAccount)
+            status.switchAccount(newAccount)
             assertFalse(staleSell.isShowing)
             verify(newAccount, never()).sendChildOrder(any())
 

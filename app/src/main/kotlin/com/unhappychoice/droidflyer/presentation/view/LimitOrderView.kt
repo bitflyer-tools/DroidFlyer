@@ -18,6 +18,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -50,18 +51,19 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         askAdapter.clickItems.subscribeNext { confirmOrder(LimitOrderSide.SELL, it.price) }.addTo(bag)
         bidAdapter.clickItems.subscribeNext { confirmOrder(LimitOrderSide.BUY, it.price) }.addTo(bag)
 
-        observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable())
+        Observables.combineLatest(
+            observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable()),
+            currentStatusService.orders.asObservable()
+        ) { rows, orders -> rows to orders }
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext {
-                askAdapter.applyRows(it.asks, it.groupingSize)
-                bidAdapter.applyRows(it.bids, it.groupingSize)
-                binding.groupingTextView.text = it.groupingSize.toString()
+            .subscribeNext { (rows, orders) ->
+                askAdapter.applyRows(rows.asks, rows.groupingSize, orders)
+                bidAdapter.applyRows(rows.bids, rows.groupingSize, orders)
+                val groupingText = rows.groupingSize.toString()
+                if (binding.groupingTextView.text.toString() != groupingText) {
+                    binding.groupingTextView.text = groupingText
+                }
             }.addTo(bag)
-
-        currentStatusService.orders.asObservable().subscribeNext {
-            askAdapter.updateMyOrders(it)
-            bidAdapter.updateMyOrders(it)
-        }.addTo(bag)
 
         presenter.apply {
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
