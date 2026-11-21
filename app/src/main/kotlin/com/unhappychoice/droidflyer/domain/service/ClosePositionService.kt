@@ -10,6 +10,8 @@ import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.schedulers.Schedulers
+import retrofit2.HttpException
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.sign
@@ -35,7 +37,7 @@ internal class ClosePositionService(
         }
 
         val quantity = abs(size)
-        if (quantity < MIN_ORDER_SIZE) {
+        if (!CryptoCfdOrderSize.isValid(quantity)) {
             return Single.error(IllegalStateException("Position is below the minimum close order size"))
         }
 
@@ -66,8 +68,9 @@ internal class ClosePositionService(
 
     private fun nextOrderSize(quantity: Double): Double {
         if (quantity <= ORDER_SIZE_LIMIT) return quantity
+        val minimum = CryptoCfdOrderSize.MINIMUM
         val remainder = (quantity - ORDER_SIZE_LIMIT).round(8)
-        return if (remainder < MIN_ORDER_SIZE) (quantity - MIN_ORDER_SIZE).round(8) else ORDER_SIZE_LIMIT
+        return if (remainder < minimum) (quantity - minimum).round(8) else ORDER_SIZE_LIMIT
     }
 
     private fun executedSize(acceptanceId: String): Single<Double> =
@@ -85,17 +88,25 @@ internal class ClosePositionService(
 
     private fun <T : Any> poll(read: () -> Observable<T>, ready: (T) -> Boolean): Single<T> =
         Observable.defer(read)
+            .onErrorResumeNext { error: Throwable ->
+                if (error.isTransientReadFailure()) Observable.empty() else Observable.error(error)
+            }
             .filter(ready)
             .repeatWhen { it.delay(1, TimeUnit.SECONDS, scheduler) }
             .firstOrError()
             .timeout(15, TimeUnit.SECONDS, scheduler)
+
+    private fun Throwable.isTransientReadFailure(): Boolean = when (this) {
+        is HttpException -> code() == 408 || code() == 429 || code() in 500..599
+        is IOException -> true
+        else -> false
+    }
 
     class InitialOrderSubmissionException(cause: Throwable) : RuntimeException(cause)
 
     companion object {
         const val ORDER_SIZE_LIMIT = 10.0
 
-        private const val MIN_ORDER_SIZE = 0.001
         private const val PRODUCT_CODE = "FX_BTC_JPY"
         private val finalOrderStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
     }

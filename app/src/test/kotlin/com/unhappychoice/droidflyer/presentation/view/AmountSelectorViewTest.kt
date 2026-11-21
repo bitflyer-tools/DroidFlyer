@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.view.View
 import android.widget.EditText
+import android.widget.TextView
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import org.junit.Assert.assertEquals
@@ -54,6 +55,21 @@ class AmountSelectorViewTest {
         field.text.append("1")
         assertEquals(".1", field.text.toString())
         assertEquals(0.1, selector.amount.value, 0.0)
+    }
+
+    @Test
+    fun minimumMessageIsVisibleOnlyForBelowMinimumInput() {
+        val message = selector.findViewById<TextView>(R.id.minimumOrderSizeMessage)
+        assertEquals(View.GONE, message.visibility)
+
+        field.setText("0.0001")
+        assertEquals(0.0001, selector.amount.value, 0.0)
+        assertEquals(View.VISIBLE, message.visibility)
+        assertEquals("Minimum order quantity is 0.001 BTC-CFD", message.text.toString())
+
+        field.setText("0.001")
+        assertEquals(0.001, selector.amount.value, 0.0)
+        assertEquals(View.GONE, message.visibility)
     }
 
     @Test

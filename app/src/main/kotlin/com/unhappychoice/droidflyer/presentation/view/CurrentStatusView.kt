@@ -5,11 +5,13 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.widget.TextView
 import androidx.core.view.isVisible
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
@@ -41,21 +43,26 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         currentStatusService.tradingTotals
             .subscribeOnComputationObserveOnUI()
             .subscribeNext { totals ->
-                val hasPosition = currentStatusService.position.value.wholeSize() != 0.0
-                binding.profit.renderValuation(totals.profit.takeIf { hasPosition })
-                binding.spread.renderValuation(totals.spread.takeIf { hasPosition })
+                val positions = currentStatusService.position.value
+                binding.profit.renderValuation(totals.profit.takeIf { positions.isNotEmpty() })
+                binding.spread.renderValuation(totals.spread.takeIf { positions.wholeSize() != 0.0 })
                 binding.balance.text = "${totals.balance.splitByComma()} JPY"
             }.addTo(bag)
 
         currentStatusService.position.asObservable()
-            .subscribeNext {
-                val size = it.wholeSize()
-                binding.position.text = if (size == 0.0) {
-                    "No position"
-                } else {
-                    "${it.average().toLong().splitByComma()} JPY / $size ɃFX"
-                }
-            }.addTo(bag)
+            .subscribeNext { binding.position.text = positionSummary(it) }
+            .addTo(bag)
+    }
+
+    private fun positionSummary(positions: List<Position>): String {
+        if (positions.isEmpty()) return context.getString(R.string.no_position)
+        val size = positions.wholeSize()
+        if (size != 0.0) return "${positions.average().toLong().splitByComma()} JPY / $size ɃFX"
+
+        val (longs, shorts) = positions.partition { it.coefficient() > 0.0 }
+        return context.getString(
+            R.string.offsetting_positions, longs.wholeSize().toString(), (-shorts.wholeSize()).toString()
+        )
     }
 
     private fun setupStyle() {
