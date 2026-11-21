@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
@@ -43,16 +44,23 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             }.addTo(bag)
 
         currentStatusService.position.asObservable()
-            .subscribeNext {
-                val size = it.wholeSize()
-                binding.profit.isVisible = size != 0.0
-                binding.spread.isVisible = size != 0.0
-                binding.position.text = if (size == 0.0) {
-                    "No position"
-                } else {
-                    "${it.average().toLong().splitByComma()} JPY / $size ɃFX"
-                }
-            }.addTo(bag)
+            .subscribeNext { positions ->
+                binding.profit.isVisible = positions.isNotEmpty()
+                binding.spread.isVisible = positions.wholeSize() != 0.0
+                binding.position.text = positionSummary(positions)
+            }
+            .addTo(bag)
+    }
+
+    private fun positionSummary(positions: List<Position>): String {
+        if (positions.isEmpty()) return context.getString(R.string.no_position)
+        val size = positions.wholeSize()
+        if (size != 0.0) return "${positions.average().toLong().splitByComma()} JPY / $size ɃFX"
+
+        val (longs, shorts) = positions.partition { it.coefficient() > 0.0 }
+        return context.getString(
+            R.string.offsetting_positions, longs.wholeSize().toString(), (-shorts.wholeSize()).toString()
+        )
     }
 
     private fun setupStyle() {

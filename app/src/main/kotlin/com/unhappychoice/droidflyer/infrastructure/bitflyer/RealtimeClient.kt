@@ -1,6 +1,5 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParseException
 import com.google.gson.reflect.TypeToken
@@ -10,7 +9,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.subjects.PublishSubject
-import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
@@ -21,24 +19,24 @@ import java.lang.reflect.Type
 class RealtimeClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
-    private val socket: Socket
+    private val socket: Socket,
+    private val createPrivateSocket: () -> Socket
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(
         gson,
         preference,
-        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
-            transports = arrayOf("websocket")
-            forceNew = true
-        })
+        newSocket(),
+        ::newSocket
     )
 
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
     val boardSnapshot: PublishSubject<Board> = PublishSubject.create<Board>()
     val executions: PublishSubject<List<Execution>> = PublishSubject.create<List<Execution>>()
-    val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
-    val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
+    private val childEvents = PublishSubject.create<PrivateEvent<List<ChildOrderEvent>>>()
+    private val parentEvents = PublishSubject.create<PrivateEvent<List<ParentOrderEvent>>>()
+    internal val childOrderEvents = childEvents.hide()
+    internal val parentOrderEvents = parentEvents.hide()
 
-    private val executionFeedLock = Any()
     private val executionDisconnects = PublishSubject.create<Unit>().toSerialized()
     internal val executionFeedDisconnects = executionDisconnects.hide()
 
@@ -47,57 +45,56 @@ class RealtimeClient internal constructor(
         "lightning_board_snapshot_FX_BTC_JPY",
         "lightning_executions_FX_BTC_JPY"
     )
-    private val privateChannels = listOf(
-        "child_order_events",
-        "parent_order_events"
-    )
-
+    private val accountLock = Any()
+    private var account: PrivateRealtimeConnection? = null
     @Volatile private var disconnected = false
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
             publicChannels.forEach { channel -> socket.emit("subscribe", channel) }
-            authenticate()
         }
-
-        (publicChannels + privateChannels).forEach { channel ->
+        publicChannels.forEach { channel ->
             socket.on(channel) { events -> events.forEach { publishEvent(channel, it) } }
         }
-
         socket.on(Socket.EVENT_DISCONNECT) {
-            executionDisconnects.onNext(Unit)
-            Log.d("Socket", "Disconnected")
+            synchronized(accountLock) {
+                if (!disconnected) executionDisconnects.onNext(Unit)
+            }
         }
-
         socket.connect()
+        updateAccount {}
     }
 
-    fun authenticate() {
-        if (disconnected) return
-        val credentials = preference.read()
-        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
-        val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
-        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
+    internal fun updateAccount(save: () -> Unit) = synchronized(accountLock) {
+        save()
+        if (!disconnected) connectSavedAccount()
     }
 
-    fun disconnect() {
-        synchronized(executionFeedLock) {
-            if (disconnected) return
-            disconnected = true
-            executionDisconnects.onNext(Unit)
-        }
+    fun disconnect(): Unit = synchronized(accountLock) {
+        if (disconnected) return@synchronized
+        disconnected = true
+        executionDisconnects.onNext(Unit)
+        closeAccount()
         socket.off()
         socket.disconnect()
     }
 
-    private fun onAuthenticated(args: Array<out Any?>) {
-        if (disconnected) return
-        val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
-        if (error == null) subscribePrivateChannels() else Log.d("Socket", "Authentication failed: $error")
+    private fun connectSavedAccount() {
+        val credentials = preference.read()
+        if (account?.canReuse(credentials) == true) return
+
+        closeAccount()
+        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
+        // Private channel messages carry no account identity, so each account needs its own socket.
+        val connection = PrivateRealtimeConnection(gson, credentials, createPrivateSocket(), accountLock)
+        account = connection
+        connection.connect(childEvents::onNext, parentEvents::onNext)
     }
 
-    private fun subscribePrivateChannels() =
-        privateChannels.forEach { channel -> socket.emit("subscribe", channel) }
+    private fun closeAccount() {
+        account?.close()
+        account = null
+    }
 
     private fun publishEvent(channel: String, event: Any?) {
         if (disconnected) return
@@ -108,7 +105,7 @@ class RealtimeClient internal constructor(
     }
 
     private fun publishExecutions(body: String) {
-        synchronized(executionFeedLock) {
+        synchronized(accountLock) {
             if (!disconnected) decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions)
         }
     }
@@ -121,19 +118,23 @@ class RealtimeClient internal constructor(
                 decodeAndPublish(body, Board::class.java, boardSnapshot)
             "lightning_executions_FX_BTC_JPY" ->
                 publishExecutions(body)
-            "child_order_events" ->
-                decodeAndPublish(body, object : TypeToken<List<ChildOrderEvent>>() {}.type, childOrderEvents)
-            "parent_order_events" ->
-                decodeAndPublish(body, object : TypeToken<List<ParentOrderEvent>>() {}.type, parentOrderEvents)
         }
     }
 
     private fun <T : Any> decodeAndPublish(body: String, type: Type, subject: PublishSubject<T>) {
-        val decoded = try {
-            gson.fromJson<T>(body, type)
-        } catch (_: JsonParseException) {
-            return
-        }
-        if (decoded != null) subject.onNext(decoded)
+        gson.decodeRealtimePayload<T>(body, type)?.let(subject::onNext)
     }
+
+    private companion object {
+        fun newSocket(): Socket = IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
+            transports = arrayOf("websocket")
+            forceNew = true
+        })
+    }
+}
+
+internal fun <T : Any> Gson.decodeRealtimePayload(body: String, type: Type): T? = try {
+    fromJson<T>(body, type)
+} catch (_: JsonParseException) {
+    null
 }
