@@ -4,7 +4,6 @@ import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
-import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
@@ -35,7 +34,6 @@ import org.junit.runner.RunWith
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
-import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
@@ -102,7 +100,7 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun cancelsRestVerifiedStopOnlyAfterReconnectAuthenticationSucceeds() {
+    fun cancelsRestVerifiedStopAfterReconnectAuthenticationFails() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         val api = stopOrderApi()
@@ -122,21 +120,12 @@ class RealtimeClientTest {
                 val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
                 socket.receive(Socket.EVENT_DISCONNECT)
-                assertFalse(stops.orders.value.single().canCancel)
                 socket.authAck = null
                 socket.receive(Socket.EVENT_CONNECT)
                 checkNotNull(socket.authAck).call(denied)
 
-                assertFalse(stops.orders.value.single().canCancel)
-                assertFalse(stops.loadFailed.value)
-                val failures = mutableListOf<CancellationFailure>()
-                stops.cancel(confirmation) { failures += it }
-                assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
-                verify(api, never()).cancelParentOrder(any())
-
-                client.authenticate()
-                checkNotNull(socket.authAck).call(JSONObject.NULL)
                 assertTrue(stops.orders.value.single().canCancel)
+                assertFalse(stops.loadFailed.value)
                 stops.cancel(confirmation) { fail("Cancellation failed: $it") }
                 val cancellation = argumentCaptor<CancelParentOrderRequest>()
                 verify(api).cancelParentOrder(cancellation.capture())

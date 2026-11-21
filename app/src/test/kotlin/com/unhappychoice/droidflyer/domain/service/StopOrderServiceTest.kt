@@ -175,7 +175,7 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun disconnectBlocksCancellationUntilPrivateChannelsRecover() =
+    fun disconnectRestoresCancellationAfterSuccessfulRestPoll() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.triggerActions()
@@ -191,7 +191,7 @@ class StopOrderServiceTest {
             parentOrderStatus = 200
             scheduler.advanceTimeBy(6, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
-            assertCancellationBlocked(stops, confirmation)
+            assertTrue(stops.orders.value.single().canCancel)
             assertFalse(stops.loadFailed.value)
 
             realtime.privateChannelsReady.onNext(Unit)
@@ -203,7 +203,7 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun authenticationFailurePollsForTriggerWithoutReenablingCancellation() =
+    fun cancellationRechecksForTriggerBeforeNextRestPoll() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.triggerActions()
@@ -212,13 +212,37 @@ class StopOrderServiceTest {
             realtime.privateChannelAuthenticationFailed.onNext(Unit)
             scheduler.triggerActions()
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
-            assertCancellationBlocked(stops, confirmation)
+            assertTrue(stops.orders.value.single().canCancel)
             assertFalse(stops.loadFailed.value)
 
             childOrders = marketChild(0.0)
-            scheduler.advanceTimeBy(6, SECONDS)
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.triggerActions()
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
-            assertCancellationBlocked(stops, confirmation)
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
+    fun cancellationSkipsPostWhenChildStatusCannotBeVerified() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            realtime.privateChannelAuthenticationFailed.onNext(Unit)
+            scheduler.triggerActions()
+            assertTrue(stops.orders.value.single().canCancel)
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+            childOrderStatus = 500
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.triggerActions()
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+            assertFalse(stops.orders.value.single().canCancel)
+            assertTrue(stops.loadFailed.value)
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
         }
 
     @Test

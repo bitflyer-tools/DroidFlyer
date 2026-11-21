@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendPar
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.disposables.CompositeDisposable
@@ -86,12 +87,24 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         if (rejection != null) return failed(rejection)
 
         cancelling.value = cancelling.value + id
-        current.client.cancelParentOrder(CancelParentOrderRequest(id))
-            .subscribeOn(io).observeOn(main)
+        val verifyWithRest = privateChannelsUnavailable
+        val cancellation = Completable.defer {
+            current.client.cancelParentOrder(CancelParentOrderRequest(id))
+        }.subscribeOn(io)
+        val request = if (verifyWithRest) {
+            verifyCancellation(current.client, requireNotNull(order)).andThen(cancellation)
+        } else cancellation
+        request.observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
             .doFinally { cancelling.value = cancelling.value - id }
             .subscribe({}, {
-                if (current === account) failed(CancellationFailure.REQUEST_FAILED)
+                if (current === account) {
+                    if (verifyWithRest) refresh(recoverTriggers = true)
+                    val failure = if (it is IneligibleCancellation) {
+                        CancellationFailure.INELIGIBLE
+                    } else CancellationFailure.REQUEST_FAILED
+                    failed(failure)
+                }
             }, { if (current === account) refresh() })
             .addTo(requests)
     }
@@ -159,9 +172,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
             if (current === account) {
                 recoverOnRefresh = false
                 scheduleFallbackRefresh()
-                orders.value = rows.map { order ->
-                    applyEvent(order).copy(cancellationAvailable = !privateChannelsUnavailable)
-                }
+                orders.value = rows.map(::applyEvent)
                 loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
             }
         }, {
@@ -206,6 +217,20 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
 
     private fun applyEvent(order: StopOrder): StopOrder =
         order.copy(event = events[order.acceptanceId]?.eventType ?: order.event)
+
+    private fun verifyCancellation(client: APIClientV1, order: StopOrder): Completable =
+        loadActiveParents(client)
+            .filter { it.parentOrderAcceptanceId == order.acceptanceId && isCryptoCfdStop(it) }
+            .take(1)
+            .concatMap { parent -> reconcileChildExecution(client, order.copy(parent = parent)) }
+            .subscribeOn(io).observeOn(main)
+            .map { applyEvent(it).canCancel }
+            .first(false)
+            .flatMapCompletable { eligible ->
+                if (eligible) Completable.complete() else Completable.error(IneligibleCancellation())
+            }
+
+    private class IneligibleCancellation : RuntimeException()
 
     private fun reconcileChildExecution(client: APIClientV1, stop: StopOrder): Observable<StopOrder> =
         client.getParentChildOrders(stop.parent.parentOrderId)
