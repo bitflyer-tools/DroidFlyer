@@ -1,7 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
@@ -13,8 +12,6 @@ import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.CompletableSubject
 import io.reactivex.subjects.PublishSubject
@@ -33,17 +30,16 @@ internal class PrivateTradingState(
 
     private var session = Session(client)
     private val accountSwitches = PublishSubject.create<Unit>()
-    private val requests = CompositeDisposable()
+    private var disposed = false
 
     fun dispose() {
-        requests.dispose()
+        disposed = true
         session.ended.onComplete()
     }
 
     fun switchAccount(client: APIClientV1) {
-        if (requests.isDisposed) return
+        if (disposed) return
 
-        requests.clear()
         val previous = session
         session = Session(client)
         previous.ended.onComplete()
@@ -51,21 +47,20 @@ internal class PrivateTradingState(
         balance.value = 0.0
         orders.value = emptyList()
         accountSwitches.onNext(Unit)
-        refresh()
     }
 
-    fun refresh() {
-        if (requests.isDisposed) return
+    fun refresh(): Completable = Completable.defer {
+        if (disposed) return@defer Completable.complete()
 
         val current = session
-        bind(current, current.client.getPositions(), position)
-        bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
-        // Unchanged rows keep their order references for cancellation.
-        current.client.getChildOrders("FX_BTC_JPY")
-            .subscribeOn(requestScheduler)
-            .observeOn(stateScheduler)
-            .subscribeNext { if (current === session && orders.value != it) orders.value = it }
-            .addTo(requests)
+        Completable.mergeArray(
+            current.client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
+            current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
+                .publishResponse { if (!disposed && current === session) balance.value = it },
+            // Unchanged rows keep their order references for cancellation.
+            current.client.getChildOrders("FX_BTC_JPY")
+                .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+        )
     }
 
     fun getMyExecutions(count: Int, before: Long?): Single<List<PrivateExecution>> =
@@ -74,7 +69,7 @@ internal class PrivateTradingState(
             .observeOn(stateScheduler)
             .singleOrError()
 
-    fun isCurrent(confirmation: CloseConfirmation): Boolean = !requests.isDisposed && confirmation.session === session
+    fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
         return PositionCloseOrder.from(position.value.wholeSize())?.let { CloseConfirmation(session, it) }
@@ -107,12 +102,8 @@ internal class PrivateTradingState(
         return session.client.cancelChildOrder(request)
     }
 
-    private fun <T : Any> bind(current: Session, source: Observable<T>, target: Variable<T>) {
-        source.subscribeOn(requestScheduler)
-            .observeOn(stateScheduler)
-            .subscribeNext { if (current === session) target.value = it }
-            .addTo(requests)
-    }
+    private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
+        subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1) {

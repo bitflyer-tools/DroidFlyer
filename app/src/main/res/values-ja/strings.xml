@@ -29,7 +29,7 @@
     <string name="setting">設定</string>
     <string name="api_key_not_saved">APIキーが間違っています</string>
     <string name="api_key_saved">APIキーを保存しました</string>
-    <string name="order_executed">約定しました %1$s / %2$s / %3$f / %4$d</string>
+    <string name="order_executed">約定しました %1$s / %2$s / %3$f / %4$s</string>
     <string name="active_orders">有効な注文</string>
     <string name="fills">約定履歴</string>
     <string name="refresh_fills">更新</string>

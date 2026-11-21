@@ -1,5 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.model
 
+import java.math.BigDecimal
+
 data class ParentOrderEvent(
     val productCode: String,
     val parentOrderId: String,
@@ -12,7 +14,7 @@ data class ParentOrderEvent(
     val parameterIndex: Int?,
     val childOrderAcceptanceId: String?,
     val side: String?,
-    val price: Long?,
+    val price: BigDecimal?,
     val size: Double?,
     val expireDate: String?
 )
