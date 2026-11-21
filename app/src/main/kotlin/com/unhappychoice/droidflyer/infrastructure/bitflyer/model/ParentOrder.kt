@@ -9,7 +9,9 @@ data class ParentOrder(
     val side: String,
     val size: Double,
     val executedSize: Double,
-    val id: Long = 0
+    val id: Long = 0,
+    val outstandingSize: Double? = null,
+    val cancelSize: Double? = null
 )
 
 data class ParentOrderDetails(

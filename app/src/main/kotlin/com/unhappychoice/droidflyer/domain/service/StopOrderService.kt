@@ -238,7 +238,8 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                             reconcileMarketChild(client, updated, reads)
                         parent.parentOrderState == "ACTIVE" &&
                             updated.status in waitingOrUnknown &&
-                            (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed || recover) ->
+                            (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed ||
+                                recover || (requireOrder && realtimeEvent != "ORDER")) ->
                             reconcileMarketChild(client, updated, reads)
                         else -> Observable.just(updated)
                     }
@@ -325,10 +326,16 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
         return order.copy(
             event = event?.eventType?.takeUnless { it == "ORDER" } ?: order.event,
-            waitingConfirmed = !requireRealtimeOrder || event?.eventType == "ORDER",
+            waitingConfirmed = !requireRealtimeOrder || event?.eventType == "ORDER" ||
+                (!privateChannelsUnavailable && order.parent.isFullyOutstanding()),
             childTermination = childTermination ?: order.childTermination
         )
     }
+
+    // An empty child list can also mean that an unfilled market child expired.
+    private fun ParentOrder.isFullyOutstanding(): Boolean =
+        parentOrderState == "ACTIVE" && size > 0 && outstandingSize == size &&
+            executedSize == 0.0 && cancelSize == 0.0
 
     private fun ChildOrderEvent.terminationStatus(): StopOrderStatus? = when (eventType) {
         "CANCEL" -> StopOrderStatus.CANCELED
