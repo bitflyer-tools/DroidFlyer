@@ -120,6 +120,8 @@ class RealtimeClientTest {
         board.assertValue(Board(100.0, emptyList(), emptyList()))
 
         replacement.authAck!!.call(JSONObject.NULL)
+        replacement.receive("child_order_events", JSONObject())
+        replacement.receive("parent_order_events", JSONObject())
         staleListener.call(JSONArray())
         replacement.receive("child_order_events", JSONArray())
         replacement.receive("parent_order_events", JSONArray())
@@ -197,6 +199,20 @@ class RealtimeClientTest {
         socket.receive("lightning_board_FX_BTC_JPY", payload)
 
         observer.assertValue(Board(100.0, listOf(Order(99, 0.0)), listOf(Order(101, 0.25))))
+    }
+
+    @Test
+    fun publishesExecutionsAfterInvalidPayload() {
+        val client = createClient()
+        val observer = client.executions.test()
+        val callback = socket.listeners("lightning_executions_FX_BTC_JPY").single()
+
+        callback.call(JSONArray("""[{"price":101.0}]"""))
+        callback.call(JSONObject("""{"price":102.0}"""))
+        callback.call(JSONArray("""[{"price":103.0}]"""))
+
+        observer.assertValueCount(2).assertNoErrors().assertNotComplete()
+        assertEquals(listOf(101.0, 103.0), observer.values().map { it.single().price })
     }
 
     @Test

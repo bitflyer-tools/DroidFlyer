@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import com.google.gson.reflect.TypeToken
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
@@ -12,6 +13,7 @@ import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.reflect.Type
 
 /** A realtime connection owned by a single activity session. */
 class RealtimeClient internal constructor(
@@ -96,12 +98,16 @@ class RealtimeClient internal constructor(
     private fun publish(channel: String, body: String) {
         when (channel) {
             "lightning_board_FX_BTC_JPY" ->
-                board.onNext(gson.fromJson(body, Board::class.java))
+                decodeAndPublish(body, Board::class.java, board)
             "lightning_board_snapshot_FX_BTC_JPY" ->
-                boardSnapshot.onNext(gson.fromJson(body, Board::class.java))
+                decodeAndPublish(body, Board::class.java, boardSnapshot)
             "lightning_executions_FX_BTC_JPY" ->
-                executions.onNext(gson.fromJson(body, object : TypeToken<List<Execution>>() {}.type))
+                decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions)
         }
+    }
+
+    private fun <T : Any> decodeAndPublish(body: String, type: Type, subject: PublishSubject<T>) {
+        gson.decodeRealtimePayload<T>(body, type)?.let(subject::onNext)
     }
 
     private companion object {
@@ -110,4 +116,10 @@ class RealtimeClient internal constructor(
             forceNew = true
         })
     }
+}
+
+internal fun <T : Any> Gson.decodeRealtimePayload(body: String, type: Type): T? = try {
+    fromJson<T>(body, type)
+} catch (_: JsonParseException) {
+    null
 }

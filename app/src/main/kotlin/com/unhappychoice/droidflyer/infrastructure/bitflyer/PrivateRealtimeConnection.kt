@@ -71,13 +71,14 @@ internal class PrivateRealtimeConnection(
         socket.emit("subscribe", "parent_order_events")
     }
 
-    private fun <T> listen(channel: String, type: TypeToken<T>, publish: (PrivateEvent<T>) -> Unit) {
+    private fun <T : Any> listen(channel: String, type: TypeToken<T>, publish: (PrivateEvent<T>) -> Unit) {
         socket.on(channel) { events ->
             synchronized(lock) {
                 val session = authenticated ?: return@synchronized
                 events.filter { it is JSONObject || it is JSONArray }.forEach {
-                    val value = gson.fromJson(it.toString(), type)
-                    publish(PrivateEvent(value) { authenticated === session })
+                    gson.decodeRealtimePayload<T>(it.toString(), type.type)?.let { value ->
+                        publish(PrivateEvent(value) { authenticated === session })
+                    }
                 }
             }
         }
