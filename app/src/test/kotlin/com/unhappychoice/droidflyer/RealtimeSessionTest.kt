@@ -86,6 +86,32 @@ class RealtimeSessionTest {
     }
 
     @Test
+    fun unlinkSignalClearsActiveSessionAndKeepsPublicSocketOpen() {
+        val session = Session()
+        try {
+            session.status.balance.value = 500.0
+            val account = session.accountSockets.single()
+            account.receiveExecution()
+
+            assertTrue(session.preference.clear())
+            time.advanceTimeBy(1, TimeUnit.SECONDS)
+
+            assertEquals(0.0, session.status.balance.value, 0.0)
+            assertFalse(session.positions.hasObservers())
+            assertFalse(account.connected())
+            assertTrue(session.socket.connected())
+            assertEquals(listOf(account), session.accountSockets)
+            assertEquals(0, session.notifications)
+            assertEquals(1, session.refreshes)
+
+            session.status.updateStatus()
+            assertEquals(1, session.refreshes)
+        } finally {
+            session.lifecycle.close()
+        }
+    }
+
+    @Test
     fun queuedExecutionFromPreviousAccountIsDroppedBeforeNotification() {
         val session = Session()
         try {

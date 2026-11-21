@@ -5,10 +5,8 @@ import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
 import io.reactivex.Observable
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
-import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import mortar.ViewPresenter
 
@@ -35,8 +33,6 @@ class OrdersPresenter internal constructor(
     internal fun cancelOrder(row: PrivateTradingState.OrderRow) {
         val cancellation = privateState.cancelOrder(row) ?: return
         cancellation
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { refreshOrders() },
                 { failedCancellations.onNext(row.order) }

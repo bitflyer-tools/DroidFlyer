@@ -44,7 +44,7 @@ import org.robolectric.shadows.ShadowDialog
 @Config(sdk = [28], application = Application::class)
 class LimitOrderViewTest {
     private val orderClient = mock<APIClientV1>()
-    private val presenter = LimitOrderPresenter(orderClient)
+    private val presenter = LimitOrderPresenter(orderClient::sendChildOrder)
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private lateinit var status: CurrentStatusService
 

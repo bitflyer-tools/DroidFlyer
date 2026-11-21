@@ -36,7 +36,7 @@ import org.robolectric.annotation.Config
 class LimitOrderPresenterTest {
     private val apiClient = mock<APIClientV1>()
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
-    private val presenter = LimitOrderPresenter(apiClient)
+    private val presenter = LimitOrderPresenter(apiClient::sendChildOrder)
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")

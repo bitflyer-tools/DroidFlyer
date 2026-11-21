@@ -4,19 +4,20 @@ import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
+import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
-class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
+class LimitOrderPresenter(
+    private val submit: (SendChildOrderRequest) -> Observable<ChildOrderAcceptance>?
+) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
     override val isLoading = Variable(false)
     override val amount = Variable(0.0)
     override val unitSize = Variable(1.0)
@@ -49,12 +50,12 @@ class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrder
 
         val (side, price, size) = terms
         val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, size)
+        val order = submit(request) ?: return
         val orderView = view
         val message = orderView.context.getString(side.orderedMessage, size, price)
 
         isLoading.value = true
-        apiClient.submitChildOrder(request)
-            .subscribeOnIoObserveOnUI()
+        order
             .doFinally { isLoading.value = false }
             .subscribe({
                 Snackbar.make(orderView, message, Snackbar.LENGTH_SHORT).show()

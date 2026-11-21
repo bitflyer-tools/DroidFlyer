@@ -47,7 +47,7 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.empty())
         status = CurrentStatusService(apiClient, Observable.empty(), Observable.empty(), Observable.empty())
-        presenter = MarketOrderPresenter(apiClient, status) { messages.add(it) }
+        presenter = MarketOrderPresenter(status) { messages.add(it) }
     }
 
     @After

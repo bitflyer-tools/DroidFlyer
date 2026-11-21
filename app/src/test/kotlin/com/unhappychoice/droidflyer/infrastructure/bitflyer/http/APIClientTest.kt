@@ -21,6 +21,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -89,6 +90,26 @@ class APIClientTest {
 
             assertSignedRequest(origin, "GET", "/v1/me/getpositions?product_code=FX_BTC_JPY", "")
             assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+        }
+    }
+
+    @Test
+    fun pinnedRequestsStopAtUnlinkEvenAfterRelinking() {
+        MockWebServer().use { origin ->
+            origin.start()
+            val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+            val original = APICredentials("dummy-key", "dummy-secret")
+            preference.save(original)
+            val api = APIClient(gson, preference, OkHttpClient(), origin.url("/v1/").toString())
+            val pending = api.client(original).sendChildOrder(order)
+            assertTrue(preference.clear())
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+
+            api.client().getMarkets().test().assertComplete()
+            assertNull(checkNotNull(origin.takeRequest(5, TimeUnit.SECONDS)).headers["Access-Key"])
+            preference.save(original)
+            pending.test().assertError(IOException::class.java)
+            assertEquals(1, origin.requestCount)
         }
     }
 

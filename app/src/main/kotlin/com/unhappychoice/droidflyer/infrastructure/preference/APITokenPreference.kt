@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.preference
 
 import android.content.Context
+import io.reactivex.subjects.PublishSubject
 import java.io.IOException
 
 class APITokenPreference internal constructor(
@@ -10,6 +11,22 @@ class APITokenPreference internal constructor(
     constructor(context: Context) : this(context, APICredentialCipher())
 
     private val preferences = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+
+    private val unlinks = PublishSubject.create<Unit>()
+    internal val accountUnlinked = unlinks.hide()
+
+    @Volatile
+    internal var unlinkGeneration = 0L
+        private set
+
+    fun clear(): Boolean {
+        val cleared = synchronized(lock) {
+            unlinkGeneration++
+            preferences.edit().remove(encryptedEntry).remove("key").remove("secret").commit()
+        }
+        unlinks.onNext(Unit)
+        return cleared
+    }
 
     fun read(): APICredentials = synchronized(lock) {
         val values = preferences.all

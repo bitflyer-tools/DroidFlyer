@@ -65,7 +65,9 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         assertSame(displayedRow.order, state.orders.value.single())
         assertNull(state.cancelOrder(previousRow))
-        checkNotNull(state.cancelOrder(displayedRow)).test().assertComplete()
+        val cancellation = checkNotNull(state.cancelOrder(displayedRow)).test()
+        scheduler.triggerActions()
+        cancellation.assertValue(Unit).assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
     }
@@ -172,6 +174,46 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         result.assertComplete()
         assertEquals(listOf(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 1.0, timeInForce = "IOC")), accountA.sent)
+    }
+
+    @Test
+    fun unlinkClearsDataAndRejectsQueuedResponsesAndStaleOrderActions() {
+        state.refresh().test()
+        scheduler.triggerActions()
+        accountA.publish(position, 10.0, order)
+        scheduler.triggerActions()
+        val confirmation = checkNotNull(state.closeConfirmation())
+        val unsubmitted = checkNotNull(state.closePosition(confirmation))
+
+        state.refresh().test()
+        scheduler.triggerActions()
+        val row = displayedRows().single()
+        val cancellation = checkNotNull(state.cancelOrder(row)).test()
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 0.5)
+        val submission = checkNotNull(state.submitOrder(request)).test()
+        accountA.publish(position, 99.0, order)
+        state.unlink()
+        assertPrivateData(emptyList(), 0.0, emptyList())
+        assertNull(state.closePosition(confirmation))
+        assertNull(state.cancelOrder(row))
+        assertNull(state.submitOrder(request))
+
+        val staleOrder = unsubmitted.test()
+        state.refresh().test()
+        scheduler.triggerActions()
+        assertPrivateData(emptyList(), 0.0, emptyList())
+        staleOrder.assertNoValues().assertComplete()
+        cancellation.assertNoValues().assertComplete()
+        submission.assertNoValues().assertComplete()
+        assertEquals(emptyList<SendChildOrderRequest>(), accountA.sent)
+        assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
+
+        state.switchAccount(accountB.client)
+        state.refresh().test()
+        scheduler.triggerActions()
+        accountB.publish(position, 20.0, order)
+        scheduler.triggerActions()
+        assertPrivateData(listOf(position), 20.0, listOf(order))
     }
 
     private fun displayedRows() = state.orderRows().blockingFirst()

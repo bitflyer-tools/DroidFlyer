@@ -32,6 +32,7 @@ class SettingsPresenter internal constructor(
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
+    internal val accountUnlinked = preference.accountUnlinked
     private val bag = CompositeDisposable()
 
     fun loadCredentials() {
@@ -53,10 +54,20 @@ class SettingsPresenter internal constructor(
             .addTo(bag)
     }
 
+    fun unlink(): Boolean {
+        bag.clear()
+        val cleared = preference.clear()
+        loadCredentials()
+        return cleared
+    }
+
     internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
         val submitted = APICredentials(key.value, secret.value)
-        return api.client().getBalance(submitted)
+        val generation = preference.unlinkGeneration
+        val client = api.client(submitted)
+        return client.getBalance()
             .subscribeOnIoObserveOnUI()
+            .filter { generation == preference.unlinkGeneration }
             .doOnNext {
                 val saved = preference.read()
                 val changed = saved.key != submitted.key || saved.secret != submitted.secret

@@ -26,6 +26,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,6 +49,7 @@ class SettingsPresenterTest {
         else error("API credential encryption key is missing")
     })
     private val requests = mutableListOf<Request>()
+    private val credentialsDuringValidation = mutableListOf<Pair<String, String>>()
     private val authenticated = mutableListOf<Pair<String, String>>()
     private val switched = mutableListOf<APIClientV1?>()
     private var validationStatus = 200
@@ -60,6 +62,7 @@ class SettingsPresenterTest {
             requests.add(request)
             val validating = request.url.encodedPath.endsWith("/getbalance")
             if (validating) {
+                credentialsDuringValidation.add(savedCredentials())
                 assertEquals(expectedSavedCredentials, savedCredentials())
                 validationFailure?.let { throw it }
             }
@@ -123,6 +126,7 @@ class SettingsPresenterTest {
         api.client().getPermissions().blockingFirst()
 
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
+        assertEquals(listOf("saved-key" to "saved-secret"), credentialsDuringValidation)
         assertEquals(listOf(savedCredentials()), authenticated)
         assertSignedWith(requests[0], "submitted-key", "submitted-secret")
         assertSignedWith(requests[1], "submitted-key", "submitted-secret")
@@ -173,6 +177,38 @@ class SettingsPresenterTest {
         presenter.saveCredentials().test().assertComplete()
 
         assertEquals(emptyList<APIClientV1?>(), switched)
+        assertEquals(listOf(savedCredentials()), authenticated)
+    }
+
+    @Test
+    fun unlinkWorksOfflineAndDropsValidationAlreadyWaitingForTheMainThread() {
+        val main = TestScheduler()
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+        val unlinks = preference.accountUnlinked.test()
+        val pendingSave = presenter.saveCredentials().test()
+        assertEquals(1, requests.size)
+        assertEquals("saved-key" to "saved-secret", savedCredentials())
+
+        assertTrue(presenter.unlink())
+        main.triggerActions()
+
+        pendingSave.assertNoValues().assertComplete()
+        assertEquals(1, requests.size)
+        unlinks.assertValue(Unit)
+        assertEquals("" to "", savedCredentials())
+        assertEquals("" to "", presenter.key.value to presenter.secret.value)
+        assertTrue(authenticated.isEmpty())
+        assertTrue(switched.isEmpty())
+
+        presenter.key.value = "new-key"
+        presenter.secret.value = "new-secret"
+        expectedSavedCredentials = "" to ""
+        val relink = presenter.saveCredentials().test()
+        main.triggerActions()
+
+        relink.assertValueCount(1).assertComplete()
+        assertEquals("new-key" to "new-secret", savedCredentials())
+        assertEquals(1, switched.size)
         assertEquals(listOf(savedCredentials()), authenticated)
     }
 

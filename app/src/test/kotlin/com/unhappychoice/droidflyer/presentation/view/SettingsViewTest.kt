@@ -27,6 +27,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
@@ -104,6 +105,25 @@ class SettingsViewTest {
             flowState.restore(reopened.root)
             assertEquals("updated-key", reopened.apiTokenTextView.text.toString())
             assertEquals("updated-secret", reopened.apiSecretTextView.text.toString())
+        }
+    }
+
+    @Test
+    fun unlinkButtonClearsBothFieldsAndSavedCredentials() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val settings = activity.openSettings()
+
+            assertTrue(settings.unlinkButton.performClick())
+            assertEquals("", settings.apiTokenTextView.text.toString())
+            assertEquals("", settings.apiSecretTextView.text.toString())
+            val values = activity.getSharedPreferences("api_token", Activity.MODE_PRIVATE).all
+            assertTrue(values.isEmpty())
+
+            activity.setContentView(LinearLayout(activity))
+            val reopened = activity.openSettings()
+            assertEquals("", reopened.apiTokenTextView.text.toString())
+            assertEquals("", reopened.apiSecretTextView.text.toString())
         }
     }
 

@@ -3,7 +3,10 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Completable
@@ -11,7 +14,7 @@ import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
-import io.reactivex.subjects.CompletableSubject
+import io.reactivex.subjects.ReplaySubject
 
 // Access the session and its cached data on the UI thread.
 internal class PrivateTradingState(
@@ -23,7 +26,7 @@ internal class PrivateTradingState(
     val balance = Variable(0.0)
     val orders = Variable<List<ChildOrder>>(emptyList())
 
-    private var session = Session(client)
+    private var session = client?.let(::Session)
     private var disposed = false
 
     val ordersMayBeIncomplete = orders.asObservable()
@@ -33,47 +36,41 @@ internal class PrivateTradingState(
     fun orderRows(): Observable<List<OrderRow>> =
         orders.asObservable().map { currentOrders ->
             val current = session
-            currentOrders.map { OrderRow(current, it) }
+            current?.let { active -> currentOrders.map { OrderRow(active, it) } }.orEmpty()
         }
 
     fun dispose() {
         disposed = true
-        session.ended.onComplete()
+        replaceSession(null)
     }
 
     fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
         if (disposed) return
 
-        val previous = session
-        session = Session(client)
-        orders.value = emptyList()
-        position.value = emptyList()
-        balance.value = 0.0
-        try {
-            onSwitched()
-        } finally {
-            previous.ended.onComplete()
-        }
+        replaceSession(client?.let(::Session), onSwitched)
     }
+
+    fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched)
 
     fun refresh(): Completable = Completable.defer {
         if (disposed) return@defer Completable.complete()
 
-        val current = session
-        val client = current.client ?: return@defer Completable.complete()
+        val current = session ?: return@defer Completable.complete()
+        val client = current.client
         Completable.mergeArray(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
             client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
                 .publishResponse { if (!disposed && current === session) balance.value = it },
             client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
-        ).takeUntil(current.ended)
+        ).takeUntil(current.ended.firstElement().ignoreElement())
     }
 
     fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
-        return PositionCloseOrder.from(position.value.wholeSize())?.let { CloseConfirmation(session, it) }
+        val current = session ?: return null
+        return PositionCloseOrder.from(position.value.wholeSize())?.let { CloseConfirmation(current, it) }
     }
 
     fun closePosition(
@@ -81,32 +78,52 @@ internal class PrivateTradingState(
         onAccepted: () -> Unit = {},
         reconfirm: (CloseConfirmation) -> Unit = {}
     ): Observable<Unit>? {
-        val current = session
-        val client = current.client ?: return null
+        val current = session ?: return null
         if (!isCurrent(confirmation)) return null
         return confirmation.order.confirm(
             PositionCloseOrder.from(position.value.wholeSize()),
             submit = {
-                Observable.defer {
-                    ClosePositionService(client, requestScheduler).close(it.positionSize, onAccepted).toObservable()
-                }
-                    .subscribeOn(requestScheduler)
-                    .observeOn(stateScheduler)
-                    .takeUntil(current.ended.toObservable<Unit>())
+                withinSession(current, Observable.defer {
+                    ClosePositionService(current.client, requestScheduler).close(it.positionSize, onAccepted).toObservable()
+                })
             },
             reconfirm = { reconfirm(CloseConfirmation(current, it)) }
         )
     }
 
-    fun cancelOrder(row: OrderRow): Completable? {
-        val current = session
-        if (disposed || row.session !== current) return null
+    fun submitOrder(request: SendChildOrderRequest): Observable<ChildOrderAcceptance>? {
+        val current = session ?: return null
+        return withinSession(current, current.client.submitChildOrder(request))
+    }
+
+    fun cancelOrder(row: OrderRow): Observable<Unit>? {
+        val current = session ?: return null
+        if (row.session !== current) return null
         val order = orders.value.firstOrNull {
             it.productCode == row.order.productCode &&
                 it.childOrderAcceptanceId == row.order.childOrderAcceptanceId
         } ?: return null
-        return current.client?.cancelChildOrder(CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId))
+        val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
+        return withinSession(current, current.client.cancelChildOrder(request).andThen(Observable.just(Unit)))
     }
+
+    private fun replaceSession(next: Session?, onSwitched: () -> Unit = {}) {
+        val previous = session
+        session = next
+        orders.value = emptyList()
+        position.value = emptyList()
+        balance.value = 0.0
+        try {
+            onSwitched()
+        } finally {
+            previous?.ended?.onNext(Unit)
+        }
+    }
+
+    private fun <T : Any> withinSession(current: Session, source: Observable<T>): Observable<T> =
+        source.subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .takeUntil(current.ended)
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
@@ -117,7 +134,7 @@ internal class PrivateTradingState(
 
     data class OrderRow(internal val session: Session, val order: ChildOrder)
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
-    class Session(val client: APIClientV1?) {
-        val ended = CompletableSubject.create()
+    class Session(val client: APIClientV1) {
+        val ended = ReplaySubject.createWithSize<Unit>(1)
     }
 }

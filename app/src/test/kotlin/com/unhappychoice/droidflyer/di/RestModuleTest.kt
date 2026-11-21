@@ -6,7 +6,7 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
-import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Manager
@@ -27,7 +27,7 @@ import org.robolectric.annotation.Config
 @Config(manifest = Config.NONE, application = DroidFlyerApplication::class, sdk = [30])
 class RestModuleTest {
     @Test
-    fun sharesRestClientWithOrderPresenterAndStatusService() {
+    fun sharesRestClientAndCredentialStoreAcrossModules() {
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         try {
@@ -55,7 +55,10 @@ class RestModuleTest {
         val client = graph.direct.instance<APIClientV1>()
         try {
             assertSame(client, graph.direct.instance<APIClient>().client())
-            assertSame(client, graph.direct.instance<LimitOrderPresenter>().apiClient)
+            val preference = graph.direct.instance<APITokenPreference>()
+            assertSame(application.tokenPreference, preference)
+            assertSame(preference, graph.direct.instance<APIClient>().preference)
+            assertSame(preference, graph.direct.instance<RealtimeClient>().preference)
             assertSame(client, status.apiClient)
         } finally {
             status.dispose()
