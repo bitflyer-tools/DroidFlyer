@@ -35,6 +35,7 @@ class OrdersPresenter internal constructor(
         confirmation: StopOrderService.CancellationConfirmation,
         failed: (StopOrderService.CancellationFailure) -> Unit
     ) = privateState.stopOrders.cancel(confirmation, failed)
+    internal val ordersMayBeIncomplete = privateState.ordersMayBeIncomplete
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()
 

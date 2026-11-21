@@ -4,6 +4,7 @@ import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopOrderService
 import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
 import com.unhappychoice.droidflyer.domain.service.StopOrderStatus
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
@@ -20,6 +21,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderDet
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderParameter
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -58,12 +60,13 @@ import java.util.concurrent.TimeUnit.SECONDS
 class RealtimeClientTest {
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
     private val socket = RecordingSocket()
+    private val accountSockets = mutableListOf<RecordingSocket>()
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
 
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
         socket.receive(Socket.EVENT_CONNECT)
         assertEquals(
             listOf("lightning_board_FX_BTC_JPY", "lightning_board_snapshot_FX_BTC_JPY", "lightning_executions_FX_BTC_JPY"),
@@ -71,18 +74,20 @@ class RealtimeClientTest {
         )
         assertFalse(socket.hasListeners("lightning_ticker_FX_BTC_JPY"))
 
-        socket.authAck!!.call(JSONObject.NULL)
-        assertEquals(listOf("child_order_events", "parent_order_events"), socket.subscriptions.drop(3))
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call(JSONObject.NULL)
+        assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
 
         val board = client.board.test()
         val snapshot = client.boardSnapshot.test()
-        val childOrders = client.childOrderEvents.test()
-        val parentOrders = client.parentOrderEvents.test()
+        val childOrders = client.childOrderEvents.map { it.value }.test()
+        val parentOrders = client.parentOrderEvents.map { it.value }.test()
         val boardPayload = JSONObject("""{"mid_price":123456.0,"bids":[],"asks":[]}""")
         socket.receive("lightning_board_FX_BTC_JPY", boardPayload)
         socket.receive("lightning_board_snapshot_FX_BTC_JPY", boardPayload)
-        socket.receive("child_order_events", JSONArray())
-        socket.receive("parent_order_events", JSONArray())
+        account.receive("child_order_events", JSONArray())
+        account.receive("parent_order_events", JSONArray())
         val expectedBoard = Board(123456.0, emptyList(), emptyList())
         board.assertValue(expectedBoard)
         snapshot.assertValue(expectedBoard)
@@ -93,58 +98,105 @@ class RealtimeClientTest {
     @Test
     fun signalsPrivateChannelReadinessOnlyAfterBothSubscriptionsAreAcknowledged() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
-        val availability = client.privateChannelAvailability.test()
+        val client = createClient()
+        val account = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
 
-        socket.receive(Socket.EVENT_CONNECT)
+        account.receive(Socket.EVENT_CONNECT)
         availability.assertNoValues()
-        socket.authAck!!.call(JSONObject.NULL)
+        account.authAck!!.call(JSONObject.NULL)
         availability.assertNoValues()
-        socket.subscriptionAcks.getValue("parent_order_events").call()
+        account.subscriptionAcks.getValue("parent_order_events").call()
         availability.assertNoValues()
-        socket.subscriptionAcks.getValue("child_order_events").call(JSONObject.NULL)
+        account.subscriptionAcks.getValue("child_order_events").call(JSONObject.NULL)
         availability.assertValue(true)
-        client.privateChannelAvailability.test().assertValue(true)
+        client.privateChannelAvailability.map { it.value }.test().assertValue(true)
 
-        socket.receive(Socket.EVENT_DISCONNECT)
-        client.privateChannelAvailability.test().assertValue(false)
-        socket.receive(Socket.EVENT_CONNECT)
+        account.receive(Socket.EVENT_DISCONNECT)
+        client.privateChannelAvailability.map { it.value }.test().assertValue(false)
+        account.receive(Socket.EVENT_CONNECT)
         availability.assertValues(true, false)
-        socket.authAck!!.call(JSONObject.NULL)
-        socket.acknowledgePrivateSubscriptions()
+        account.authAck!!.call(JSONObject.NULL)
+        account.acknowledgePrivateSubscriptions()
         availability.assertValues(true, false, true)
     }
 
     @Test
     fun rejectsPartialSubscriptionAndIgnoresAcknowledgementsFromAnEarlierConnection() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
-        val availability = client.privateChannelAvailability.test()
+        val client = createClient()
+        val account = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
 
-        socket.receive(Socket.EVENT_CONNECT)
-        socket.authAck!!.call()
-        val firstChildAck = socket.subscriptionAcks.getValue("child_order_events")
-        val firstParentAck = socket.subscriptionAcks.getValue("parent_order_events")
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call()
+        val firstChildAck = account.subscriptionAcks.getValue("child_order_events")
+        val firstParentAck = account.subscriptionAcks.getValue("parent_order_events")
         firstParentAck.call(JSONObject().put("message", "Permission denied"))
         availability.assertValue(false)
 
-        socket.receive(Socket.EVENT_DISCONNECT)
-        socket.receive(Socket.EVENT_CONNECT)
-        socket.authAck!!.call()
+        client.updateAccount {}
+        val replacement = accountSockets.last()
+        assertFalse(account === replacement)
+        replacement.receive(Socket.EVENT_CONNECT)
+        replacement.authAck!!.call()
         firstChildAck.call()
-        socket.subscriptionAcks.getValue("parent_order_events").call()
+        replacement.subscriptionAcks.getValue("parent_order_events").call()
         availability.assertValues(false, false)
-        socket.subscriptionAcks.getValue("child_order_events").call()
+        replacement.subscriptionAcks.getValue("child_order_events").call()
         availability.assertValues(false, false, true)
+    }
+
+    @Test
+    fun restoresUnconfirmedSubmissionAfterDisposalBeforeResponseAndKeepsOtherApiKeysIndependent() {
+        val scheduler = TestScheduler()
+        val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+        val api = stopOrderApi()
+        val response = PublishSubject.create<ParentOrderAcceptance>()
+        whenever(api.sendParentOrder(any())).thenReturn(response)
+
+        fun start(key: String): StopOrderService {
+            val guard = StopSubmissionPreference(RuntimeEnvironment.getApplication()).forApiKey(key)
+            return StopOrderService(api, scheduler, scheduler, guard).apply { onPrivateChannelAvailability(true) }
+        }
+
+        val original = start("first")
+        assertTrue(original.submit(original.confirmation(order)) { error("Response was not delivered") })
+        scheduler.triggerActions()
+        verify(api).sendParentOrder(any())
+        val restarted = start("first")
+        assertFalse(checkNotNull(restarted.confirmSubmissionRecovery()).invoke())
+        original.dispose()
+
+        val other = start("second")
+        try {
+            assertFalse(other.reconcilingSubmission.value)
+            assertTrue(restarted.reconcilingSubmission.value)
+            assertFalse(restarted.submit(restarted.confirmation(order)) { error("Duplicate order") })
+            scheduler.triggerActions()
+            verify(api).sendParentOrder(any())
+            assertTrue(checkNotNull(restarted.confirmSubmissionRecovery()).invoke())
+            assertFalse(restarted.reconcilingSubmission.value)
+            whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("accepted")))
+            assertTrue(restarted.submit(restarted.confirmation(order)) { assertEquals("accepted", it.getOrThrow()) })
+            scheduler.triggerActions()
+            val afterAcceptance = start("first")
+            assertFalse(afterAcceptance.reconcilingSubmission.value)
+            afterAcceptance.dispose()
+        } finally {
+            other.dispose()
+            restarted.dispose()
+        }
     }
 
     @Test
     fun submitsStopWhenPrivateSubscriptionsWereAcknowledgedBeforeStatusServiceStarted() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
-        socket.receive(Socket.EVENT_CONNECT)
-        socket.authAck!!.call()
-        socket.acknowledgePrivateSubscriptions()
+        val client = createClient()
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call()
+        account.acknowledgePrivateSubscriptions()
 
         val api = stopOrderApi()
         whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("submitted-stop")))
@@ -173,7 +225,8 @@ class RealtimeClientTest {
     @Test
     fun blocksStopSubmissionAndContinuesPollingAfterPrivateSubscriptionFails() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
+        val account = accountSockets.single()
         val api = stopOrderApi()
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
@@ -182,10 +235,10 @@ class RealtimeClientTest {
         try {
             val service = CurrentStatusService(api, client, api)
             try {
-                socket.receive(Socket.EVENT_CONNECT)
-                socket.authAck!!.call()
-                socket.subscriptionAcks.getValue("child_order_events").call()
-                socket.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
+                account.receive(Socket.EVENT_CONNECT)
+                account.authAck!!.call()
+                account.subscriptionAcks.getValue("child_order_events").call()
+                account.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
                 val stops = service.privateState.stopOrders
                 stops.refresh()
                 scheduler.advanceTimeBy(12, SECONDS)
@@ -213,7 +266,8 @@ class RealtimeClientTest {
     @Test
     fun parentOrderEventsRefreshOrdersPositionsAndCollateral() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
+        val account = accountSockets.single()
         val api = stopOrderApi()
         val position = Position("FX_BTC_JPY", "BUY", 10_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
         val order = ChildOrder(
@@ -222,7 +276,7 @@ class RealtimeClientTest {
         )
         whenever(api.getPositions()).thenReturn(Observable.just(emptyList()), Observable.just(listOf(position)))
         whenever(api.getCollateral()).thenReturn(Observable.just(emptyMap()), Observable.just(mapOf("collateral" to 200_000.0)))
-        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.just(emptyList()), Observable.just(listOf(order)))
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.just(emptyList()), Observable.just(listOf(order)))
 
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
@@ -231,26 +285,26 @@ class RealtimeClientTest {
         try {
             val service = CurrentStatusService(api, client, api)
             try {
-                socket.receive(Socket.EVENT_CONNECT)
-                checkNotNull(socket.authAck).call(JSONObject.NULL)
-                socket.acknowledgePrivateSubscriptions()
+                account.receive(Socket.EVENT_CONNECT)
+                checkNotNull(account.authAck).call(JSONObject.NULL)
+                account.acknowledgePrivateSubscriptions()
                 val channel = "parent_order_events"
                 val event = """
                     [{"product_code":"FX_BTC_JPY","event_type":"CANCEL","parent_order_id":"parent-1",
                       "parent_order_acceptance_id":"acceptance-1","event_date":"2026-01-01T00:00:00Z"}]
                 """.trimIndent()
-                socket.receive(channel, JSONArray(event.replace("FX_BTC_JPY", "BTC_JPY")))
+                account.receive(channel, JSONArray(event.replace("FX_BTC_JPY", "BTC_JPY")))
                 scheduler.advanceTimeBy(1, SECONDS)
                 assertEquals(emptyList<ChildOrder>(), service.orders.value)
 
-                socket.receive(channel, JSONArray(event))
-                socket.receive(channel, JSONArray(event))
+                account.receive(channel, JSONArray(event))
+                account.receive(channel, JSONArray(event))
                 scheduler.advanceTimeBy(1, SECONDS)
 
                 assertEquals(listOf(order), service.orders.value)
                 assertEquals(listOf(position), service.position.value)
                 assertEquals(200_000.0, service.balance.value, 0.0)
-                verify(api, times(2)).getChildOrders("FX_BTC_JPY")
+                verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
             } finally {
                 service.dispose()
             }
@@ -263,7 +317,8 @@ class RealtimeClientTest {
     @Test
     fun blocksCancellationOfUnverifiedStopAfterReconnectAuthenticationFails() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
+        val account = accountSockets.single()
         val api = stopOrderApi()
 
         val scheduler = TestScheduler()
@@ -273,9 +328,9 @@ class RealtimeClientTest {
             val service = CurrentStatusService(api, client, api)
             try {
                 val denied = JSONObject("""{"message":"Permission denied"}""")
-                socket.receive(Socket.EVENT_CONNECT)
-                checkNotNull(socket.authAck).call(JSONObject.NULL)
-                socket.acknowledgePrivateSubscriptions()
+                account.receive(Socket.EVENT_CONNECT)
+                checkNotNull(account.authAck).call(JSONObject.NULL)
+                account.acknowledgePrivateSubscriptions()
                 val stops = service.privateState.stopOrders
                 stops.refresh()
                 scheduler.advanceTimeBy(12, SECONDS)
@@ -287,10 +342,10 @@ class RealtimeClientTest {
 
                 whenever(api.getParentChildOrders("parent-1"))
                     .thenReturn(Observable.error(IllegalStateException("REST lookup failed")))
-                socket.receive(Socket.EVENT_DISCONNECT)
-                socket.authAck = null
-                socket.receive(Socket.EVENT_CONNECT)
-                checkNotNull(socket.authAck).call(denied)
+                account.receive(Socket.EVENT_DISCONNECT)
+                account.authAck = null
+                account.receive(Socket.EVENT_CONNECT)
+                checkNotNull(account.authAck).call(denied)
                 scheduler.advanceTimeBy(12, SECONDS)
 
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
@@ -314,8 +369,12 @@ class RealtimeClientTest {
 
     @Test
     fun publishesPrivateExecutionBatchWithFractionalAndIntegralPrices() {
-        val client = RealtimeClient(gson, preference, socket)
-        val observer = client.childOrderEvents.test()
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call(JSONObject.NULL)
+        val observer = client.childOrderEvents.map { it.value }.test()
         val payload = JSONArray(
             """
                 [{"product_code":"ETH_BTC","event_type":"EXECUTION","price":0.02744},
@@ -323,7 +382,7 @@ class RealtimeClientTest {
             """.trimIndent()
         )
 
-        socket.receive("child_order_events", payload)
+        account.receive("child_order_events", payload)
 
         observer.assertValue { events ->
             events.all { it.isExecution() } &&
@@ -335,27 +394,125 @@ class RealtimeClientTest {
     @Test
     fun ignoresAuthenticationAcknowledgementAfterDisconnect() {
         preference.save(APICredentials("key", "secret"))
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
         socket.receive(Socket.EVENT_CONNECT)
-        val acknowledge = checkNotNull(socket.authAck)
-        val publicSubscriptions = socket.subscriptions.toList()
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        val acknowledge = checkNotNull(account.authAck)
 
         client.disconnect()
         acknowledge.call(JSONObject.NULL)
 
-        assertEquals(publicSubscriptions, socket.subscriptions)
+        assertEquals(emptyList<String>(), account.subscriptions)
+    }
+
+    @Test
+    fun accountSwitchRejectsStalePrivateCallbacksAndKeepsPublicData() {
+        preference.save(APICredentials("first", "secret"))
+        val client = createClient()
+        socket.receive(Socket.EVENT_CONNECT)
+        val old = accountSockets.single()
+        old.receive(Socket.EVENT_CONNECT)
+        old.authAck!!.call(JSONObject.NULL)
+        val staleListener = old.listeners("child_order_events").single()
+        // Reconnect with an authentication request still pending when the account changes.
+        old.receive(Socket.EVENT_DISCONNECT)
+        old.receive(Socket.EVENT_CONNECT)
+        val staleAck = checkNotNull(old.authAck)
+        val childOrders = client.childOrderEvents.map { it.value }.test()
+        val parentOrders = client.parentOrderEvents.map { it.value }.test()
+        val board = client.board.test()
+
+        client.updateAccount { preference.save(APICredentials("second", "secret")) }
+        val replacement = accountSockets.last()
+        replacement.receive(Socket.EVENT_CONNECT)
+        staleListener.call(JSONArray())
+        staleAck.call(JSONObject.NULL)
+        replacement.receive("child_order_events", JSONArray())
+        replacement.receive("parent_order_events", JSONArray())
+        socket.receive("lightning_board_FX_BTC_JPY", JSONObject("""{"mid_price":100,"bids":[],"asks":[]}"""))
+
+        assertFalse(old.hasListeners("child_order_events"))
+        assertEquals(listOf("child_order_events", "parent_order_events"), old.subscriptions)
+        assertEquals(emptyList<String>(), replacement.subscriptions)
+        childOrders.assertNoValues()
+        parentOrders.assertNoValues()
+        board.assertValue(Board(100.0, emptyList(), emptyList()))
+
+        replacement.authAck!!.call(JSONObject.NULL)
+        replacement.receive("child_order_events", JSONObject())
+        replacement.receive("parent_order_events", JSONObject())
+        staleListener.call(JSONArray())
+        replacement.receive("child_order_events", JSONArray())
+        replacement.receive("parent_order_events", JSONArray())
+        childOrders.assertValue(emptyList())
+        parentOrders.assertValue(emptyList())
+        assertEquals(listOf("child_order_events", "parent_order_events"), replacement.subscriptions)
+
+        client.updateAccount {}
+        assertEquals(listOf(old, replacement), accountSockets)
+    }
+
+    @Test
+    fun failedAuthenticationKeepsPrivateEventsDisabledUntilSuccessfulRetry() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        val account = accountSockets.single()
+        val orders = client.childOrderEvents.test()
+
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call("denied")
+        account.receive("child_order_events", JSONArray())
+
+        orders.assertNoValues()
+        assertEquals(emptyList<String>(), account.subscriptions)
+
+        client.updateAccount {}
+        val retry = accountSockets.last()
+        retry.receive(Socket.EVENT_CONNECT)
+        retry.authAck!!.call(JSONObject.NULL)
+        retry.receive("child_order_events", JSONArray())
+        orders.assertValueCount(1)
+    }
+
+    @Test
+    fun resavingCredentialsRetriesPendingAuthenticationAndIgnoresLateAcknowledgement() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        val original = accountSockets.single()
+        val orders = client.childOrderEvents.test()
+
+        original.receive(Socket.EVENT_CONNECT)
+        val lateAck = checkNotNull(original.authAck)
+
+        client.updateAccount {}
+        assertEquals(2, accountSockets.size)
+        val retry = accountSockets.last()
+        retry.receive(Socket.EVENT_CONNECT)
+        val retryAck = checkNotNull(retry.authAck)
+
+        lateAck.call(JSONObject.NULL)
+        assertEquals(emptyList<String>(), original.subscriptions)
+        assertEquals(emptyList<String>(), retry.subscriptions)
+        retry.receive("child_order_events", JSONArray())
+        orders.assertNoValues()
+
+        retryAck.call(JSONObject.NULL)
+        assertEquals(listOf("child_order_events", "parent_order_events"), retry.subscriptions)
+        retry.receive("child_order_events", JSONArray())
+        orders.assertValueCount(1)
     }
 
     @Test
     fun valuationsWaitForFirstValidExecutionAfterPrivateDataLoads() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
         val api = mock<APIClientV1>()
         val position = Position("FX_BTC_JPY", "BUY", 10_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
         whenever(api.getPositions()).thenReturn(Observable.just(listOf(position)))
         val collateral = PublishSubject.create<Map<String, Any>>()
         whenever(api.getCollateral()).thenReturn(collateral)
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
 
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
@@ -398,7 +555,7 @@ class RealtimeClientTest {
 
     @Test
     fun publishesBoardDeltaWithoutIndentingPayload() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
         val payload = object : JSONObject(
             """{"mid_price":100,"bids":[{"price":99,"size":0}],"asks":[{"price":101,"size":0.25}]}"""
         ) {
@@ -416,7 +573,7 @@ class RealtimeClientTest {
 
     @Test
     fun publishesExecutionsAfterInvalidPayload() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
         val observer = client.executions.test()
         val callback = socket.listeners("lightning_executions_FX_BTC_JPY").single()
 
@@ -430,7 +587,7 @@ class RealtimeClientTest {
 
     @Test
     fun publishesExecutionBatchWithoutIndentingPayload() {
-        val client = RealtimeClient(gson, preference, socket)
+        val client = createClient()
         val payload = object : JSONArray(
             """
                 [{"id":123,"side":"BUY","price":101,"size":0.25,"exec_date":"2020-01-01T00:00:00Z",
@@ -466,12 +623,16 @@ class RealtimeClientTest {
         whenever(api.getPositions()).thenReturn(Observable.empty())
         whenever(api.getCollateral()).thenReturn(Observable.empty())
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(Observable.just(listOf(parent)))
         whenever(api.getParentOrders()).thenReturn(Observable.just(listOf(parent)))
         whenever(api.getParentOrder("parent-1")).thenReturn(Observable.just(details))
         whenever(api.getParentChildOrders("parent-1")).thenReturn(Observable.just(emptyList()))
         return api
+    }
+
+    private fun createClient() = RealtimeClient(gson, preference, socket) {
+        RecordingSocket().also(accountSockets::add)
     }
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {

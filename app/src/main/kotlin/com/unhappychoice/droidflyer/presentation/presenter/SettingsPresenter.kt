@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
@@ -20,15 +21,18 @@ import mortar.ViewPresenter
 class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
-    private val switchAccount: (APIClientV1?) -> Unit,
-    private val authenticate: () -> Unit
+    private val switchAccount: (APIClientV1?, APICredentials) -> Unit,
+    private val updateRealtimeAccount: (() -> Unit) -> Unit
 ) : ViewPresenter<SettingsView>() {
-    constructor(
+    internal constructor(
         api: APIClient,
         preference: APITokenPreference,
         currentStatusService: CurrentStatusService,
-        realtimeClient: RealtimeClient
-    ) : this(api, preference, currentStatusService::switchAccount, realtimeClient::authenticate)
+        realtimeClient: RealtimeClient,
+        stopSubmissions: StopSubmissionPreference
+    ) : this(api, preference, { client, credentials ->
+        currentStatusService.switchAccount(client, stopSubmissions.forApiKey(credentials.key))
+    }, realtimeClient::updateAccount)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
@@ -59,11 +63,11 @@ class SettingsPresenter internal constructor(
             .subscribeOnIoObserveOnUI()
             .doOnNext {
                 val saved = preference.read()
-                if (saved.key != submitted.key || saved.secret != submitted.secret) {
-                    preference.save(submitted)
-                    switchAccount(api.privateStatusClient(submitted))
+                val changed = saved.key != submitted.key || saved.secret != submitted.secret
+                updateRealtimeAccount {
+                    if (changed) preference.save(submitted)
                 }
-                authenticate()
+                if (changed) switchAccount(api.privateStatusClient(submitted), submitted)
             }
     }
 }

@@ -17,22 +17,28 @@ import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.CompletableSubject
 import retrofit2.HttpException
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
-internal class StopOrderService(client: APIClientV1?, private val io: Scheduler, private val main: Scheduler) {
+internal class StopOrderService(
+    client: APIClientV1?,
+    private val io: Scheduler,
+    private val main: Scheduler,
+    guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
+) {
     class SubmissionRejected(cause: HttpException) : RuntimeException("bitFlyer rejected the stop order", cause)
 
     val orders = Variable<List<StopOrder>>(emptyList())
     val loadFailed = Variable(false)
     val submitting = Variable(false)
-    val reconcilingSubmission = Variable(false)
+    val reconcilingSubmission = Variable(guard.pending() != null)
     val cancelling = Variable<Set<String>>(emptySet())
 
     val orderEventsReady: Boolean get() = !privateChannelsUnavailable
 
-    private var account = Account(client)
+    private var account = Account(client, guard)
     private val requests = CompositeDisposable()
-    private var pendingSubmission: PendingSubmission? = null
     private var enabled = false
     private var refreshing = false
     private var realtimeRefresh: RealtimeRefresh? = null
@@ -47,11 +53,11 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private val events = LinkedHashMap<String, ParentOrderEvent>()
     private val childTerminations = LinkedHashMap<String, ChildOrderEvent>()
 
-    fun switchAccount(client: APIClientV1?) {
+    fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
         val previous = account
-        account = Account(client)
+        account = Account(client, guard)
         previous.ended.onComplete()
-        clearPendingSubmission()
+        reconcilingSubmission.value = guard.pending() != null
         refreshRequest.set(null)
         fallbackRefresh.set(null)
         refreshing = false
@@ -74,14 +80,13 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     fun confirmation(order: StopOrderRequest): Confirmation = Confirmation(account, order)
 
     fun confirmSubmissionRecovery(): (() -> Boolean)? {
-        val pending = pendingSubmission ?: return null
+        val current = account
+        val pending = current.guard.pending() ?: return null
         return {
-            if (pendingSubmission !== pending || requests.isDisposed) {
-                false
-            } else {
-                clearPendingSubmission()
-                true
-            }
+            val recovered = current === account && pending !in activeSubmissions && !requests.isDisposed &&
+                current.guard.release(pending)
+            if (recovered) reconcilingSubmission.value = false
+            recovered
         }
     }
 
@@ -91,24 +96,34 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
             reconcilingSubmission.value || requests.isDisposed
         ) return false
         val client = current.client ?: return false
+        val id = UUID.randomUUID().toString()
+        activeSubmissions.add(id)
+        if (!current.guard.reserve(id)) {
+            activeSubmissions.remove(id)
+            reconcilingSubmission.value = current.guard.pending() != null
+            return false
+        }
         submitting.value = true
         Observable.defer { client.sendParentOrder(SendParentOrderRequest(confirmation.order)) }
             .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
-            .map { SubmissionResult(Result.success(it)) }
+            .map { Result.success(it) }
             .onErrorReturn { error ->
                 if (error is HttpException && error.code() in 400..499 && error.code() != 408) {
-                    SubmissionResult(Result.failure(SubmissionRejected(error)))
+                    Result.failure(SubmissionRejected(error))
                 } else {
-                    SubmissionResult(Result.failure(error), PendingSubmission())
+                    Result.failure(error)
                 }
             }
             .subscribeOn(io).observeOn(main)
             .takeUntil(current.ended.toObservable<Unit>())
-            .doFinally { submitting.value = false }
+            .doFinally {
+                activeSubmissions.remove(id)
+                submitting.value = false
+            }
             .subscribeNext { outcome ->
-                pendingSubmission = outcome.pending
-                reconcilingSubmission.value = outcome.pending != null
-                result(outcome.result)
+                if (outcome.isSuccess || outcome.exceptionOrNull() is SubmissionRejected) current.guard.release(id)
+                reconcilingSubmission.value = current.guard.pending() != null
+                result(outcome)
                 refresh()
             }
             .addTo(requests)
@@ -302,11 +317,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         })
     }
 
-    private fun clearPendingSubmission() {
-        pendingSubmission = null
-        reconcilingSubmission.value = false
-    }
-
     private fun finishRefresh() {
         refreshing = false
         realtimeRefresh = null
@@ -457,13 +467,13 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
 
     class CancellationConfirmation internal constructor(internal val account: Account, val acceptanceId: String)
 
-    private class SubmissionResult(val result: Result<String>, val pending: PendingSubmission? = null)
-
-    private class PendingSubmission
-
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
 
-    class Account(val client: APIClientV1?) {
+    class Account(val client: APIClientV1?, val guard: StopSubmissionGuard) {
         val ended = CompletableSubject.create()
+    }
+
+    private companion object {
+        val activeSubmissions = ConcurrentHashMap.newKeySet<String>()
     }
 }

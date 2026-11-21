@@ -17,16 +17,21 @@ import io.reactivex.subjects.CompletableSubject
 internal class PrivateTradingState(
     client: APIClientV1?,
     private val requestScheduler: Scheduler = Schedulers.io(),
-    private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
+    private val stateScheduler: Scheduler = AndroidSchedulers.mainThread(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
 ) {
     val position = Variable<List<Position>>(emptyList())
     val balance = Variable(0.0)
     val orders = Variable<List<ChildOrder>>(emptyList())
 
-    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler)
+    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler, submissionGuard)
 
     private var session = Session(client)
     private var disposed = false
+
+    val ordersMayBeIncomplete = orders.asObservable()
+        .map { it.size >= ACTIVE_ORDER_LIMIT }
+        .distinctUntilChanged()
 
     fun orderRows(): Observable<List<OrderRow>> =
         orders.asObservable().map { currentOrders ->
@@ -40,16 +45,24 @@ internal class PrivateTradingState(
         session.ended.onComplete()
     }
 
-    fun switchAccount(client: APIClientV1?) {
+    fun switchAccount(
+        client: APIClientV1?,
+        guard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+        onSwitched: () -> Unit = {}
+    ) {
         if (disposed) return
 
         val previous = session
         session = Session(client)
         orders.value = emptyList()
-        previous.ended.onComplete()
         position.value = emptyList()
         balance.value = 0.0
-        stopOrders.switchAccount(client)
+        try {
+            stopOrders.switchAccount(client, guard)
+            onSwitched()
+        } finally {
+            previous.ended.onComplete()
+        }
     }
 
     fun refresh(): Completable = Completable.defer {
@@ -61,9 +74,9 @@ internal class PrivateTradingState(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
             client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
                 .publishResponse { if (!disposed && current === session) balance.value = it },
-            client.getChildOrders("FX_BTC_JPY")
+            client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
-        )
+        ).takeUntil(current.ended)
     }
 
     fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session
@@ -106,6 +119,10 @@ internal class PrivateTradingState(
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
+
+    companion object {
+        private const val ACTIVE_ORDER_LIMIT = 500
+    }
 
     data class OrderRow(internal val session: Session, val order: ChildOrder)
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)

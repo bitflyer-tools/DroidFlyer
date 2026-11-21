@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
@@ -21,24 +22,30 @@ class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<BoardUpdate>,
-    orderEvents: Observable<Unit>,
+    orderEvents: Observable<PrivateEvent<List<ChildOrderEvent>>>,
     privateClient: APIClientV1? = apiClient,
-    parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
-    privateChannelAvailability: Observable<Boolean> = Observable.empty(),
-    childEvents: Observable<List<ChildOrderEvent>> = Observable.empty()
+    parentEvents: Observable<PrivateEvent<List<ParentOrderEvent>>> = Observable.empty(),
+    privateChannelAvailability: Observable<PrivateEvent<Boolean>> = Observable.empty(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) :
+        this(apiClient, realtimeClient, privateClient, StopSubmissionGuard.inMemory())
+
+    internal constructor(
+        apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?,
+        submissionGuard: StopSubmissionGuard
+    ) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
-        realtimeClient.childOrderEvents.map { Unit },
+        realtimeClient.childOrderEvents,
         privateClient,
         realtimeClient.parentOrderEvents,
         realtimeClient.privateChannelAvailability,
-        realtimeClient.childOrderEvents
+        submissionGuard
     )
 
-    internal val privateState = PrivateTradingState(privateClient)
+    internal val privateState = PrivateTradingState(privateClient, submissionGuard = submissionGuard)
 
     internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)
@@ -84,34 +91,40 @@ class CurrentStatusService internal constructor(
             }
             .addTo(bag)
 
-        val parentUpdates = parentEvents.filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
-        Observable.merge(orderEvents, parentUpdates.map { Unit })
+        val parentUpdates = parentEvents.filter { batch -> batch.value.any { it.productCode == "FX_BTC_JPY" } }
+        Observable.merge<PrivateEvent<*>>(orderEvents, parentUpdates)
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
+            .filter { it.isCurrent() }
             .subscribeNext { updateStatus() }
             .addTo(bag)
 
         val stopOrders = privateState.stopOrders
-        val childUpdates = childEvents.filter { batch ->
-            batch.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
+        val childUpdates = orderEvents.filter { batch ->
+            batch.value.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
         }
         parentUpdates
             .observeOn(AndroidSchedulers.mainThread())
-            .doOnNext(stopOrders::onEvents)
+            .filter { it.isCurrent() }
+            .doOnNext { stopOrders.onEvents(it.value) }
             .sample(1, TimeUnit.SECONDS)
             .observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
             .subscribeNext { stopOrders.onParentUpdates() }
             .addTo(bag)
 
         childUpdates.observeOn(AndroidSchedulers.mainThread())
-            .doOnNext(stopOrders::onChildEvents)
+            .filter { it.isCurrent() }
+            .doOnNext { stopOrders.onChildEvents(it.value) }
             .sample(1, TimeUnit.SECONDS, true)
             .observeOn(AndroidSchedulers.mainThread())
+            .filter { it.isCurrent() }
             .subscribeNext { stopOrders.onChildUpdates() }
             .addTo(bag)
 
         privateChannelAvailability.observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext(stopOrders::onPrivateChannelAvailability)
+            .filter { it.isCurrent() }
+            .subscribeNext { stopOrders.onPrivateChannelAvailability(it.value) }
             .addTo(bag)
 
         updateStatus()
@@ -127,15 +140,16 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
-    internal fun switchAccount(client: APIClientV1?) {
+    internal fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
         if (bag.isDisposed) return
 
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
-        privateState.switchAccount(client)
-        // Queue the new account before ending an in-flight refresh.
-        updateStatus()
-        previous.onComplete()
+        privateState.switchAccount(client, guard) {
+            // Queue the new account before ending an in-flight refresh.
+            updateStatus()
+            previous.onComplete()
+        }
     }
 
     private fun refreshStatus(): Completable = Completable.ambArray(

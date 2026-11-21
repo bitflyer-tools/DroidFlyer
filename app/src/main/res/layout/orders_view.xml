@@ -10,8 +10,17 @@
         android:layout_height="wrap_content"
         android:text="@string/stop_load_retry"
         android:visibility="gone"/>
+    <TextView
+        android:id="@+id/orderLimitWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="@string/active_orders_may_be_incomplete"
+        android:visibility="gone"/>
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/orderList"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
 </com.unhappychoice.droidflyer.presentation.view.OrdersView>

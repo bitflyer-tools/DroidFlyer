@@ -1,6 +1,5 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParseException
 import com.google.gson.reflect.TypeToken
@@ -11,7 +10,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEve
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
-import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
@@ -22,123 +20,76 @@ import java.lang.reflect.Type
 class RealtimeClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
-    private val socket: Socket
+    private val socket: Socket,
+    private val createPrivateSocket: () -> Socket
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(
         gson,
         preference,
-        IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
-            transports = arrayOf("websocket")
-            forceNew = true
-        })
+        newSocket(),
+        ::newSocket
     )
 
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
     val boardSnapshot: PublishSubject<Board> = PublishSubject.create<Board>()
     val executions: PublishSubject<List<Execution>> = PublishSubject.create<List<Execution>>()
-    val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
-    val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
+    private val childEvents = PublishSubject.create<PrivateEvent<List<ChildOrderEvent>>>()
+    private val parentEvents = PublishSubject.create<PrivateEvent<List<ParentOrderEvent>>>()
+    internal val childOrderEvents = childEvents.hide()
+    internal val parentOrderEvents = parentEvents.hide()
 
-    internal val privateChannelAvailability = BehaviorSubject.create<Boolean>()
+    private val availability = BehaviorSubject.create<PrivateEvent<Boolean>>()
+    internal val privateChannelAvailability = availability.hide()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
         "lightning_executions_FX_BTC_JPY"
     )
-    private val privateChannels = listOf(
-        "child_order_events",
-        "parent_order_events"
-    )
-
-    private var authenticationAttempt = 0L
+    private val accountLock = Any()
+    private var account: PrivateRealtimeConnection? = null
     @Volatile private var disconnected = false
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
             publicChannels.forEach { channel -> socket.emit("subscribe", channel) }
-            authenticate()
         }
-
-        (publicChannels + privateChannels).forEach { channel ->
+        publicChannels.forEach { channel ->
             socket.on(channel) { events -> events.forEach { publishEvent(channel, it) } }
         }
-
-        socket.on(Socket.EVENT_DISCONNECT) {
-            onSocketDisconnected()
-        }
-
         socket.connect()
+        updateAccount {}
     }
 
-    @Synchronized
-    fun authenticate() {
-        if (disconnected) return
-        val attempt = ++authenticationAttempt
-        if (privateChannelAvailability.value == true) privateChannelAvailability.onNext(false)
-        val credentials = preference.read()
-        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
-        val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
-        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(attempt, it) })
+    internal fun updateAccount(save: () -> Unit) = synchronized(accountLock) {
+        save()
+        if (!disconnected) connectSavedAccount()
     }
 
-    @Synchronized
-    fun disconnect() {
-        if (disconnected) return
+    fun disconnect(): Unit = synchronized(accountLock) {
+        if (disconnected) return@synchronized
         disconnected = true
+        closeAccount()
         socket.off()
         socket.disconnect()
-        privateChannelAvailability.onNext(false)
     }
 
-    @Synchronized
-    private fun onSocketDisconnected() {
-        authenticationAttempt++
-        privateChannelAvailability.onNext(false)
-        Log.d("Socket", "Disconnected")
+    private fun connectSavedAccount() {
+        val credentials = preference.read()
+        if (account?.canReuse(credentials) == true) return
+
+        closeAccount()
+        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
+        // Private channel messages carry no account identity, so each account needs its own socket.
+        val connection = PrivateRealtimeConnection(gson, credentials, createPrivateSocket(), accountLock)
+        account = connection
+        connection.connect(childEvents::onNext, parentEvents::onNext, availability::onNext)
     }
 
-    @Synchronized
-    private fun onAuthenticated(attempt: Long, args: Array<out Any?>) {
-        if (!isCurrentAttempt(attempt)) return
-        val error = acknowledgementError(args)
-        if (error == null) {
-            subscribePrivateChannels(attempt)
-        } else {
-            privateChannelAvailability.onNext(false)
-            Log.d("Socket", "Authentication failed: $error")
-        }
+    private fun closeAccount() {
+        account?.close()
+        account = null
     }
-
-    private fun subscribePrivateChannels(attempt: Long) {
-        val pendingChannels = privateChannels.toMutableSet()
-        privateChannels.forEach { channel ->
-            socket.emit("subscribe", channel, Ack { args ->
-                onPrivateSubscriptionAcknowledged(attempt, channel, pendingChannels, args)
-            })
-        }
-    }
-
-    @Synchronized
-    private fun onPrivateSubscriptionAcknowledged(
-        attempt: Long, channel: String, pendingChannels: MutableSet<String>, args: Array<out Any?>
-    ) {
-        if (!isCurrentAttempt(attempt)) return
-        val error = acknowledgementError(args)
-        if (error != null) {
-            authenticationAttempt++
-            privateChannelAvailability.onNext(false)
-            Log.d("Socket", "Subscription failed for $channel: $error")
-        } else if (pendingChannels.remove(channel) && pendingChannels.isEmpty()) {
-            privateChannelAvailability.onNext(true)
-        }
-    }
-
-    private fun isCurrentAttempt(attempt: Long) =
-        !disconnected && authenticationAttempt == attempt
-
-    private fun acknowledgementError(args: Array<out Any?>) =
-        args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
 
     private fun publishEvent(channel: String, event: Any?) {
         if (disconnected) return
@@ -156,19 +107,23 @@ class RealtimeClient internal constructor(
                 decodeAndPublish(body, Board::class.java, boardSnapshot)
             "lightning_executions_FX_BTC_JPY" ->
                 decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions)
-            "child_order_events" ->
-                decodeAndPublish(body, object : TypeToken<List<ChildOrderEvent>>() {}.type, childOrderEvents)
-            "parent_order_events" ->
-                decodeAndPublish(body, object : TypeToken<List<ParentOrderEvent>>() {}.type, parentOrderEvents)
         }
     }
 
     private fun <T : Any> decodeAndPublish(body: String, type: Type, subject: PublishSubject<T>) {
-        val decoded = try {
-            gson.fromJson<T>(body, type)
-        } catch (_: JsonParseException) {
-            return
-        }
-        if (decoded != null) subject.onNext(decoded)
+        gson.decodeRealtimePayload<T>(body, type)?.let(subject::onNext)
     }
+
+    private companion object {
+        fun newSocket(): Socket = IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
+            transports = arrayOf("websocket")
+            forceNew = true
+        })
+    }
+}
+
+internal fun <T : Any> Gson.decodeRealtimePayload(body: String, type: Type): T? = try {
+    fromJson<T>(body, type)
+} catch (_: JsonParseException) {
+    null
 }
