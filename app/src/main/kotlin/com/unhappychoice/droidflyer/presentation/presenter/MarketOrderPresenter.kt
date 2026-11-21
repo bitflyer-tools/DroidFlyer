@@ -7,6 +7,7 @@ import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
@@ -16,7 +17,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrde
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
@@ -57,7 +57,7 @@ class MarketOrderPresenter internal constructor(
         if (isLoading.value) return
         val state = currentStatusService.privateState
         val close = state.closePosition(confirmed, onAccepted = {
-            AndroidSchedulers.mainThread().scheduleDirect {
+            androidMainThreadScheduler().scheduleDirect {
                 if (state.isCurrent(confirmed)) notify(R.string.market_order_accepted)
             }.addTo(bag)
         }, reconfirm = reconfirm) ?: return
