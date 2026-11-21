@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
@@ -24,7 +25,7 @@ class ClosePositionServiceTest {
             "getPositions" -> Observable.just(positions.remove().toPositions())
             "sendChildOrder" -> {
                 orders.add(args[0] as SendChildOrderRequest)
-                Observable.just(mapOf("child_order_acceptance_id" to "order-${orders.size}"))
+                Observable.just(ChildOrderAcceptance("order-${orders.size}"))
             }
             "getChildOrders" -> {
                 assertEquals(null, args[1])

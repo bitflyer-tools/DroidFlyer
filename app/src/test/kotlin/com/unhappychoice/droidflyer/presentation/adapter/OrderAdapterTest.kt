@@ -82,22 +82,23 @@ class OrderAdapterTest {
         val cancel = row.findViewById<View>(R.id.cancel)
 
         response = listOf(firstOrder)
-        state.refresh()
+        state.refresh().test().assertComplete()
         adapter.onBindViewHolder(adapter.ViewHolder(row), 0)
 
         response = listOf(secondOrder, firstOrder.copy())
-        state.refresh()
+        state.refresh().test().assertComplete()
         cancel.performClick()
         val expected = listOf(CancelChildOrderRequest(firstOrder.productCode, firstOrder.childOrderAcceptanceId))
         assertEquals(expected, requests)
 
         response = listOf(secondOrder)
-        state.refresh()
+        state.refresh().test().assertComplete()
         cancel.performClick()
         assertEquals(expected, requests)
 
         response = listOf(firstOrder.copy())
         state.switchAccount(client)
+        state.refresh().test().assertComplete()
         assertEquals(1, adapter.itemCount)
         cancel.performClick()
         assertEquals(expected, requests)
