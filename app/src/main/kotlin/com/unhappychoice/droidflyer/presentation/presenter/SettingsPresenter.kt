@@ -20,7 +20,7 @@ import mortar.ViewPresenter
 class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
-    private val switchAccount: (APIClientV1) -> Unit,
+    private val switchAccount: (APIClientV1?) -> Unit,
     private val updateRealtimeAccount: (() -> Unit) -> Unit
 ) : ViewPresenter<SettingsView>() {
     constructor(
@@ -63,7 +63,7 @@ class SettingsPresenter internal constructor(
                 updateRealtimeAccount {
                     if (changed) preference.save(submitted)
                 }
-                if (changed) switchAccount(api.client(submitted))
+                if (changed) switchAccount(api.privateStatusClient(submitted))
             }
     }
 }

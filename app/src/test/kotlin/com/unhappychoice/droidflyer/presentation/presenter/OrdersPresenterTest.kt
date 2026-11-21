@@ -71,10 +71,10 @@ class OrdersPresenterTest {
         val failures = presenter.cancellationFailures.test()
         val orders = presenter.orders.test()
 
-        presenter.cancelOrder(order)
+        presenter.cancelOrder(orders.values().last().single())
 
         failures.assertValue(order).assertNoErrors().assertNotComplete()
-        orders.assertValues(listOf(order))
+        assertEquals(listOf(listOf(order)), orders.values().map { rows -> rows.map { it.order } })
 
         presenter.cancelOrder(orders.values().last().single())
 
@@ -83,7 +83,7 @@ class OrdersPresenterTest {
             Buffer().apply { requireNotNull(request.body).writeTo(this) }.readUtf8()
         })
         failures.assertValueCount(1)
-        orders.assertValues(listOf(order), emptyList())
+        assertEquals(listOf(listOf(order), emptyList()), orders.values().map { rows -> rows.map { it.order } })
     }
 
     private fun response(request: Request, code: Int): Response =
