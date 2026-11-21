@@ -5,17 +5,16 @@ import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.TextView
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import io.reactivex.rxkotlin.addTo
-import java.util.concurrent.TimeUnit
 import org.kodein.di.instance
 
 class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
@@ -30,22 +29,17 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
 
         setupStyle()
 
-        currentStatusService.currentPrice.asObservable()
-            .throttleLast(100, TimeUnit.MILLISECONDS)
-            .subscribeOnComputationObserveOnUI()
-            .subscribeNext { binding.currentPrice.text = "${it.toLong().splitByComma()} JPY" }
-            .addTo(bag)
-
         currentStatusService.tradingTotals
-            .subscribeOnComputationObserveOnUI()
             .subscribeNext { totals ->
-                binding.profit.text = totals.profit.splitByComma()
-                binding.profit.setCoefficientColor(totals.profit)
-
-                binding.spread.text = totals.spread.splitByComma()
-                binding.spread.setCoefficientColor(totals.spread)
-
-                binding.balance.text = "${totals.balance.splitByComma()} JPY"
+                binding.currentPrice.text = totals.price?.let { "${it.splitByComma()} JPY" } ?: "—"
+                binding.profit.showValuation(totals.profit)
+                binding.spread.showValuation(totals.spread)
+                val balance = "${totals.balance.splitByComma()} JPY"
+                binding.balance.text = if (totals.price == null) {
+                    context.getString(R.string.status_collateral, balance)
+                } else {
+                    balance
+                }
             }.addTo(bag)
 
         currentStatusService.position.asObservable()
@@ -72,8 +66,13 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         binding.balance.setTextColor(DefaultStyle.accentColor)
     }
 
-    private fun TextView.setCoefficientColor(price: Long) {
-        val color = if (price >= 0L) DefaultStyle.greenColor else DefaultStyle.redColor
+    private fun TextView.showValuation(value: Long?) {
+        text = value?.splitByComma() ?: "—"
+        val color = when {
+            value == null -> DefaultStyle.accentColor
+            value >= 0L -> DefaultStyle.greenColor
+            else -> DefaultStyle.redColor
+        }
         setTextColor(color)
     }
 }

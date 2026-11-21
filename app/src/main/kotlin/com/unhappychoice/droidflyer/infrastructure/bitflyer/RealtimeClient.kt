@@ -36,6 +36,10 @@ class RealtimeClient internal constructor(
     val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
+    private val executionFeedLock = Any()
+    private val executionDisconnects = PublishSubject.create<Unit>().toSerialized()
+    internal val executionFeedDisconnects = executionDisconnects.hide()
+
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
@@ -59,6 +63,7 @@ class RealtimeClient internal constructor(
         }
 
         socket.on(Socket.EVENT_DISCONNECT) {
+            executionDisconnects.onNext(Unit)
             Log.d("Socket", "Disconnected")
         }
 
@@ -74,8 +79,11 @@ class RealtimeClient internal constructor(
     }
 
     fun disconnect() {
-        if (disconnected) return
-        disconnected = true
+        synchronized(executionFeedLock) {
+            if (disconnected) return
+            disconnected = true
+            executionDisconnects.onNext(Unit)
+        }
         socket.off()
         socket.disconnect()
     }
@@ -97,6 +105,13 @@ class RealtimeClient internal constructor(
         }
     }
 
+    private fun publishExecutions(body: String) {
+        val batch = gson.fromJson<List<Execution>>(body, object : TypeToken<List<Execution>>() {}.type)
+        synchronized(executionFeedLock) {
+            if (!disconnected) executions.onNext(batch)
+        }
+    }
+
     private fun publish(channel: String, body: String) {
         when (channel) {
             "lightning_board_FX_BTC_JPY" ->
@@ -104,7 +119,7 @@ class RealtimeClient internal constructor(
             "lightning_board_snapshot_FX_BTC_JPY" ->
                 boardSnapshot.onNext(gson.fromJson(body, Board::class.java))
             "lightning_executions_FX_BTC_JPY" ->
-                executions.onNext(gson.fromJson(body, object : TypeToken<List<Execution>>() {}.type))
+                publishExecutions(body)
             "child_order_events" ->
                 childOrderEvents.onNext(gson.fromJson(body, object : TypeToken<List<ChildOrderEvent>>() {}.type))
             "parent_order_events" ->

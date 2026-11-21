@@ -1,19 +1,28 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
+import android.app.Activity
 import android.app.Application
+import android.widget.TextView
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.MarketPrice
+import com.unhappychoice.droidflyer.domain.service.TradingTotals
+import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.presentation.view.CurrentStatusView
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -24,12 +33,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.kodein.di.DI
+import org.kodein.di.bindInstance
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.util.Date
+import java.util.concurrent.TimeUnit.MILLISECONDS
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -97,13 +110,81 @@ class RealtimeClientTest {
             val service = CurrentStatusService(api, client, api)
             socket.receive(Socket.EVENT_CONNECT)
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":123456.0}]"""))
-            assertEquals(123456.0, service.currentPrice.value, 0.0)
+            assertEquals(MarketPrice(123456.0), service.currentPrice.value)
 
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray())
-            assertEquals(123456.0, service.currentPrice.value, 0.0)
+            assertEquals(MarketPrice(123456.0), service.currentPrice.value)
 
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":234567.0}]"""))
-            assertEquals(234567.0, service.currentPrice.value, 0.0)
+            assertEquals(MarketPrice(234567.0), service.currentPrice.value)
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
+    fun disconnectExpiresHeaderValuationsUntilAFreshExecution() {
+        val client = RealtimeClient(gson, preference, socket)
+        val api = mock<APIClientV1>()
+        val position = Position("FX_BTC_JPY", "BUY", 11_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
+        whenever(api.getPositions()).thenReturn(Observable.just(emptyList()), Observable.just(listOf(position)))
+        whenever(api.getCollateral()).thenReturn(
+            Observable.just(mapOf("collateral" to 500_000.0)),
+            Observable.just(mapOf("collateral" to 600_000.0))
+        )
+        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+
+        val clock = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            clock.triggerActions()
+            Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+                val host = controller.get()
+                val header = CurrentStatusView(host, null)
+                header.inject(DI { bindInstance { service } })
+                host.setContentView(header)
+                val totals = service.tradingTotals.test()
+
+                socket.receive(Socket.EVENT_CONNECT)
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":10000000.0}]"""))
+                clock.triggerActions()
+                assertEquals("${10_000_000L.splitByComma()} JPY", header.text(R.id.currentPrice))
+
+                socket.receive(Socket.EVENT_DISCONNECT)
+                clock.triggerActions()
+                assertEquals("—", header.text(R.id.currentPrice))
+                service.updateStatus()
+                clock.triggerActions()
+                socket.receive(Socket.EVENT_CONNECT)
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray())
+                clock.advanceTimeBy(100, MILLISECONDS)
+                totals.assertValues(
+                    TradingTotals(null, null, 500_000L, null),
+                    TradingTotals(0L, 10_000_000L, 500_000L, 10_000_000L),
+                    TradingTotals(null, null, 500_000L, null),
+                    TradingTotals(null, null, 600_000L, null)
+                )
+                assertEquals("—", header.text(R.id.currentPrice))
+                assertEquals("—", header.text(R.id.profit))
+                assertEquals("—", header.text(R.id.spread))
+                assertEquals("Collateral: ${600_000L.splitByComma()} JPY", header.text(R.id.balance))
+                assertEquals("${11_000_000L.splitByComma()} JPY / 0.1 ɃFX", header.text(R.id.position))
+
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":12000000.0}]"""))
+                clock.triggerActions()
+                totals.assertValueAt(4, TradingTotals(100_000L, 1_000_000L, 700_000L, 12_000_000L))
+                assertEquals("${12_000_000L.splitByComma()} JPY", header.text(R.id.currentPrice))
+                assertEquals(100_000L.splitByComma(), header.text(R.id.profit))
+                assertEquals(1_000_000L.splitByComma(), header.text(R.id.spread))
+                assertEquals("${700_000L.splitByComma()} JPY", header.text(R.id.balance))
+                totals.dispose()
+            }
+            service.dispose()
+            client.disconnect()
         } finally {
             RxAndroidPlugins.reset()
             RxJavaPlugins.reset()
@@ -155,6 +236,8 @@ class RealtimeClientTest {
             )
         )
     }
+
+    private fun CurrentStatusView.text(id: Int): String = findViewById<TextView>(id).text.toString()
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {
         val subscriptions = mutableListOf<String>()

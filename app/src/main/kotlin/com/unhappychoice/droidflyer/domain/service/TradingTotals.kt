@@ -6,37 +6,42 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.rxkotlin.Observables
-import io.reactivex.schedulers.Schedulers
 import java.util.concurrent.TimeUnit
 
-data class TradingTotals(val profit: Long, val spread: Long, val balance: Long)
+data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long, val price: Long?)
+
+internal data class MarketPrice(val yen: Double?)
 
 internal fun observeTradingTotals(
-    prices: Observable<Double>,
+    prices: Observable<MarketPrice>,
     positions: Observable<List<Position>>,
     collateral: Observable<Double>,
-    scheduler: Scheduler = Schedulers.computation()
+    scheduler: Scheduler
 ): Observable<TradingTotals> {
     val entries = positions.map { Entry(it, it.average().toLong()) }
     val account = Observables.combineLatest(entries, collateral, ::Account)
-    return Observables.combineLatest(prices.map { it.toLong() }, account, ::Valuation)
+    return Observables.combineLatest(prices, account) { price, value -> Valuation(price.yen?.toLong(), value) }
         .publish { latest ->
-            val accountChanges = latest.distinctUntilChanged { it.account }.map { Unit }
+            val immediateChanges = latest
+                .distinctUntilChanged { it.account to (it.price != null) }
+                .map { Unit }
             val priceWindows = latest.sample(100, TimeUnit.MILLISECONDS, scheduler).map { Unit }
-            Observable.merge(accountChanges, priceWindows)
+            Observable.merge(immediateChanges, priceWindows)
                 .withLatestFrom(latest) { _, valuation -> valuation }
         }
         .distinctUntilChanged()
         .map { it.totals() }
+        .distinctUntilChanged()
 }
 
 private class Entry(val positions: List<Position>, val average: Long)
 
 private class Account(val entry: Entry, val collateral: Double)
 
-private data class Valuation(val price: Long, val account: Account) {
+private data class Valuation(val price: Long?, val account: Account) {
     fun totals(): TradingTotals {
+        if (price == null) return TradingTotals(null, null, account.collateral.toLong(), null)
         val profit = account.entry.positions.profit(price).toLong()
-        return TradingTotals(profit, price - account.entry.average, account.collateral.toLong() + profit)
+        return TradingTotals(profit, price - account.entry.average, account.collateral.toLong() + profit, price)
     }
 }

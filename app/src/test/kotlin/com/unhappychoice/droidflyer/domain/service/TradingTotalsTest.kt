@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TradingTotalsTest {
-    private val price = Variable(120.75)
+    private val price = Variable(MarketPrice(120.75))
     private val positions = Variable<List<Position>>(emptyList())
     private val collateral = Variable(1000.75)
     private val scheduler = TestScheduler()
@@ -20,29 +20,29 @@ class TradingTotalsTest {
 
     @Test
     fun positionUpdateUsesLatestPriceBeforeWindowEnds() {
-        price.value = 140.75
+        price.value = MarketPrice(140.75)
         positions.value = listOf(position)
         totals.assertValueCount(2)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(20L, 40L, 1020L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(20L, 40L, 1020L, 140L)
         )
     }
 
     @Test
     fun collateralUpdateUsesLatestPriceBeforeWindowEnds() {
         positions.value = listOf(position)
-        price.value = 140.75
+        price.value = MarketPrice(140.75)
         collateral.value = 1500.75
         totals.assertValueCount(3)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(10L, 20L, 1010L),
-            TradingTotals(20L, 40L, 1520L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(10L, 20L, 1010L, 120L),
+            TradingTotals(20L, 40L, 1520L, 140L)
         )
     }
 
@@ -50,14 +50,14 @@ class TradingTotalsTest {
     fun priceUpdateUsesLatestPositionAndCollateral() {
         positions.value = listOf(position.copy(price = 110L))
         collateral.value = 1500.75
-        price.value = 99.75
+        price.value = MarketPrice(99.75)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(5L, 10L, 1005L),
-            TradingTotals(5L, 10L, 1505L),
-            TradingTotals(-5L, -11L, 1495L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(5L, 10L, 1005L, 120L),
+            TradingTotals(5L, 10L, 1505L, 120L),
+            TradingTotals(-5L, -11L, 1495L, 99L)
         )
     }
 
@@ -76,7 +76,7 @@ class TradingTotalsTest {
         val initialTraversals = trackedPositions.traversals
 
         repeat(20) {
-            price.value = 121.75 + it
+            price.value = MarketPrice(121.75 + it)
             scheduler.advanceTimeBy(4, MILLISECONDS)
         }
         totals.assertValueCount(2)
@@ -84,9 +84,9 @@ class TradingTotalsTest {
 
         scheduler.advanceTimeBy(20, MILLISECONDS)
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(10L, 20L, 1010L),
-            TradingTotals(20L, 40L, 1020L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(10L, 20L, 1010L, 120L),
+            TradingTotals(20L, 40L, 1020L, 140L)
         )
         assertEquals(initialTraversals + 1, trackedPositions.traversals)
     }
