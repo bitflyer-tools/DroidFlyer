@@ -233,7 +233,7 @@ class RealtimeClientTest {
             assertNull(service.currentPrice.value.yen)
             collateral.onNext(mapOf("collateral" to 200_000.0))
             totals.assertValues(
-                TradingTotals(null, null, 0L),
+                TradingTotals(null, null, null),
                 TradingTotals(null, null, 200_000L)
             )
 
@@ -246,7 +246,7 @@ class RealtimeClientTest {
             socket.receive(channel, JSONArray("""[{"price":0.0},{"price":10100000.0}]"""))
             assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
             totals.assertValues(
-                TradingTotals(null, null, 0L),
+                TradingTotals(null, null, null),
                 TradingTotals(null, null, 200_000L),
                 TradingTotals(10_000L, 100_000L, 210_000L)
             ).assertNoErrors()

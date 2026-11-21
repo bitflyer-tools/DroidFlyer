@@ -79,6 +79,7 @@ class CurrentStatusViewTest {
             )
             assertTrue(profit.isVisible)
             assertEquals("25", profit.text.toString().trim())
+            assertEquals("Balance unavailable", view.findViewById<TextView>(R.id.balance).text.toString())
             assertFalse(spread.isVisible)
 
             service.position.value = emptyList()

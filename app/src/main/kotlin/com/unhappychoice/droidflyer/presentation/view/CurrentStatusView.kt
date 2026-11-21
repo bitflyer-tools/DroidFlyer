@@ -46,7 +46,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
                 val positions = currentStatusService.position.value
                 binding.profit.renderValuation(totals.profit.takeIf { positions.isNotEmpty() })
                 binding.spread.renderValuation(totals.spread.takeIf { positions.wholeSize() != 0.0 })
-                binding.balance.text = "${totals.balance.splitByComma()} JPY"
+                binding.balance.text = totals.balance?.let { "${it.splitByComma()} JPY" } ?: "Balance unavailable"
             }.addTo(bag)
 
         currentStatusService.position.asObservable()
