@@ -9,7 +9,9 @@ import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
@@ -61,8 +63,11 @@ class MarketOrderPresenter internal constructor(
 
         close.map { R.string.cleared_all_positions }
             .onErrorReturn { error ->
-                if (error is ClosePositionService.InitialOrderSubmissionException) R.string.market_order_failed
-                else R.string.close_positions_incomplete
+                when (error) {
+                    is OrderAcceptanceUncertainException -> R.string.order_acceptance_uncertain
+                    is ClosePositionService.InitialOrderSubmissionException -> R.string.market_order_failed
+                    else -> R.string.close_positions_incomplete
+                }
             }
             .startLoading()
             .subscribeNext { message ->
@@ -75,13 +80,17 @@ class MarketOrderPresenter internal constructor(
     private fun submit(side: String, size: Double) {
         if (isLoading.value || size == 0.0) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, Math.abs(size))
-        apiClient.sendChildOrder(request)
+        apiClient.submitChildOrder(request)
             .subscribeOnIoObserveOnUI()
             .startLoading()
             .subscribe({
                 notify(R.string.market_order_accepted)
                 currentStatusService.updateStatus()
-            }, { notify(R.string.market_order_failed) })
+            }, { error ->
+                val message = if (error is OrderAcceptanceUncertainException) R.string.order_acceptance_uncertain
+                else R.string.market_order_failed
+                notify(message)
+            })
             .addTo(bag)
     }
 

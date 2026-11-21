@@ -181,6 +181,32 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun disconnectClearsMarketPriceWithoutPrivateCredentials() {
+        val client = RealtimeClient(gson, preference, socket)
+        val api = mock<APIClientV1>()
+        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        val clock = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        val service = CurrentStatusService(api, client, null)
+        try {
+            socket.receive(Socket.EVENT_CONNECT)
+            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":10000000.0}]"""))
+            clock.triggerActions()
+            assertEquals(MarketPrice(10_000_000.0), service.currentPrice.value)
+
+            socket.receive(Socket.EVENT_DISCONNECT)
+            clock.triggerActions()
+            assertEquals(MarketPrice(null), service.currentPrice.value)
+        } finally {
+            service.dispose()
+            client.disconnect()
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
     fun disconnectExpiresHeaderValuationsUntilAFreshExecution() {
         val client = RealtimeClient(gson, preference, socket)
         val api = mock<APIClientV1>()
