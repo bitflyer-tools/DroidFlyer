@@ -98,11 +98,11 @@ class MarketOrderViewTest {
             RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
             whenever(client.getPositions()).thenReturn(Observable.empty())
             whenever(client.getCollateral()).thenReturn(Observable.empty())
-            whenever(client.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+            whenever(client.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
             whenever(client.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
             whenever(client.sendChildOrder(any())).thenReturn(Observable.just(ChildOrderAcceptance("JRF-accepted")))
             val status = CurrentStatusService(client, Observable.never(), Observable.never(), Observable.never())
-            val presenter = MarketOrderPresenter(client, status) {}
+            val presenter = MarketOrderPresenter(status) {}
             val activity = controller.get()
             val view = activity.layoutInflater.inflate(R.layout.market_order_view, null) as MarketOrderView
             view.inject(DI {
