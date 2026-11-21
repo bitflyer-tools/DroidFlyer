@@ -4,6 +4,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Completable
 import io.reactivex.Observable
@@ -166,7 +167,7 @@ class PrivateTradingStateTest {
                 ))
                 "sendChildOrder" -> Observable.fromCallable {
                     sent.add(args[0] as SendChildOrderRequest)
-                    mapOf<String, Any>("child_order_acceptance_id" to "acceptance")
+                    ChildOrderAcceptance("acceptance")
                 }
                 "cancelChildOrder" -> Completable.fromAction {
                     cancelled.add(args[0] as CancelChildOrderRequest)
