@@ -11,14 +11,16 @@ import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.CompletableSubject
+import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
-    boardUpdates: Observable<(Board) -> Board>,
+    boardUpdates: Observable<BoardUpdate>,
     orderEvents: Observable<Unit>,
     privateClient: APIClientV1? = apiClient,
     parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
@@ -53,6 +55,7 @@ class CurrentStatusService internal constructor(
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
 
+    private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
     private var accountChanged = CompletableSubject.create()
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
@@ -69,15 +72,20 @@ class CurrentStatusService internal constructor(
             }
             .addTo(bag)
 
-        boardUpdates
-            .doOnNext { realtimeBoardRevision.incrementAndGet() }
+        val realtimeBoards = boardUpdates.doOnNext { realtimeBoardRevision.incrementAndGet() }
+        observeOrderBook(Observable.merge(realtimeBoards, restBoards), Schedulers.single()) { update ->
+            update.requestRevision?.let { it == realtimeBoardRevision.get() } ?: true
+        }
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { update -> board.value = update(board.value) }
-            .addTo(bag)
-
-        board.asObservable()
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { it.updateMarketQuotes(buyPrice, sellPrice) }
+            .subscribeNext { event ->
+                when (event) {
+                    is OrderBookEvent.View -> board.value = event.board
+                    is OrderBookEvent.Quotes -> {
+                        if (buyPrice.value != event.bestAsk) buyPrice.value = event.bestAsk
+                        if (sellPrice.value != event.bestBid) sellPrice.value = event.bestBid
+                    }
+                }
+            }
             .addTo(bag)
 
         val parentUpdates = parentEvents.filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
@@ -146,22 +154,7 @@ class CurrentStatusService internal constructor(
         return apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
             .publishStatus { snapshot ->
-                if (realtimeBoardRevision.get() == requestRevision) board.value = snapshot
+                restBoards.onNext(BoardUpdate(snapshot, BoardSource.REST, requestRevision))
             }
     }
 }
-
-internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {
-    val bestAsk = asks.minOfOrNull(Order::price) ?: 0L
-    val bestBid = bids.maxOfOrNull(Order::price) ?: 0L
-    if (buyPrice.value != bestAsk) buyPrice.value = bestAsk
-    if (sellPrice.value != bestBid) sellPrice.value = bestBid
-}
-
-internal fun boardUpdates(
-    snapshots: Observable<Board>,
-    deltas: Observable<Board>
-): Observable<(Board) -> Board> = Observable.merge(
-    snapshots.map<(Board) -> Board> { snapshot -> { snapshot } },
-    deltas.map<(Board) -> Board> { delta -> { book -> book.merge(delta) } }
-)
