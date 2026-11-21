@@ -50,7 +50,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         refreshing = false
         realtimeRefresh = null
         pendingRealtimeRefresh = null
-        channelGapOpen = false
         gapAffectedOrders.clear()
         events.clear()
         childTerminations.clear()
@@ -155,7 +154,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     }
 
     fun onPrivateChannelAvailability(ready: Boolean) {
-        if (!ready && privateChannelsUnavailable) return
+        if (!ready && channelGapOpen) return
         privateChannelsUnavailable = !ready
         channelGapOpen = !ready
         if (channelGapOpen) {

@@ -402,6 +402,31 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun initialAuthenticationFailureKeepsStatusUnknownWhenRestOmitsAnUnfilledExpiredChild() =
+        withRealtimeStops(connected = false) { stops, realtime, scheduler ->
+            realtime.privateChannelAuthenticationFailed.onNext(Unit)
+            scheduler.triggerActions()
+            stops.refresh()
+            scheduler.advanceTimeBy(12, SECONDS)
+
+            val order = stops.orders.value.single()
+            assertEquals(StopOrderStatus.UNKNOWN, order.status)
+            val confirmation = stops.cancellationConfirmation(order)
+            assertCancellationBlocked(stops, confirmation)
+
+            realtime.privateChannelsReady.onNext(Unit)
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
+
+            childOrders = marketChild(0.0, "EXPIRED")
+            stops.refresh(recoverTriggers = true)
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.EXPIRED, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
+        }
+
+    @Test
     fun reconnectKeepsStatusUnknownWhenRestOmitsAnUnfilledExpiredChild() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
