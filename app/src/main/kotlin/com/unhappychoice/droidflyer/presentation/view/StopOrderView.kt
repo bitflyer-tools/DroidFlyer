@@ -86,6 +86,8 @@ class StopOrderView(context: Context) : BaseView(context, null) {
     }
 
     private fun reviewOrder() {
+        if (!stops.orderEventsReady) return showOrderEventsHelp()
+
         val side = when (sides.checkedRadioButtonId) {
             buy.id -> StopSide.BUY
             sell.id -> StopSide.SELL
@@ -113,7 +115,18 @@ class StopOrderView(context: Context) : BaseView(context, null) {
                 showMessage(context.getString(R.string.stop_accepted, it))
             }.onFailure { showMessage(context.getString(R.string.stop_submit_unconfirmed)) }
         }
-        if (!started) showMessage(context.getString(R.string.stop_review_again))
+        if (!started) {
+            if (stops.orderEventsReady) showMessage(context.getString(R.string.stop_review_again))
+            else showOrderEventsHelp()
+        }
+    }
+
+    private fun showOrderEventsHelp() {
+        dialog = AlertDialog.Builder(context, R.style.DialogStyle)
+            .setTitle(R.string.stop_order_events_unavailable)
+            .setMessage(R.string.stop_order_events_setup)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun showMessage(message: String) {

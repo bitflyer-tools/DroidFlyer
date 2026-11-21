@@ -47,6 +47,8 @@
     <string name="stop_trigger_price">Trigger price (JPY)</string>
     <string name="stop_choose_side">Choose Buy or Sell</string>
     <string name="stop_invalid_input">Enter a positive quantity and a whole JPY trigger price</string>
+    <string name="stop_order_events_unavailable">Order events unavailable</string>
+    <string name="stop_order_events_setup">Stop orders require a live connection to bitFlyer order events so DroidFlyer can track and cancel orders waiting to trigger. In bitFlyer Lightning, open the API page and enable “Receive order events” on your API key, or create a key with that permission. In DroidFlyer, open Setting, enter the key and secret, and tap Apply. Once connected, review your order again.</string>
     <string name="stop_review">Review stop order</string>
     <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nTrigger price: %3$,d JPY\n\nWhen the trigger price is reached, bitFlyer submits a market order. The execution price may differ from the trigger price.</string>
     <string name="stop_submit">Submit stop</string>

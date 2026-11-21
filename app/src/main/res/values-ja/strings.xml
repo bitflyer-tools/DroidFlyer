@@ -43,6 +43,8 @@
     <string name="stop_trigger_price">トリガー価格（JPY）</string>
     <string name="stop_choose_side">買いまたは売りを選択してください</string>
     <string name="stop_invalid_input">正の数量と整数のトリガー価格（JPY）を入力してください</string>
+    <string name="stop_order_events_unavailable">注文イベントに接続できません</string>
+    <string name="stop_order_events_setup">発動待ちのストップ注文の状態確認と取り消しには、bitFlyer の注文イベントへの接続が必要です。bitFlyer Lightning の API ページで、API キーの「注文のイベントを受信」権限を有効にするか、その権限を付けたキーを発行してください。DroidFlyer の設定で API キーとシークレットを入力して適用し、接続後にもう一度注文を確認してください。</string>
     <string name="stop_review">ストップ注文の確認</string>
     <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nトリガー価格：%3$,d JPY\n\nトリガー価格に達すると、bitFlyer が成行注文を出します。約定価格はトリガー価格と異なる場合があります。</string>
     <string name="stop_submit">ストップ注文を送信</string>

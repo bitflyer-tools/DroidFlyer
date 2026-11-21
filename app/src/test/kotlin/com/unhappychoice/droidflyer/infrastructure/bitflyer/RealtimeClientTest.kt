@@ -8,6 +8,8 @@ import com.unhappychoice.droidflyer.domain.service.StopOrderService.Cancellation
 import com.unhappychoice.droidflyer.domain.service.StopOrderStatus
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
@@ -139,7 +141,7 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun continuesPollingStopOrdersAfterPrivateSubscriptionFails() {
+    fun blocksStopSubmissionAndContinuesPollingAfterPrivateSubscriptionFails() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         val api = stopOrderApi()
@@ -154,8 +156,16 @@ class RealtimeClientTest {
                 socket.authAck!!.call()
                 socket.subscriptionAcks.getValue("child_order_events").call()
                 socket.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
-                service.privateState.stopOrders.refresh()
+                val stops = service.privateState.stopOrders
+                stops.refresh()
                 scheduler.advanceTimeBy(12, SECONDS)
+                assertFalse(stops.orderEventsReady)
+                assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
+                assertFalse(stops.orders.value.single().canCancel)
+                val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+                assertFalse(stops.submit(stops.confirmation(order)) { error("Stop submitted without order events") })
+                scheduler.triggerActions()
+                verify(api, never()).sendParentOrder(any())
                 verify(api).getParentOrders(orderState = "ACTIVE", count = 100)
 
                 clearInvocations(api)
@@ -241,6 +251,9 @@ class RealtimeClientTest {
                 scheduler.advanceTimeBy(12, SECONDS)
                 assertTrue(stops.orders.value.single().canCancel)
                 val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+                val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+                assertTrue(stops.orderEventsReady)
+                val submission = stops.confirmation(order)
 
                 whenever(api.getParentChildOrders("parent-1"))
                     .thenReturn(Observable.error(IllegalStateException("REST lookup failed")))
@@ -253,6 +266,9 @@ class RealtimeClientTest {
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
                 assertFalse(stops.orders.value.single().canCancel)
                 assertTrue(stops.loadFailed.value)
+                assertFalse(stops.orderEventsReady)
+                assertFalse(stops.submit(submission) { error("Stop submitted after losing order events") })
+                verify(api, never()).sendParentOrder(any())
                 val failures = mutableListOf<CancellationFailure>()
                 stops.cancel(confirmation) { failures += it }
                 assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)

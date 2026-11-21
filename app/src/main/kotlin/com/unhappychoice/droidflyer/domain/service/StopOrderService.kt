@@ -24,6 +24,8 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     val submitting = Variable(false)
     val cancelling = Variable<Set<String>>(emptySet())
 
+    val orderEventsReady: Boolean get() = !privateChannelsUnavailable
+
     private var account = Account(client)
     private val requests = CompositeDisposable()
     private var enabled = false
@@ -49,6 +51,8 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         refreshing = false
         realtimeRefresh = null
         pendingRealtimeRefresh = null
+        privateChannelsUnavailable = true
+        channelGapOpen = false
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -65,7 +69,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
 
     fun submit(confirmation: Confirmation, result: (Result<String>) -> Unit): Boolean {
         val current = account
-        if (confirmation.account !== current || submitting.value || requests.isDisposed) return false
+        if (confirmation.account !== current || !orderEventsReady || submitting.value || requests.isDisposed) return false
         val client = current.client ?: return false
         submitting.value = true
         client.sendParentOrder(SendParentOrderRequest(confirmation.order))

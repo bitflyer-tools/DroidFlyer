@@ -929,6 +929,9 @@ class StopOrderServiceTest {
         service.switchAccount(client())
         serviceScheduler.advanceTimeBy(20, SECONDS)
 
+        assertFalse(service.orderEventsReady)
+        assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Stop submitted before authentication") })
+        service.onPrivateChannelAvailability(true)
         assertFalse(service.submit(confirmation) { fail("Stale stop submitted") })
         assertTrue(requests.isEmpty())
     }
