@@ -25,6 +25,7 @@ class CurrentStatusServiceTest {
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
     private lateinit var service: CurrentStatusService
+    private var boardRequests = 0
 
     @Before
     fun setUp() {
@@ -34,7 +35,8 @@ class CurrentStatusServiceTest {
         RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
 
         val api = mock(APIClientV1::class.java)
-        `when`(api.getBoard("FX_BTC_JPY")).thenReturn(responses.take(1))
+        `when`(api.getBoard("FX_BTC_JPY"))
+            .thenReturn(responses.take(1).doOnSubscribe { boardRequests++ })
         `when`(api.getPositions()).thenReturn(Observable.empty())
         `when`(api.getCollateral()).thenReturn(Observable.empty())
         `when`(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
@@ -84,6 +86,25 @@ class CurrentStatusServiceTest {
 
         scheduler.advanceTimeBy(300, MILLISECONDS)
         assertBook(initialBook, 100)
+    }
+
+    @Test
+    fun manualRefreshQueuesOneBoardRequestWhilePollingSkipsAnActiveRefresh() {
+        service.pollStatus()
+        service.updateStatus()
+        service.updateStatus()
+        scheduler.triggerActions()
+        assertEquals(1, boardRequests)
+
+        responses.onNext(initialBook)
+        scheduler.triggerActions()
+        assertEquals(2, boardRequests)
+
+        service.pollStatus()
+        responses.onNext(updatedBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertEquals(2, boardRequests)
+        assertBook(updatedBook, 110)
     }
 
     private fun assertBook(expected: Board, bestAsk: Long) {
