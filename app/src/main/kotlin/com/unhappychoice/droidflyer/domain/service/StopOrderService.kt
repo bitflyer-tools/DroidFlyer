@@ -27,7 +27,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private val requests = CompositeDisposable()
     private var enabled = false
     private var recoverOnRefresh = false
-    private var privateChannelsUnavailable = false
+    private var privateChannelsUnavailable = true
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val fallbackReads = StopOrderFallbackReads(io)

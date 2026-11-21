@@ -203,6 +203,28 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun pollsStopOrdersWhenRealtimeNeverConnectsAtStartup() =
+        withRealtimeStops(connected = false) { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(12, SECONDS)
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+
+            childOrders = marketChild(0.0)
+            scheduler.advanceTimeBy(38, SECONDS)
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+
+            childOrders = marketChild(0.01)
+            scheduler.advanceTimeBy(38, SECONDS)
+            assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
+
+            realtime.privateChannelsReady.onNext(Unit)
+            scheduler.triggerActions()
+            val requestCount = stopReadPaths().size
+            scheduler.advanceTimeBy(60, SECONDS)
+            assertEquals(requestCount, stopReadPaths().size)
+        }
+
+    @Test
     fun disconnectRestoresCancellationAfterSuccessfulRestPoll() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
@@ -542,7 +564,10 @@ class StopOrderServiceTest {
         assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
     }
 
-    private fun withRealtimeStops(test: (StopOrderService, RealtimeClient, TestScheduler) -> Unit) {
+    private fun withRealtimeStops(
+        connected: Boolean = true,
+        test: (StopOrderService, RealtimeClient, TestScheduler) -> Unit
+    ) {
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
@@ -554,6 +579,10 @@ class StopOrderServiceTest {
             val realtime = RealtimeClient(GsonBuilder().create(), preference, mock(Socket::class.java))
             val status = CurrentStatusService(api, realtime, api)
             try {
+                if (connected) {
+                    realtime.privateChannelsReady.onNext(Unit)
+                    scheduler.triggerActions()
+                }
                 test(status.privateState.stopOrders, realtime, scheduler)
             } finally {
                 status.dispose()
@@ -565,6 +594,7 @@ class StopOrderServiceTest {
     }
 
     private fun service() = StopOrderService(client(), Schedulers.trampoline(), Schedulers.trampoline())
+        .apply { onPrivateChannelAvailability(true) }
 
     private fun marketChild(size: Double, state: String = "ACTIVE") =
         """[{"child_order_type":"MARKET","child_order_state":"$state","executed_size":$size}]"""
