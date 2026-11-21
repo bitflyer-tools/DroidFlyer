@@ -137,6 +137,34 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun childFailureRefreshesTriggeredStop() =
+        assertChildTermination("ORDER_FAILED", "REJECTED", StopOrderStatus.REJECTED, 0.0)
+
+    @Test
+    fun childCancellationRefreshesPartiallyExecutedStop() =
+        assertChildTermination("CANCEL", "CANCELED", StopOrderStatus.CANCELED, 0.005)
+
+    @Test
+    fun childExpiryRefreshesPartiallyExecutedStop() =
+        assertChildTermination("EXPIRE", "EXPIRED", StopOrderStatus.EXPIRED, 0.005)
+
+    @Test
+    fun refreshRetainsChildTerminationWhenRestNoLongerReturnsTheChild() {
+        childOrders = marketChild(0.005, "CANCELED")
+        val service = service()
+        service.refresh()
+        assertEquals(StopOrderStatus.CANCELED, service.orders.value.single().status)
+
+        childOrders = "[]"
+        service.refresh()
+
+        val order = service.orders.value.single()
+        assertEquals(StopOrderStatus.CANCELED, order.status)
+        assertEquals(0.005, order.parent.executedSize, 0.0)
+        assertFalse(order.canCancel)
+    }
+
+    @Test
     fun reloadRecoversTriggerWithoutRealtimeEvent() {
         childOrders = marketChild(0.0)
         val service = service()
@@ -428,6 +456,26 @@ class StopOrderServiceTest {
         assertTrue(requests.isEmpty())
     }
 
+    private fun assertChildTermination(event: String, state: String, status: StopOrderStatus, filled: Double) =
+        withRealtimeStops { stops, realtime, scheduler ->
+            childOrders = marketChild(filled)
+            stops.refresh()
+            scheduler.triggerActions()
+            assertEquals(
+                if (filled == 0.0) StopOrderStatus.TRIGGERED else StopOrderStatus.PARTIALLY_EXECUTED,
+                stops.orders.value.single().status
+            )
+
+            childOrders = marketChild(filled, state)
+            realtime.childOrderEvents.onNext(listOf(childExecution().copy(eventType = event)))
+            scheduler.advanceTimeBy(1, SECONDS)
+
+            val order = stops.orders.value.single()
+            assertEquals(status, order.status)
+            assertEquals(filled, order.parent.executedSize, 0.0)
+            assertFalse(order.canCancel)
+        }
+
     private fun assertCancellationBlocked(
         stops: StopOrderService,
         confirmation: StopOrderService.CancellationConfirmation
@@ -463,7 +511,8 @@ class StopOrderServiceTest {
 
     private fun service() = StopOrderService(client(), Schedulers.trampoline(), Schedulers.trampoline())
 
-    private fun marketChild(size: Double) = """[{"child_order_type":"MARKET","executed_size":$size}]"""
+    private fun marketChild(size: Double, state: String = "ACTIVE") =
+        """[{"child_order_type":"MARKET","child_order_state":"$state","executed_size":$size}]"""
 
     private fun stopRequest() = requireNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
 

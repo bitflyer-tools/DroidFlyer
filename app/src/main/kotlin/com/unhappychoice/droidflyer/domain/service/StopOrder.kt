@@ -6,7 +6,8 @@ internal data class StopOrder(
     val parent: ParentOrder,
     val triggerPrice: Long?,
     val event: String? = null,
-    val triggerVerified: Boolean = true
+    val triggerVerified: Boolean = true,
+    val childTermination: StopOrderStatus? = null
 ) {
     val acceptanceId get() = parent.parentOrderAcceptanceId
     val canCancel get() = triggerPrice != null && status == StopOrderStatus.WAITING
@@ -18,6 +19,7 @@ internal data class StopOrder(
             parent.executedSize >= parent.size && parent.size > 0 -> StopOrderStatus.EXECUTED
             parent.parentOrderState == "CANCELED" || event == "CANCEL" -> StopOrderStatus.CANCELED
             parent.parentOrderState == "EXPIRED" || event == "EXPIRE" -> StopOrderStatus.EXPIRED
+            childTermination != null -> childTermination
             isPartiallyExecuted -> StopOrderStatus.PARTIALLY_EXECUTED
             parent.parentOrderState == "REJECTED" || event == "ORDER_FAILED" -> StopOrderStatus.REJECTED
             parent.parentOrderState == "COMPLETED" || event in triggeredEvents -> StopOrderStatus.TRIGGERED

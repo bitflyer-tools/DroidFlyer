@@ -65,7 +65,9 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
         private fun statusText(order: StopOrder): String {
             val status = order.status
             val label = context.getString(status.label())
-            return if (order.isPartiallyExecuted && (status == StopOrderStatus.CANCELED || status == StopOrderStatus.EXPIRED)) {
+            val ended = status == StopOrderStatus.CANCELED ||
+                status == StopOrderStatus.EXPIRED || status == StopOrderStatus.REJECTED
+            return if (order.isPartiallyExecuted && ended) {
                 context.getString(R.string.stop_status_with_executed_size, label, order.parent.executedSize.toString())
             } else {
                 label

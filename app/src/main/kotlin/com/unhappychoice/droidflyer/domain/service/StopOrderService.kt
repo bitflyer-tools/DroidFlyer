@@ -155,13 +155,13 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
                 val event = knownEvents[row.parentOrderAcceptanceId] ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice).concatMap { stop ->
-                    val updated = stop.copy(event = event)
+                    val updated = stop.copy(event = event, childTermination = cached?.childTermination)
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
-                            updated.isPartiallyExecuted -> reconcileChildExecution(client, updated)
+                            updated.isPartiallyExecuted -> reconcileMarketChild(client, updated)
                         updated.status == StopOrderStatus.WAITING &&
                             (cached?.triggerPrice == null || cached.triggerVerified == false || recover) ->
-                            reconcileChildExecution(client, updated)
+                            reconcileMarketChild(client, updated)
                         else -> Observable.just(updated)
                     }
                 }
@@ -222,7 +222,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         loadActiveParents(client)
             .filter { it.parentOrderAcceptanceId == order.acceptanceId && isCryptoCfdStop(it) }
             .take(1)
-            .concatMap { parent -> reconcileChildExecution(client, order.copy(parent = parent)) }
+            .concatMap { parent -> reconcileMarketChild(client, order.copy(parent = parent)) }
             .subscribeOn(io).observeOn(main)
             .map { applyEvent(it).canCancel }
             .first(false)
@@ -232,13 +232,19 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
 
     private class IneligibleCancellation : RuntimeException()
 
-    private fun reconcileChildExecution(client: APIClientV1, stop: StopOrder): Observable<StopOrder> =
+    private fun reconcileMarketChild(client: APIClientV1, stop: StopOrder): Observable<StopOrder> =
         client.getParentChildOrders(stop.parent.parentOrderId)
             .map { children ->
                 val marketOrder = children.firstOrNull { it.childOrderType == "MARKET" }
                 if (marketOrder == null) stop else stop.copy(
                     parent = stop.parent.copy(executedSize = maxOf(stop.parent.executedSize, marketOrder.executedSize)),
-                    event = stop.event ?: "TRIGGER"
+                    event = stop.event ?: "TRIGGER",
+                    childTermination = when (marketOrder.childOrderState) {
+                        "CANCELED" -> StopOrderStatus.CANCELED
+                        "EXPIRED" -> StopOrderStatus.EXPIRED
+                        "REJECTED" -> StopOrderStatus.REJECTED
+                        else -> stop.childTermination
+                    }
                 )
             }
             .onErrorReturnItem(
