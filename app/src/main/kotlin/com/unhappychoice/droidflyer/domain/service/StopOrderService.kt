@@ -37,7 +37,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var requireRealtimeOrder = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
-    private val fallbackReads = StopOrderFallbackReads(io)
+    private val refreshReads = StopOrderFallbackReads(io)
     private val waitingOrUnknown = setOf(StopOrderStatus.WAITING, StopOrderStatus.UNKNOWN)
     private val events = LinkedHashMap<String, ParentOrderEvent>()
     private val childTerminations = LinkedHashMap<String, ChildOrderEvent>()
@@ -205,13 +205,12 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
-        val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         val requireOrder = requireRealtimeOrder
         refreshRequest.set(null)
-        val request = loadActiveParents(client, reads = reads).toList().toObservable().concatMap { active ->
-            stopOrderRead(reads) { client.getParentOrders() }.map { recent ->
+        val request = loadActiveParents(client, reads = refreshReads).toList().toObservable().concatMap { active ->
+            refreshReads.read { client.getParentOrders() }.map { recent ->
                 val history = recent.filter(::isCryptoCfdStop)
                 val byId = history.associateBy { it.parentOrderAcceptanceId }
                 val open = active.filter(::isCryptoCfdStop).map { byId[it.parentOrderAcceptanceId] ?: it }
@@ -225,7 +224,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                 val realtimeEvent = knownEvents[row.parentOrderAcceptanceId]
                 val event = realtimeEvent?.takeUnless { it == "ORDER" } ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
-                loadStop(client, parent, cached?.triggerPrice, reads).concatMap { stop ->
+                loadStop(client, parent, cached?.triggerPrice, refreshReads).concatMap { stop ->
                     val updated = stop.copy(
                         event = event,
                         childTermination = cached?.childTermination,
@@ -235,18 +234,18 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                         updated.status == StopOrderStatus.TRIGGERED ||
                             updated.isPartiallyExecuted ||
                             (realtime == RealtimeRefresh.CHILD && updated.childTermination != null) ->
-                            reconcileMarketChild(client, updated, reads)
+                            reconcileMarketChild(client, updated, refreshReads)
                         parent.parentOrderState == "ACTIVE" &&
                             updated.status in waitingOrUnknown &&
                             (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed ||
                                 recover || (requireOrder && realtimeEvent != "ORDER")) ->
-                            reconcileMarketChild(client, updated, reads)
+                            reconcileMarketChild(client, updated, refreshReads)
                         else -> Observable.just(updated)
                     }
                 }
             }
         }.subscribeOn(io).observeOn(main)
-            .doOnNext { row -> if (reads != null && current === account) publishPacedRow(row) }
+            .doOnNext { row -> if (current === account) publishPacedRow(row) }
             .toList()
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
@@ -389,10 +388,10 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         client: APIClientV1,
         order: ParentOrder,
         cachedPrice: Long?,
-        reads: StopOrderFallbackReads?
+        reads: StopOrderFallbackReads
     ): Observable<StopOrder> {
         if (cachedPrice != null) return Observable.just(StopOrder(order, cachedPrice))
-        return stopOrderRead(reads) { client.getParentOrder(order.parentOrderId) }.flatMap { details ->
+        return reads.read { client.getParentOrder(order.parentOrderId) }.flatMap { details ->
             val parameter = details.parameters.singleOrNull()
             if (details.orderMethod == "SIMPLE" && parameter?.conditionType == "STOP" &&
                 parameter.productCode == "FX_BTC_JPY") {

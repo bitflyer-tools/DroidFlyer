@@ -162,7 +162,8 @@ class RealtimeClientTest {
         val client = RealtimeClient(gson, preference, socket)
         val api = stopOrderApi()
 
-        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         try {
             val service = CurrentStatusService(api, client, api)
@@ -172,6 +173,7 @@ class RealtimeClientTest {
                 checkNotNull(socket.authAck).call(JSONObject.NULL)
                 val stops = service.privateState.stopOrders
                 stops.refresh()
+                scheduler.advanceTimeBy(12, SECONDS)
                 assertTrue(stops.orders.value.single().canCancel)
                 val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
@@ -181,6 +183,7 @@ class RealtimeClientTest {
                 socket.authAck = null
                 socket.receive(Socket.EVENT_CONNECT)
                 checkNotNull(socket.authAck).call(denied)
+                scheduler.advanceTimeBy(12, SECONDS)
 
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
                 assertFalse(stops.orders.value.single().canCancel)
