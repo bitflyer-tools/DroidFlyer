@@ -64,7 +64,10 @@ class SettingsPresenterTest {
                 .body("[]".toResponseBody())
                 .build()
         }.build())
-    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { authenticated.add(savedCredentials()) }
+    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { save ->
+        save()
+        authenticated.add(savedCredentials())
+    }
 
     @Before
     fun setUp() {

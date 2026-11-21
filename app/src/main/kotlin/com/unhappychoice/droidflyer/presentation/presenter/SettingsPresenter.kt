@@ -21,14 +21,14 @@ class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
     private val switchAccount: (APIClientV1) -> Unit,
-    private val authenticate: () -> Unit
+    private val updateRealtimeAccount: (() -> Unit) -> Unit
 ) : ViewPresenter<SettingsView>() {
     constructor(
         api: APIClient,
         preference: APITokenPreference,
         currentStatusService: CurrentStatusService,
         realtimeClient: RealtimeClient
-    ) : this(api, preference, currentStatusService.privateState::switchAccount, realtimeClient::authenticate)
+    ) : this(api, preference, currentStatusService.privateState::switchAccount, realtimeClient::updateAccount)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
@@ -59,11 +59,11 @@ class SettingsPresenter internal constructor(
             .subscribeOnIoObserveOnUI()
             .doOnNext {
                 val saved = preference.read()
-                if (saved.key != submitted.key || saved.secret != submitted.secret) {
-                    preference.save(submitted)
-                    switchAccount(api.client(submitted))
+                val changed = saved.key != submitted.key || saved.secret != submitted.secret
+                updateRealtimeAccount {
+                    if (changed) preference.save(submitted)
                 }
-                authenticate()
+                if (changed) switchAccount(api.client(submitted))
             }
     }
 }
