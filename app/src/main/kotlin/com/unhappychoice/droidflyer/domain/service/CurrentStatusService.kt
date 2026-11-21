@@ -97,16 +97,11 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
 
         Observable.merge(
-            privateChannelsReady.map<() -> Unit> { { stopOrders.onPrivateChannelAvailability(true) } },
-            privateChannelsDisconnected.map<() -> Unit> { { stopOrders.onPrivateChannelAvailability(false) } },
-            privateChannelAuthenticationFailed.map<() -> Unit> {
-                {
-                    stopOrders.onPrivateChannelAvailability(false)
-                    stopOrders.refreshIfEnabled()
-                }
-            }
+            privateChannelsReady.map { true },
+            privateChannelsDisconnected.map { false },
+            privateChannelAuthenticationFailed.map { false }
         ).observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { update -> update() }
+            .subscribeNext(stopOrders::onPrivateChannelAvailability)
             .addTo(bag)
 
         updateStatus()

@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
@@ -13,6 +14,7 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.CompletableSubject
+import java.util.concurrent.TimeUnit
 
 internal class StopOrderService(client: APIClientV1, private val io: Scheduler, private val main: Scheduler) {
     val orders = Variable<List<StopOrder>>(emptyList())
@@ -26,6 +28,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
+    private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val events = LinkedHashMap<String, ParentOrderEvent>()
 
     fun switchAccount(client: APIClientV1) {
@@ -106,12 +109,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
 
     fun onPrivateChannelAvailability(ready: Boolean) {
         privateChannelsUnavailable = !ready
-        if (ready) {
-            refreshIfEnabled(recoverTriggers = true)
-        } else {
-            refreshRequest.set(null)
-            invalidateWaitingOrders()
-        }
+        refreshIfEnabled(recoverTriggers = true)
     }
 
     fun refreshIfEnabled(recoverTriggers: Boolean = false) {
@@ -121,6 +119,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     fun refresh(recoverTriggers: Boolean = false) {
         if (requests.isDisposed) return
         enabled = true
+        fallbackRefresh.set(null)
         if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh || privateChannelsUnavailable
@@ -159,15 +158,29 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         refreshRequest.set(request.subscribe({ rows ->
             if (current === account) {
                 recoverOnRefresh = false
-                orders.value = rows.map(::applyEvent)
+                scheduleFallbackRefresh()
+                orders.value = rows.map { order ->
+                    applyEvent(order).copy(cancellationAvailable = !privateChannelsUnavailable)
+                }
                 loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
             }
         }, {
             if (current === account) {
+                scheduleFallbackRefresh()
                 invalidateWaitingOrders()
                 loadFailed.value = true
             }
         }))
+    }
+
+    private fun scheduleFallbackRefresh() {
+        if (privateChannelsUnavailable) {
+            fallbackRefresh.set(
+                Observable.timer(6, TimeUnit.SECONDS)
+                    .observeOn(main)
+                    .subscribeNext { refresh() }
+            )
+        }
     }
 
     private fun invalidateWaitingOrders() {

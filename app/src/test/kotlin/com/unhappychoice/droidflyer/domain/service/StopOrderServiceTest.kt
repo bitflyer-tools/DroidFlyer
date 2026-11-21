@@ -175,32 +175,48 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun disconnectBlocksCancellationUntilRestVerifiesWaitingOrder() =
+    fun disconnectBlocksCancellationUntilPrivateChannelsRecover() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.triggerActions()
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
+            parentOrderStatus = 500
             realtime.privateChannelsDisconnected.onNext(Unit)
-            scheduler.triggerActions()
-            assertCancellationBlocked(stops, confirmation)
-
-            childOrderStatus = 500
-            stops.refresh()
             scheduler.triggerActions()
             assertCancellationBlocked(stops, confirmation)
             assertTrue(stops.loadFailed.value)
 
-            childOrderStatus = 200
-            stops.refresh()
+            parentOrderStatus = 200
+            scheduler.advanceTimeBy(6, SECONDS)
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
+            assertFalse(stops.loadFailed.value)
+
+            realtime.privateChannelsReady.onNext(Unit)
             scheduler.triggerActions()
             assertTrue(stops.orders.value.single().canCancel)
+            val requestCount = requests.size
+            scheduler.advanceTimeBy(12, SECONDS)
+            assertEquals(requestCount, requests.size)
+        }
+
+    @Test
+    fun authenticationFailurePollsForTriggerWithoutReenablingCancellation() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+            realtime.privateChannelAuthenticationFailed.onNext(Unit)
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
             assertFalse(stops.loadFailed.value)
 
             childOrders = marketChild(0.0)
-            stops.refresh()
-            scheduler.triggerActions()
+            scheduler.advanceTimeBy(6, SECONDS)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
             assertCancellationBlocked(stops, confirmation)
         }
