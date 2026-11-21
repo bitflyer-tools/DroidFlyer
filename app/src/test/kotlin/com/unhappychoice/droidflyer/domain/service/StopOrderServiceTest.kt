@@ -439,6 +439,38 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun reconnectLeavesNewStopCancellableWhileKeepingAffectedStopUnknown() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            realtime.privateChannelsDisconnected.onNext(Unit)
+            scheduler.triggerActions()
+
+            activeParentPage = {
+                parentOrders().replaceFirst("[", """[
+                    {"id":101,"parent_order_id":"parent-2","parent_order_acceptance_id":"acceptance-2",
+                     "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE",
+                     "side":"SELL","size":0.01},""")
+            }
+            realtime.privateChannelsReady.onNext(Unit)
+            scheduler.triggerActions()
+            val firstRefresh = stops.orders.value.associateBy { it.acceptanceId }
+            assertEquals(StopOrderStatus.UNKNOWN, firstRefresh.getValue("acceptance-1").status)
+            assertTrue(firstRefresh.getValue("acceptance-2").canCancel)
+
+            stops.refresh()
+            scheduler.triggerActions()
+            val refreshed = stops.orders.value.associateBy { it.acceptanceId }
+            assertFalse(refreshed.getValue("acceptance-1").canCancel)
+            val confirmation = stops.cancellationConfirmation(refreshed.getValue("acceptance-2"))
+            stops.cancel(confirmation) { fail("Cancellation failed: $it") }
+            scheduler.triggerActions()
+
+            val cancellation = requests.single { it.url.encodedPath == "/v1/me/cancelparentorder" }
+            assertJsonBody(cancellation, """{"parent_order_acceptance_id":"acceptance-2","product_code":"FX_BTC_JPY"}""")
+        }
+
+    @Test
     fun disconnectedRefreshPacesListsDetailsAndChildLookupsAcrossManyStops() =
         withRealtimeStops { stops, realtime, scheduler ->
             activeParentPage = { before ->
