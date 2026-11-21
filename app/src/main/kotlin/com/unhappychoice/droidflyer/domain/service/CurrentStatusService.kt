@@ -107,10 +107,11 @@ class CurrentStatusService internal constructor(
 
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
-        privateState.switchAccount(client)
-        // Queue the new account before ending an in-flight refresh.
-        updateStatus()
-        previous.onComplete()
+        privateState.switchAccount(client) {
+            // Queue the new account before ending an in-flight refresh.
+            updateStatus()
+            previous.onComplete()
+        }
     }
 
     private fun refreshStatus(): Completable = Completable.ambArray(

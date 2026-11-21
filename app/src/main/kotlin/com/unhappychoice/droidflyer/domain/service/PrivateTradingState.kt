@@ -37,15 +37,19 @@ internal class PrivateTradingState(
         session.ended.onComplete()
     }
 
-    fun switchAccount(client: APIClientV1?) {
+    fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
         if (disposed) return
 
         val previous = session
         session = Session(client)
         orders.value = emptyList()
-        previous.ended.onComplete()
         position.value = emptyList()
         balance.value = 0.0
+        try {
+            onSwitched()
+        } finally {
+            previous.ended.onComplete()
+        }
     }
 
     fun refresh(): Completable = Completable.defer {
@@ -59,7 +63,7 @@ internal class PrivateTradingState(
                 .publishResponse { if (!disposed && current === session) balance.value = it },
             client.getChildOrders("FX_BTC_JPY")
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
-        )
+        ).takeUntil(current.ended)
     }
 
     fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session

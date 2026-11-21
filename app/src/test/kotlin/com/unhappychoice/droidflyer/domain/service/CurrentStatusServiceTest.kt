@@ -11,6 +11,8 @@ import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -89,6 +91,25 @@ class CurrentStatusServiceTest {
     }
 
     @Test
+    fun completedRefreshesReleaseBoardRequestsAndKeepRealtimeSubscribed() {
+        repeat(10) {
+            assertTrue(responses.hasObservers())
+            responses.onNext(initialBook)
+            scheduler.triggerActions()
+            assertFalse(responses.hasObservers())
+            assertTrue(snapshots.hasObservers())
+
+            service.updateStatus()
+            scheduler.triggerActions()
+        }
+
+        assertTrue(responses.hasObservers())
+        service.dispose()
+        assertFalse(responses.hasObservers())
+        assertFalse(snapshots.hasObservers())
+    }
+
+    @Test
     fun manualRefreshQueuesOneBoardRequestWhilePollingSkipsAnActiveRefresh() {
         service.pollStatus()
         service.updateStatus()
@@ -103,6 +124,22 @@ class CurrentStatusServiceTest {
         service.pollStatus()
         responses.onNext(updatedBook)
         scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertEquals(2, boardRequests)
+        assertBook(updatedBook, 110)
+    }
+
+    @Test
+    fun switchingToNoPrivateAccountReplacesTheInFlightBoardRequest() {
+        assertEquals(1, boardRequests)
+
+        service.switchAccount(null)
+        assertFalse(responses.hasObservers())
+        scheduler.triggerActions()
+        assertEquals(2, boardRequests)
+
+        responses.onNext(updatedBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertFalse(responses.hasObservers())
         assertEquals(2, boardRequests)
         assertBook(updatedBook, 110)
     }
