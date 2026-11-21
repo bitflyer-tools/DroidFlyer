@@ -10,6 +10,8 @@ import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.schedulers.Schedulers
+import retrofit2.HttpException
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.sign
@@ -86,10 +88,19 @@ internal class ClosePositionService(
 
     private fun <T : Any> poll(read: () -> Observable<T>, ready: (T) -> Boolean): Single<T> =
         Observable.defer(read)
+            .onErrorResumeNext { error: Throwable ->
+                if (error.isTransientReadFailure()) Observable.empty() else Observable.error(error)
+            }
             .filter(ready)
             .repeatWhen { it.delay(1, TimeUnit.SECONDS, scheduler) }
             .firstOrError()
             .timeout(15, TimeUnit.SECONDS, scheduler)
+
+    private fun Throwable.isTransientReadFailure(): Boolean = when (this) {
+        is HttpException -> code() == 408 || code() == 429 || code() in 500..599
+        is IOException -> true
+        else -> false
+    }
 
     class InitialOrderSubmissionException(cause: Throwable) : RuntimeException(cause)
 
