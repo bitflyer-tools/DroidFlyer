@@ -33,6 +33,8 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
+    // REST can omit unfilled market children that expired during a realtime gap.
+    private var requireRealtimeOrder = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val fallbackReads = StopOrderFallbackReads(io)
@@ -125,11 +127,13 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     fun onEvents(batch: List<ParentOrderEvent>) {
         if (account.client == null) return
 
-        val updates = batch.filter { it.productCode == "FX_BTC_JPY" && it.eventType != "ORDER" }
+        val updates = batch.filter { it.productCode == "FX_BTC_JPY" && (it.eventType != "ORDER" || !privateChannelsUnavailable) }
         updates.forEach { event ->
             val id = event.parentOrderAcceptanceId
             val previous = events[id]
-            if (previous == null || event.eventDate >= previous.eventDate) events[id] = event
+            if (previous == null || (event.eventType != "ORDER" && event.eventDate >= previous.eventDate)) {
+                events[id] = event
+            }
         }
         while (events.size > 200) events.remove(events.keys.first())
         if (updates.isNotEmpty()) orders.value = orders.value.map(::applyEvent)
@@ -153,6 +157,10 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
 
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && channelGapOpen) return
+        if ((!ready && !privateChannelsUnavailable) || (ready && channelGapOpen)) {
+            requireRealtimeOrder = true
+            events.values.removeAll { it.eventType == "ORDER" }
+        }
         privateChannelsUnavailable = !ready
         channelGapOpen = !ready
         if (enabled) refresh(recoverTriggers = true)
@@ -200,6 +208,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
+        val requireOrder = requireRealtimeOrder
         refreshRequest.set(null)
         val request = loadActiveParents(client, reads = reads).toList().toObservable().concatMap { active ->
             stopOrderRead(reads) { client.getParentOrders() }.map { recent ->
@@ -213,12 +222,14 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         }.flatMap { rows ->
             Observable.fromIterable(rows).concatMap { row ->
                 val cached = previous[row.parentOrderAcceptanceId]
-                val event = knownEvents[row.parentOrderAcceptanceId] ?: cached?.event
+                val realtimeEvent = knownEvents[row.parentOrderAcceptanceId]
+                val event = realtimeEvent?.takeUnless { it == "ORDER" } ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, reads).concatMap { stop ->
                     val updated = stop.copy(
                         event = event,
-                        childTermination = cached?.childTermination
+                        childTermination = cached?.childTermination,
+                        waitingConfirmed = !requireOrder || realtimeEvent == "ORDER"
                     )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
@@ -227,7 +238,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                             reconcileMarketChild(client, updated, reads)
                         parent.parentOrderState == "ACTIVE" &&
                             updated.status in waitingOrUnknown &&
-                            (cached?.triggerPrice == null || cached.triggerVerified == false || recover) ->
+                            (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed || recover) ->
                             reconcileMarketChild(client, updated, reads)
                         else -> Observable.just(updated)
                     }
@@ -313,7 +324,8 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val event = events[order.acceptanceId]
         val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
         return order.copy(
-            event = event?.eventType ?: order.event,
+            event = event?.eventType?.takeUnless { it == "ORDER" } ?: order.event,
+            waitingConfirmed = !requireRealtimeOrder || event?.eventType == "ORDER",
             childTermination = childTermination ?: order.childTermination
         )
     }
