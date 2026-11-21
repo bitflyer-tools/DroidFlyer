@@ -37,6 +37,7 @@ class RealtimeClient internal constructor(
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
     val privateChannelsReady = PublishSubject.create<Unit>()
+    internal val privateChannelsDisconnected = PublishSubject.create<Unit>()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
@@ -61,6 +62,7 @@ class RealtimeClient internal constructor(
         }
 
         socket.on(Socket.EVENT_DISCONNECT) {
+            privateChannelsDisconnected.onNext(Unit)
             Log.d("Socket", "Disconnected")
         }
 

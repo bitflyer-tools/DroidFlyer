@@ -24,6 +24,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private val requests = CompositeDisposable()
     private var enabled = false
     private var recoverOnRefresh = false
+    private var realtimeDisconnected = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val events = LinkedHashMap<String, ParentOrderEvent>()
 
@@ -103,6 +104,11 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         if (updates.isNotEmpty()) orders.value = orders.value.map(::applyEvent)
     }
 
+    fun onPrivateChannelAvailability(ready: Boolean) {
+        realtimeDisconnected = !ready
+        if (ready) refreshIfEnabled(recoverTriggers = true) else invalidateWaitingOrders()
+    }
+
     fun refreshIfEnabled(recoverTriggers: Boolean = false) {
         if (enabled) refresh(recoverTriggers)
     }
@@ -110,11 +116,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     fun refresh(recoverTriggers: Boolean = false) {
         if (requests.isDisposed) return
         enabled = true
-        if (recoverTriggers) {
-            orders.value = orders.value.map { order ->
-                if (order.status == StopOrderStatus.WAITING) order.copy(triggerVerified = false) else order
-            }
-        }
+        if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh
         val current = account
@@ -152,11 +154,24 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         refreshRequest.set(request.subscribe({ rows ->
             if (current === account) {
                 recoverOnRefresh = false
-                orders.value = rows.map(::applyEvent)
+                val updated = rows.map(::applyEvent)
+                orders.value = if (realtimeDisconnected) updated.map(::invalidateWaitingOrder) else updated
                 loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
             }
-        }, { if (current === account) loadFailed.value = true }))
+        }, {
+            if (current === account) {
+                invalidateWaitingOrders()
+                loadFailed.value = true
+            }
+        }))
     }
+
+    private fun invalidateWaitingOrders() {
+        orders.value = orders.value.map(::invalidateWaitingOrder)
+    }
+
+    private fun invalidateWaitingOrder(order: StopOrder): StopOrder =
+        if (order.status == StopOrderStatus.WAITING) order.copy(triggerVerified = false) else order
 
     private fun loadActiveParents(client: APIClientV1, before: Long? = null): Observable<ParentOrder> {
         val pageSize = 100

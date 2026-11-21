@@ -73,12 +73,16 @@ class RealtimeClientTest {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         val ready = client.privateChannelsReady.test()
+        val disconnected = client.privateChannelsDisconnected.test()
 
         socket.receive(Socket.EVENT_CONNECT)
         ready.assertNoValues()
         socket.authAck!!.call(JSONObject.NULL)
         ready.assertValueCount(1)
+        disconnected.assertNoValues()
 
+        socket.receive(Socket.EVENT_DISCONNECT)
+        disconnected.assertValue(Unit)
         socket.receive(Socket.EVENT_CONNECT)
         ready.assertValueCount(1)
         socket.authAck!!.call(JSONObject.NULL)

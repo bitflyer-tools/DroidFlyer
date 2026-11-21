@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 
 class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
+    private var parentOrderStatus = 200
     private var parentState = "ACTIVE"
     private var size = 0.01
     private var executedSize = 0.0
@@ -171,6 +172,47 @@ class StopOrderServiceTest {
 
         assertEquals(StopOrderStatus.TRIGGERED, service.orders.value.single().status)
         assertFalse(service.loadFailed.value)
+    }
+
+    @Test
+    fun disconnectBlocksOpenConfirmationAndOfflineRefreshUntilReconnect() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            assertTrue(stops.orders.value.single().canCancel)
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+            realtime.privateChannelsDisconnected.onNext(Unit)
+            scheduler.triggerActions()
+            assertCancellationBlocked(stops, confirmation)
+
+            stops.refresh()
+            scheduler.triggerActions()
+            assertCancellationBlocked(stops, confirmation)
+
+            realtime.privateChannelsReady.onNext(Unit)
+            scheduler.triggerActions()
+            assertTrue(stops.orders.value.single().canCancel)
+        }
+
+    @Test
+    fun parentListFailureBlocksOpenConfirmationAndRetryChecksForMissedTrigger() {
+        val stops = service()
+        stops.refresh()
+        assertTrue(stops.orders.value.single().canCancel)
+        val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+        parentOrderStatus = 500
+        stops.refresh()
+        assertTrue(stops.loadFailed.value)
+        assertCancellationBlocked(stops, confirmation)
+
+        parentOrderStatus = 200
+        childOrders = marketChild(0.0)
+        stops.refresh()
+        assertFalse(stops.loadFailed.value)
+        assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+        assertCancellationBlocked(stops, confirmation)
     }
 
     @Test
@@ -336,6 +378,17 @@ class StopOrderServiceTest {
         assertTrue(requests.isEmpty())
     }
 
+    private fun assertCancellationBlocked(
+        stops: StopOrderService,
+        confirmation: StopOrderService.CancellationConfirmation
+    ) {
+        assertFalse(stops.orders.value.single().canCancel)
+        val failures = mutableListOf<CancellationFailure>()
+        stops.cancel(confirmation) { failures += it }
+        assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+        assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+    }
+
     private fun withRealtimeStops(test: (StopOrderService, RealtimeClient, TestScheduler) -> Unit) {
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
@@ -399,6 +452,7 @@ class StopOrderServiceTest {
             val active = request.url.queryParameter("parent_order_state") == "ACTIVE"
             val page = activeParentPage
             when {
+                parentOrderStatus != 200 -> parentOrderStatus to ""
                 page != null && active -> 200 to page(request.url.queryParameter("before"))
                 page != null || (active && parentState != "ACTIVE") -> 200 to "[]"
                 else -> 200 to parentOrders()

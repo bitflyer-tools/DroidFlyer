@@ -21,7 +21,8 @@ class CurrentStatusService internal constructor(
     privateClient: APIClientV1 = apiClient,
     parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
     privateChannelsReady: Observable<Unit> = Observable.empty(),
-    childEvents: Observable<List<ChildOrderEvent>> = Observable.empty()
+    childEvents: Observable<List<ChildOrderEvent>> = Observable.empty(),
+    privateChannelsDisconnected: Observable<Unit> = Observable.empty()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
@@ -34,7 +35,8 @@ class CurrentStatusService internal constructor(
         privateClient,
         realtimeClient.parentOrderEvents,
         realtimeClient.privateChannelsReady,
-        realtimeClient.childOrderEvents
+        realtimeClient.childOrderEvents,
+        realtimeClient.privateChannelsDisconnected
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -86,11 +88,15 @@ class CurrentStatusService internal constructor(
             .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" && it.isExecution() } }
         Observable.merge(
             parentUpdates.debounce(1, TimeUnit.SECONDS).map { false },
-            childExecutions.debounce(1, TimeUnit.SECONDS).map { true },
-            privateChannelsReady.map { true }
+            childExecutions.debounce(1, TimeUnit.SECONDS).map { true }
         )
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { recoverTriggers -> stopOrders.refreshIfEnabled(recoverTriggers) }
+            .addTo(bag)
+
+        Observable.merge(privateChannelsReady.map { true }, privateChannelsDisconnected.map { false })
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext(stopOrders::onPrivateChannelAvailability)
             .addTo(bag)
 
         updateStatus()
