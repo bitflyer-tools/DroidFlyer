@@ -7,6 +7,7 @@ import android.text.Spanned
 import android.text.method.NumberKeyListener
 import android.util.AttributeSet
 import android.view.LayoutInflater
+import androidx.core.os.ConfigurationCompat
 import com.unhappychoice.droidflyer.databinding.AmountSelectorViewBinding
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.bindTo
@@ -38,10 +39,11 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         setupStyle()
 
         val amountField = binding.amountTextView
+        val configuration = resources.configuration
+        val locale = ConfigurationCompat.getLocales(configuration)[0] ?: Locale.getDefault()
+        amountSymbols = DecimalFormatSymbols.getInstance(locale)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val locales = resources.configuration.locales
-            amountField.imeHintLocales = locales
-            amountSymbols = DecimalFormatSymbols.getInstance(locales[0])
+            amountField.imeHintLocales = configuration.locales
         }
         amountField.keyListener = AmountKeyListener(amountSymbols)
         amountField.setText(formatAmount(amount.value))
@@ -87,11 +89,10 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
     }
 
     private fun parseAmount(text: CharSequence): Double {
-        val separators = decimalSeparators(amountSymbols)
         return text.map { character ->
             when (character) {
-                in separators -> '.'
-                else -> character.digitToIntOrNull()?.digitToChar() ?: character
+                amountSymbols.decimalSeparator -> '.'
+                else -> character.digitToIntOrNull()?.digitToChar() ?: return 0.0
             }
         }.joinToString("").toOrderAmount()
     }
@@ -137,12 +138,10 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
     }
 }
 
-private fun decimalSeparators(symbols: DecimalFormatSymbols): String = ".,\u066B${symbols.decimalSeparator}"
-
 private class AmountKeyListener(symbols: DecimalFormatSymbols) : NumberKeyListener() {
-    private val separators = decimalSeparators(symbols)
+    private val separator = symbols.decimalSeparator
     private val acceptedChars = ("0123456789" + (0..9).map { symbols.zeroDigit + it }.joinToString("") +
-        separators).toCharArray()
+        separator).toCharArray()
 
     override fun getAcceptedChars(): CharArray = acceptedChars
 
@@ -155,8 +154,8 @@ private class AmountKeyListener(symbols: DecimalFormatSymbols) : NumberKeyListen
 
         val insertion = source.subSequence(start, end)
         val result = dest.replaceRange(dstart, dend, insertion)
-        val valid = insertion.all { it.isDigit() || it in separators } &&
-            result.count { it in separators } <= 1
+        val valid = insertion.all { it.isDigit() || it == separator } &&
+            result.count { it == separator } <= 1
         return if (valid) null else dest.subSequence(dstart, dend)
     }
 }
