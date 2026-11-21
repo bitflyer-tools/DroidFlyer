@@ -27,16 +27,18 @@ class PrivateTradingStateTest {
     )
 
     @Test
-    fun switchingClearsAllPrivateDataAndRefreshesTheNewAccount() {
-        state.refresh()
+    fun switchingClearsAllPrivateDataAndIgnoresResponsesFromThePreviousAccount() {
+        val initial = state.refresh().test()
         scheduler.triggerActions()
         accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
+        initial.assertComplete()
         assertPrivateData(listOf(position), 10.0, listOf(order))
 
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         state.switchAccount(accountB.client)
+        state.refresh().test()
         assertPrivateData(emptyList(), 0.0, emptyList())
         assertNull(state.cancelOrder(order))
         scheduler.triggerActions()
@@ -58,19 +60,20 @@ class PrivateTradingStateTest {
 
     @Test
     fun equalOrderRefreshKeepsDisplayedCancellationValidOnlyForTheCurrentAccount() {
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountA.orders.onNext(listOf(order))
         scheduler.triggerActions()
         val previousAccountOrder = state.orders.value.single()
 
         state.switchAccount(accountB.client)
+        state.refresh().test()
         scheduler.triggerActions()
         accountB.orders.onNext(listOf(order.copy()))
         scheduler.triggerActions()
         val displayedOrder = state.orders.value.single()
 
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountB.orders.onNext(listOf(order.copy()))
         scheduler.triggerActions()
@@ -84,13 +87,14 @@ class PrivateTradingStateTest {
 
     @Test
     fun oldConfirmationStaysInvalidEvenWhenTheNewAccountLoadsTheSamePosition() {
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         scheduler.triggerActions()
         val oldConfirmation = checkNotNull(state.closeConfirmation())
 
         state.switchAccount(accountB.client)
+        state.refresh().test()
         assertNull(state.closeConfirmation())
         assertNull(state.closePosition(oldConfirmation))
 
@@ -116,7 +120,7 @@ class PrivateTradingStateTest {
 
     @Test
     fun changingPositionWithinTheSameAccountRequiresFreshConfirmation() {
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         scheduler.triggerActions()

@@ -4,6 +4,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
@@ -15,6 +16,8 @@ import io.reactivex.subjects.PublishSubject
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
@@ -163,13 +166,24 @@ class MarketOrderPresenterTest {
     @Test
     fun switchingAccountsStopsThePreviousCloseSequence() {
         stubClose("SELL", "BUY", positionSize = 12.0)
+        val oldBoard = PublishSubject.create<Board>()
+        Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(oldBoard, Observable.empty())
         confirmPositionClose()
+        status.updateStatus()
+        scheduler.triggerActions()
+        assertTrue(oldBoard.hasObservers())
+        assertTrue(closePositionResponse.hasObservers())
 
         val newAccount = Mockito.mock(APIClientV1::class.java)
         Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
         Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
         Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
-        status.privateState.switchAccount(newAccount)
+        status.switchAccount(newAccount)
+        scheduler.triggerActions()
+        assertFalse(oldBoard.hasObservers())
+        assertFalse(closePositionResponse.hasObservers())
+        Mockito.verify(newAccount).getPositions()
+        assertEquals(emptyList<Position>(), status.position.value)
         closePositionResponse.onNext(listOf(openPosition("BUY", 2.0)))
         Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
             SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 2.0, timeInForce = "IOC")
