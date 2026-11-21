@@ -737,7 +737,7 @@ class StopOrderServiceTest {
 
     private fun childExecution() = ChildOrderEvent(
         "FX_BTC_JPY", "child-1", "child-acceptance-1", "2026-01-01T00:00:01Z",
-        "EXECUTION", null, null, null, 1, "SELL", 5000000, 0.005, null, null
+        "EXECUTION", null, null, null, 1, "SELL", 5000000.toBigDecimal(), 0.005, null, null
     )
 
     private fun client(): APIClientV1 {

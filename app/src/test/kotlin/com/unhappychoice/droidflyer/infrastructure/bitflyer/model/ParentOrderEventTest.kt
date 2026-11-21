@@ -4,6 +4,7 @@ import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.winterbe.expekt.should
+import java.math.BigDecimal
 import org.junit.Test
 
 class ParentOrderEventTest {
@@ -11,7 +12,7 @@ class ParentOrderEventTest {
 
     private val body = """
         [{
-            "product_code": "FX_BTC_JPY",
+            "product_code": "ETH_BTC",
             "parent_order_id": "JCP20180101-000000-000001",
             "parent_order_acceptance_id": "JRF20180101-000000-000010",
             "event_date": "2018-01-01T00:00:00.1234567Z",
@@ -21,7 +22,7 @@ class ParentOrderEventTest {
             "child_order_type": "LIMIT",
             "child_order_acceptance_id": "JRF20180101-000000-000011",
             "side": "SELL",
-            "price": 1100000,
+            "price": 0.02744,
             "size": 0.01
         }]
     """
@@ -30,6 +31,7 @@ class ParentOrderEventTest {
     fun parsesTriggerEvent() {
         val events: List<ParentOrderEvent> = gson.fromJson(body, object : TypeToken<List<ParentOrderEvent>>() {}.type)
         val event = events.first()
+        event.price.should.equal(BigDecimal("0.02744"))
         event.eventType.should.equal("TRIGGER")
         event.parameterIndex.should.equal(2)
         event.childOrderAcceptanceId.should.equal("JRF20180101-000000-000011")

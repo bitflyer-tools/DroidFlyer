@@ -80,7 +80,7 @@ interface APIClientV1 {
     fun getWithdrawals(): Observable<List<Map<String, Any>>>
 
     @POST("me/sendchildorder")
-    fun sendChildOrder(@Body request: SendChildOrderRequest): Observable<Map<String, Any>>
+    fun sendChildOrder(@Body request: SendChildOrderRequest): Observable<ChildOrderAcceptance>
 
     @POST("me/cancelchildorder")
     fun cancelChildOrder(@Body request: CancelChildOrderRequest): Completable
