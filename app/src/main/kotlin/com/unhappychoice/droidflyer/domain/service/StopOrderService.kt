@@ -205,15 +205,17 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
             .toList()
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
-                recoverOnRefresh = false
-                scheduleFallbackRefresh()
+                val incomplete = rows.any { it.triggerPrice == null || !it.triggerVerified }
+                recoverOnRefresh = incomplete
+                scheduleFallbackRefresh(incomplete)
                 orders.value = rows.map(::applyEvent)
-                loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
+                loadFailed.value = incomplete
                 finishRefresh()
             }
         }, {
             if (current === account) {
-                scheduleFallbackRefresh()
+                recoverOnRefresh = true
+                scheduleFallbackRefresh(retry = true)
                 invalidateWaitingOrders()
                 loadFailed.value = true
                 finishRefresh()
@@ -227,12 +229,14 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         refreshPendingRealtimeUpdates()
     }
 
-    private fun scheduleFallbackRefresh() {
-        if (privateChannelsUnavailable) {
+    private fun scheduleFallbackRefresh(retry: Boolean) {
+        if (privateChannelsUnavailable || retry) {
             fallbackRefresh.set(
                 Observable.timer(30, TimeUnit.SECONDS)
                     .observeOn(main)
-                    .subscribeNext { refresh() }
+                    .subscribeNext {
+                        if (privateChannelsUnavailable) refresh() else onChildUpdates()
+                    }
             )
         }
     }
@@ -310,9 +314,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
                     }
                 )
             }
-            .onErrorReturnItem(
-                if (stop.status == StopOrderStatus.WAITING) stop.copy(triggerVerified = false) else stop
-            )
+            .onErrorReturnItem(stop.copy(triggerVerified = false))
 
     private fun loadStop(
         client: APIClientV1,

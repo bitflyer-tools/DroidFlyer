@@ -142,6 +142,45 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun retriesFailedParentListAfterChildExecutionWithoutAnotherEvent() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            parentOrderStatus = 503
+            childOrders = marketChild(0.005)
+            realtime.childOrderEvents.onNext(listOf(childExecution()))
+            scheduler.advanceTimeBy(1, SECONDS)
+            assertTrue(stops.loadFailed.value)
+            assertFalse(stops.orders.value.single().canCancel)
+
+            parentOrderStatus = 200
+            scheduler.advanceTimeBy(38, SECONDS)
+            assertFalse(stops.loadFailed.value)
+            assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
+        }
+
+    @Test
+    fun retriesFailedMarketChildReadAfterTriggerWithoutAnotherEvent() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            childOrderStatus = 503
+            realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
+            scheduler.advanceTimeBy(9, SECONDS)
+            assertTrue(stops.loadFailed.value)
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+
+            childOrderStatus = 200
+            childOrders = marketChild(0.01)
+            scheduler.advanceTimeBy(38, SECONDS)
+            assertFalse(stops.loadFailed.value)
+            assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
+            requests.clear()
+            scheduler.advanceTimeBy(60, SECONDS)
+            assertTrue(stopReadPaths().isEmpty())
+        }
+
+    @Test
     fun limitExecutionDoesNotRefreshWaitingStops() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
