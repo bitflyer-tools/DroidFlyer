@@ -23,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import org.mockito.kotlin.any
 import retrofit2.HttpException
 import retrofit2.Response
 
@@ -56,9 +57,22 @@ class MarketOrderPresenterTest {
     }
 
     @Test
+    fun invalidQuantitiesDoNotSubmitMarketOrders() {
+        listOf(0.0001, -0.001, Double.NaN, Double.POSITIVE_INFINITY).forEach { size ->
+            presenter.amount.value = size
+            presenter.buy()
+            presenter.sell()
+        }
+        scheduler.triggerActions()
+
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(any())
+        assertFalse(presenter.isLoading.value)
+    }
+
+    @Test
     fun acceptanceIdReportsMarketBuyAcceptance() {
         stubAcceptance("BUY")
-        presenter.amount.value = 0.5
+        presenter.amount.value = 0.001
 
         presenter.buy()
         scheduler.triggerActions()
@@ -69,7 +83,7 @@ class MarketOrderPresenterTest {
     @Test
     fun acceptanceIdReportsMarketSellAcceptance() {
         stubAcceptance("SELL")
-        presenter.amount.value = 0.5
+        presenter.amount.value = 0.001
 
         presenter.sell()
         scheduler.triggerActions()
@@ -252,7 +266,7 @@ class MarketOrderPresenterTest {
     }
 
     private fun stubAcceptance(side: String) {
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5)
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.001)
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
     }
 

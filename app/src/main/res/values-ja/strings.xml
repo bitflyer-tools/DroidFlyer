@@ -4,6 +4,7 @@
     <string name="api_key">APIキー</string>
     <string name="api_secret">APIシークレット</string>
     <string name="apply">適用</string>
+    <string name="minimum_order_size">最小注文数量は %1$s BTC-CFD です</string>
     <string name="market_order_accepted">成行注文を受け付けました</string>
     <string name="order_acceptance_uncertain">注文が受け付けられたか確認できませんでした。再送信する前に注文を確認してください。</string>
     <string name="limit_order_failed">指値注文を送信できませんでした</string>

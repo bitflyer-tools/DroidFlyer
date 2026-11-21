@@ -35,7 +35,7 @@ internal class ClosePositionService(
         }
 
         val quantity = abs(size)
-        if (quantity < MIN_ORDER_SIZE) {
+        if (!CryptoCfdOrderSize.isValid(quantity)) {
             return Single.error(IllegalStateException("Position is below the minimum close order size"))
         }
 
@@ -66,8 +66,9 @@ internal class ClosePositionService(
 
     private fun nextOrderSize(quantity: Double): Double {
         if (quantity <= ORDER_SIZE_LIMIT) return quantity
+        val minimum = CryptoCfdOrderSize.MINIMUM
         val remainder = (quantity - ORDER_SIZE_LIMIT).round(8)
-        return if (remainder < MIN_ORDER_SIZE) (quantity - MIN_ORDER_SIZE).round(8) else ORDER_SIZE_LIMIT
+        return if (remainder < minimum) (quantity - minimum).round(8) else ORDER_SIZE_LIMIT
     }
 
     private fun executedSize(acceptanceId: String): Single<Double> =
@@ -95,7 +96,6 @@ internal class ClosePositionService(
     companion object {
         const val ORDER_SIZE_LIMIT = 10.0
 
-        private const val MIN_ORDER_SIZE = 0.001
         private const val PRODUCT_CODE = "FX_BTC_JPY"
         private val finalOrderStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
     }

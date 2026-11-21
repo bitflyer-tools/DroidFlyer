@@ -91,7 +91,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     }
 
     private fun confirmOrder(side: LimitOrderSide, price: Long) {
-        val terms = LimitOrderTerms(side, price, Math.abs(presenter.amount.value))
+        val terms = LimitOrderTerms(side, price, presenter.amount.value)
         AlertDialog.Builder(context, R.style.DialogStyle)
             .setTitle(R.string.create_limit_order)
             .setMessage("${context.getString(terms.side.label)} / ${terms.price} / ${terms.size}")
