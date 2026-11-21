@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
 import android.app.Application
+import android.content.Context
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -16,6 +17,7 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.Manager
@@ -23,9 +25,11 @@ import io.socket.client.Socket
 import io.socket.emitter.Emitter
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
@@ -43,9 +47,22 @@ class RealtimeClientTest {
     private val socket = RecordingSocket()
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
 
+    private val authentication = TestScheduler()
+
+    @Before
+    fun pauseAuthentication() {
+        RxJavaPlugins.setIoSchedulerHandler { authentication }
+    }
+
+    @After
+    fun resetSchedulers() {
+        RxJavaPlugins.reset()
+    }
+
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
-        preference.save(APICredentials("key", "secret"))
+        val stored = RuntimeEnvironment.getApplication().getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        stored.edit().putString("key", "key").putString("secret", "secret").commit()
         val client = RealtimeClient(gson, preference, socket)
         socket.receive(Socket.EVENT_CONNECT)
         assertEquals(
@@ -54,6 +71,10 @@ class RealtimeClientTest {
         )
         assertFalse(socket.hasListeners("lightning_ticker_FX_BTC_JPY"))
 
+        assertNull(socket.authAck)
+        assertEquals("key", stored.getString("key", null))
+        authentication.triggerActions()
+        assertFalse(stored.contains("key"))
         socket.authAck!!.call(JSONObject.NULL)
         assertEquals(listOf("child_order_events", "parent_order_events"), socket.subscriptions.drop(3))
 
@@ -98,6 +119,7 @@ class RealtimeClientTest {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         socket.receive(Socket.EVENT_CONNECT)
+        authentication.triggerActions()
         val acknowledge = checkNotNull(socket.authAck)
         val publicSubscriptions = socket.subscriptions.toList()
 

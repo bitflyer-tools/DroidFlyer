@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEven
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.IO
@@ -48,6 +49,7 @@ class RealtimeClient internal constructor(
         "parent_order_events"
     )
 
+    private val authenticationWorker = Schedulers.io().createWorker()
     @Volatile private var disconnected = false
 
     init {
@@ -68,16 +70,19 @@ class RealtimeClient internal constructor(
     }
 
     fun authenticate() {
-        if (disconnected) return
-        val credentials = preference.read()
-        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
-        val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
-        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
+        authenticationWorker.schedule {
+            val credentials = preference.read()
+            if (!disconnected && credentials.isConfigured) {
+                val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
+                socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
+            }
+        }
     }
 
     fun disconnect() {
         if (disconnected) return
         disconnected = true
+        authenticationWorker.dispose()
         socket.off()
         socket.disconnect()
     }

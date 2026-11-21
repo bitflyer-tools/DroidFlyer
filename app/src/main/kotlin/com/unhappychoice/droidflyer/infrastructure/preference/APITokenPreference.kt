@@ -9,7 +9,7 @@ class APITokenPreference internal constructor(
 ) {
     constructor(context: Context) : this(context, APICredentialCipher())
 
-    private val preferences = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+    private val preferences by lazy { context.getSharedPreferences("api_token", Context.MODE_PRIVATE) }
 
     fun read(): APICredentials = synchronized(lock) {
         val values = preferences.all
