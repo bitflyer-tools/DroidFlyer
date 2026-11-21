@@ -21,6 +21,7 @@ import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import com.unhappychoice.droidflyer.presentation.screen.core.Screen
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.HasMenu
+import com.unhappychoice.droidflyer.presentation.view.core.protectTradingTouches
 import flow.Flow
 import flow.KeyDispatcher
 import mortar.MortarScope
@@ -73,6 +74,7 @@ class MainActivity : AppCompatActivity() {
         // Flow restores the destination and its checked item together.
         binding.bottomNavigation.isSaveFromParentEnabled = false
         setContentView(binding.root)
+        window.protectTradingTouches()
         setupStyle()
         realtimeSession.value.notifyExecutions(::showExecution)
 

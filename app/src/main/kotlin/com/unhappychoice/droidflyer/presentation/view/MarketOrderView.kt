@@ -18,6 +18,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
@@ -101,7 +102,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
                 presenter.clearPosition(confirmation, ::showCloseConfirmation)
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
     }
 
     private fun setupStyle() {

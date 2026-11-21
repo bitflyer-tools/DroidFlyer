@@ -18,6 +18,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderTerms
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
@@ -97,7 +98,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             .setMessage("${context.getString(terms.side.label)} / ${terms.price} / ${terms.size}")
             .setPositiveButton(R.string.ok) { _, _ -> presenter.submitOrder(terms) }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
     }
 
     private fun setupStyle() {
