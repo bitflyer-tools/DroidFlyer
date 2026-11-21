@@ -10,5 +10,5 @@ internal fun Context.executionMessage(event: ChildOrderEvent): String =
         event.productCode,
         event.side ?: "",
         event.size ?: 0.0,
-        event.price ?: 0L
+        event.price?.stripTrailingZeros()?.toPlainString() ?: "0"
     )
