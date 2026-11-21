@@ -190,7 +190,7 @@ class SettingsPresenterTest {
             assertEquals(List(4) { "/v1/board" }, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, status.privateState::switchAccount) {}
+            val settings = SettingsPresenter(api, preference, status::switchAccount) {}
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
             settings.saveCredentials().test().assertValueCount(1).assertComplete()
@@ -198,14 +198,16 @@ class SettingsPresenterTest {
             assertEquals(
                 listOf(
                     "/v1/me/getbalance", "/v1/me/getpositions",
-                    "/v1/me/getcollateral", "/v1/me/getchildorders"
+                    "/v1/me/getcollateral", "/v1/me/getchildorders", "/v1/board"
                 ),
                 requestPaths().drop(4)
             )
-            requests.drop(4).forEach { assertSignedWith(it, "submitted-key", "submitted-secret") }
-            assertEquals("ACTIVE", requests.last().url.queryParameter("child_order_state"))
+            val privateRequests = requests.drop(4).filter { it.url.encodedPath.startsWith("/v1/me/") }
+            privateRequests.forEach { assertSignedWith(it, "submitted-key", "submitted-secret") }
+            assertEquals("ACTIVE", privateRequests.last().url.queryParameter("child_order_state"))
             assertEquals(250.0, status.balance.value, 0.0)
         } finally {
+            status.dispose()
             scope.destroy()
         }
     }
@@ -214,7 +216,7 @@ class SettingsPresenterTest {
     fun privateStatusRequiresBothPartsOfTheSavedCredentials() {
         listOf(APICredentials("key", ""), APICredentials("", "secret")).forEach {
             preference.save(it)
-            createStatus()
+            createStatus().dispose()
         }
         assertEquals(List(2) { "/v1/board" }, requestPaths())
     }

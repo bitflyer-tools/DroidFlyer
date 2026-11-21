@@ -19,7 +19,7 @@ class OrderPresenter(val currentStatusService: CurrentStatusService) : ViewPrese
 
         Observable.interval(6, TimeUnit.SECONDS)
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { currentStatusService.updateStatus() }
+            .subscribeNext { currentStatusService.pollStatus() }
             .addTo(bag)
     }
 
