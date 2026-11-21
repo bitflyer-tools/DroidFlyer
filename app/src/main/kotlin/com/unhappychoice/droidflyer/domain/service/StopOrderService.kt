@@ -87,19 +87,17 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         if (rejection != null) return failed(rejection)
 
         cancelling.value = cancelling.value + id
-        val verifyWithRest = privateChannelsUnavailable
         val cancellation = Completable.defer {
             current.client.cancelParentOrder(CancelParentOrderRequest(id))
         }.subscribeOn(io)
-        val request = if (verifyWithRest) {
-            verifyCancellation(current.client, requireNotNull(order)).andThen(cancellation)
-        } else cancellation
-        request.observeOn(main)
+        verifyCancellation(current.client, requireNotNull(order))
+            .andThen(cancellation)
+            .observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
             .doFinally { cancelling.value = cancelling.value - id }
             .subscribe({}, {
                 if (current === account) {
-                    if (verifyWithRest) refresh(recoverTriggers = true)
+                    refresh(recoverTriggers = true)
                     val failure = if (it is IneligibleCancellation) {
                         CancellationFailure.INELIGIBLE
                     } else CancellationFailure.REQUEST_FAILED

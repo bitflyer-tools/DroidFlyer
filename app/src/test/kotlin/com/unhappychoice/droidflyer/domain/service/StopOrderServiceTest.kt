@@ -254,6 +254,26 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun cancellationRechecksForTriggerWhileRealtimeIsConnected() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            realtime.privateChannelsReady.onNext(Unit)
+            scheduler.triggerActions()
+            val waiting = stops.orders.value.single()
+            assertTrue(waiting.canCancel)
+            val confirmation = stops.cancellationConfirmation(waiting)
+
+            childOrders = marketChild(0.0)
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.triggerActions()
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
     fun cancellationSkipsPostWhenChildStatusCannotBeVerified() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
