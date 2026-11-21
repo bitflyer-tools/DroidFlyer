@@ -7,7 +7,11 @@ import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
@@ -34,6 +38,9 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.RealObject
 import org.robolectric.util.ReflectionHelpers
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -163,6 +170,47 @@ class MainActivityNavigationTest {
             val (newPublic, newPrivate) = DisconnectedSocket.connections.drop(2)
             assertTrue(newPublic.hasListeners("lightning_board_FX_BTC_JPY"))
             assertTrue(newPrivate.hasListeners("child_order_events"))
+        }
+    }
+
+    @Test
+    fun recreationFinishesWhileCredentialSaveIsInProgress() {
+        val ioStarted = CountDownLatch(1)
+        val resumeIo = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        val credentials = APICredentials("replacement-key", "replacement-secret")
+        val cipher = APICredentialCipher { create ->
+            if (create) {
+                ioStarted.countDown()
+                check(resumeIo.await(10, TimeUnit.SECONDS)) { "Activity recreation blocked credential save" }
+            }
+            testCredentialKey
+        }
+        val preference = APITokenPreference(RuntimeEnvironment.getApplication(), cipher)
+
+        try {
+            Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+                val oldClient = controller.get().module.direct.instance<RealtimeClient>()
+                val oldSocket = DisconnectedSocket.connections.single()
+                val save = executor.submit {
+                    oldClient.updateAccount { preference.save(credentials) }
+                }
+
+                try {
+                    assertTrue(ioStarted.await(10, TimeUnit.SECONDS))
+                    controller.recreate()
+                    assertFalse(oldSocket.hasListeners("lightning_board_FX_BTC_JPY"))
+                    assertNotSame(oldClient, controller.get().module.direct.instance<RealtimeClient>())
+                } finally {
+                    resumeIo.countDown()
+                }
+                save.get(10, TimeUnit.SECONDS)
+                val saved = preference.read()
+                assertEquals(credentials.key to credentials.secret, saved.key to saved.secret)
+                assertEquals(2, DisconnectedSocket.connections.size)
+            }
+        } finally {
+            executor.shutdownNow()
         }
     }
 
