@@ -438,7 +438,7 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(38, SECONDS)
             assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
 
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
             val requestCount = stopReadPaths().size
             scheduler.advanceTimeBy(60, SECONDS)
@@ -448,7 +448,7 @@ class StopOrderServiceTest {
     @Test
     fun blocksCancellationAfterPrivateChannelAuthenticationFailsAtStartup() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
-            realtime.privateChannelsUnavailable.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
@@ -468,7 +468,7 @@ class StopOrderServiceTest {
 
             outstandingSize = null
             parentOrderStatus = 500
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.advanceTimeBy(4, SECONDS)
             assertCancellationBlocked(stops, confirmation)
             assertTrue(stops.loadFailed.value)
@@ -482,7 +482,7 @@ class StopOrderServiceTest {
             assertFalse(stops.loadFailed.value)
 
             childOrderStatus = 500
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
             assertEquals("/v1/me/getchildorders", stopReadPaths().last())
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
@@ -507,11 +507,11 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(12, SECONDS)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.advanceTimeBy(8, SECONDS)
             assertCancellationBlocked(stops, confirmation)
 
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
             requests.clear()
@@ -529,9 +529,9 @@ class StopOrderServiceTest {
             outstandingSize = size
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
             val order = stops.orders.value.single()
             assertTrue(order.canCancel)
@@ -556,13 +556,13 @@ class StopOrderServiceTest {
             assertTrue(order.canCancel)
             val confirmation = stops.cancellationConfirmation(order)
 
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
             // The stop triggers and its unfilled market child expires during the gap.
             // REST still reports an active parent and omits the expired child.
             outstandingSize = 0.0
             requests.clear()
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
 
             assertTrue(stopReadPaths().contains("/v1/me/getchildorders"))
@@ -583,9 +583,9 @@ class StopOrderServiceTest {
             outstandingSize = null
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
@@ -621,7 +621,7 @@ class StopOrderServiceTest {
                        "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE","side":"SELL","size":0.01}"""
                 } else parentOrders()
             }
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
             stops.refresh()
             scheduler.triggerActions()
@@ -638,7 +638,7 @@ class StopOrderServiceTest {
             assertTrue(stops.orders.value.all { it.status == StopOrderStatus.UNKNOWN })
 
             val disconnectedReads = stopReadPaths().size
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(299, SECONDS)
             assertEquals(75, stopReadPaths().size - disconnectedReads)
             assertTrue(stops.orders.value.size < 101)
@@ -656,9 +656,9 @@ class StopOrderServiceTest {
             outstandingSize = 0.0
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
-            realtime.privateChannelsReady.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
@@ -699,7 +699,7 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(12, SECONDS)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
-            realtime.privateChannelsDisconnected.onNext(Unit)
+            realtime.privateChannelAvailability.onNext(false)
             scheduler.advanceTimeBy(8, SECONDS)
             assertCancellationBlocked(stops, confirmation)
         }
@@ -1003,7 +1003,7 @@ class StopOrderServiceTest {
             val status = CurrentStatusService(api, realtime, api)
             try {
                 if (connected) {
-                    realtime.privateChannelsReady.onNext(Unit)
+                    realtime.privateChannelAvailability.onNext(true)
                     scheduler.triggerActions()
                 }
                 test(status.privateState.stopOrders, realtime, scheduler)

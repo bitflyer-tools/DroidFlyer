@@ -24,10 +24,8 @@ class CurrentStatusService internal constructor(
     orderEvents: Observable<Unit>,
     privateClient: APIClientV1? = apiClient,
     parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
-    privateChannelsReady: Observable<Unit> = Observable.empty(),
-    childEvents: Observable<List<ChildOrderEvent>> = Observable.empty(),
-    privateChannelsDisconnected: Observable<Unit> = Observable.empty(),
-    privateChannelsUnavailable: Observable<Unit> = Observable.empty()
+    privateChannelAvailability: Observable<Boolean> = Observable.empty(),
+    childEvents: Observable<List<ChildOrderEvent>> = Observable.empty()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
@@ -36,10 +34,8 @@ class CurrentStatusService internal constructor(
         realtimeClient.childOrderEvents.map { Unit },
         privateClient,
         realtimeClient.parentOrderEvents,
-        realtimeClient.privateChannelsReady,
-        realtimeClient.childOrderEvents,
-        realtimeClient.privateChannelsDisconnected,
-        realtimeClient.privateChannelsUnavailable
+        realtimeClient.privateChannelAvailability,
+        realtimeClient.childOrderEvents
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -114,11 +110,7 @@ class CurrentStatusService internal constructor(
             .subscribeNext { stopOrders.onChildUpdates() }
             .addTo(bag)
 
-        Observable.merge(
-            privateChannelsReady.map { true },
-            privateChannelsDisconnected.map { false },
-            privateChannelsUnavailable.map { false }
-        ).observeOn(AndroidSchedulers.mainThread())
+        privateChannelAvailability.observeOn(AndroidSchedulers.mainThread())
             .subscribeNext(stopOrders::onPrivateChannelAvailability)
             .addTo(bag)
 

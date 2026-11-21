@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEven
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.IO
@@ -38,9 +39,7 @@ class RealtimeClient internal constructor(
     val childOrderEvents: PublishSubject<List<ChildOrderEvent>> = PublishSubject.create<List<ChildOrderEvent>>()
     val parentOrderEvents: PublishSubject<List<ParentOrderEvent>> = PublishSubject.create<List<ParentOrderEvent>>()
 
-    val privateChannelsReady = PublishSubject.create<Unit>()
-    internal val privateChannelsDisconnected = PublishSubject.create<Unit>()
-    internal val privateChannelsUnavailable = PublishSubject.create<Unit>()
+    internal val privateChannelAvailability = BehaviorSubject.create<Boolean>()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
@@ -54,7 +53,6 @@ class RealtimeClient internal constructor(
 
     private var authenticationAttempt = 0L
     @Volatile private var disconnected = false
-    private var privateSubscriptionsReady = false
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -77,10 +75,7 @@ class RealtimeClient internal constructor(
     fun authenticate() {
         if (disconnected) return
         val attempt = ++authenticationAttempt
-        if (privateSubscriptionsReady) {
-            privateSubscriptionsReady = false
-            privateChannelsUnavailable.onNext(Unit)
-        }
+        if (privateChannelAvailability.value == true) privateChannelAvailability.onNext(false)
         val credentials = preference.read()
         if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
         val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
@@ -93,13 +88,13 @@ class RealtimeClient internal constructor(
         disconnected = true
         socket.off()
         socket.disconnect()
+        privateChannelAvailability.onNext(false)
     }
 
     @Synchronized
     private fun onSocketDisconnected() {
         authenticationAttempt++
-        privateSubscriptionsReady = false
-        privateChannelsDisconnected.onNext(Unit)
+        privateChannelAvailability.onNext(false)
         Log.d("Socket", "Disconnected")
     }
 
@@ -110,7 +105,7 @@ class RealtimeClient internal constructor(
         if (error == null) {
             subscribePrivateChannels(attempt)
         } else {
-            privateChannelsUnavailable.onNext(Unit)
+            privateChannelAvailability.onNext(false)
             Log.d("Socket", "Authentication failed: $error")
         }
     }
@@ -132,11 +127,10 @@ class RealtimeClient internal constructor(
         val error = acknowledgementError(args)
         if (error != null) {
             authenticationAttempt++
-            privateChannelsUnavailable.onNext(Unit)
+            privateChannelAvailability.onNext(false)
             Log.d("Socket", "Subscription failed for $channel: $error")
         } else if (pendingChannels.remove(channel) && pendingChannels.isEmpty()) {
-            privateSubscriptionsReady = true
-            privateChannelsReady.onNext(Unit)
+            privateChannelAvailability.onNext(true)
         }
     }
 

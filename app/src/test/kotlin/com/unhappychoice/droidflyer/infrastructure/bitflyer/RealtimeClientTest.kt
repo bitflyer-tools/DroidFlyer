@@ -15,6 +15,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderDetails
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderParameter
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
@@ -93,51 +94,80 @@ class RealtimeClientTest {
     fun signalsPrivateChannelReadinessOnlyAfterBothSubscriptionsAreAcknowledged() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
-        val ready = client.privateChannelsReady.test()
-        val disconnected = client.privateChannelsDisconnected.test()
+        val availability = client.privateChannelAvailability.test()
 
         socket.receive(Socket.EVENT_CONNECT)
-        ready.assertNoValues()
+        availability.assertNoValues()
         socket.authAck!!.call(JSONObject.NULL)
-        ready.assertNoValues()
+        availability.assertNoValues()
         socket.subscriptionAcks.getValue("parent_order_events").call()
-        ready.assertNoValues()
+        availability.assertNoValues()
         socket.subscriptionAcks.getValue("child_order_events").call(JSONObject.NULL)
-        ready.assertValueCount(1)
-        disconnected.assertNoValues()
+        availability.assertValue(true)
+        client.privateChannelAvailability.test().assertValue(true)
 
         socket.receive(Socket.EVENT_DISCONNECT)
-        disconnected.assertValue(Unit)
+        client.privateChannelAvailability.test().assertValue(false)
         socket.receive(Socket.EVENT_CONNECT)
-        ready.assertValueCount(1)
+        availability.assertValues(true, false)
         socket.authAck!!.call(JSONObject.NULL)
         socket.acknowledgePrivateSubscriptions()
-        ready.assertValues(Unit, Unit)
+        availability.assertValues(true, false, true)
     }
 
     @Test
     fun rejectsPartialSubscriptionAndIgnoresAcknowledgementsFromAnEarlierConnection() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
-        val ready = client.privateChannelsReady.test()
-        val unavailable = client.privateChannelsUnavailable.test()
+        val availability = client.privateChannelAvailability.test()
 
         socket.receive(Socket.EVENT_CONNECT)
         socket.authAck!!.call()
         val firstChildAck = socket.subscriptionAcks.getValue("child_order_events")
         val firstParentAck = socket.subscriptionAcks.getValue("parent_order_events")
         firstParentAck.call(JSONObject().put("message", "Permission denied"))
-        ready.assertNoValues()
-        unavailable.assertValue(Unit)
+        availability.assertValue(false)
 
         socket.receive(Socket.EVENT_DISCONNECT)
         socket.receive(Socket.EVENT_CONNECT)
         socket.authAck!!.call()
         firstChildAck.call()
         socket.subscriptionAcks.getValue("parent_order_events").call()
-        ready.assertNoValues()
+        availability.assertValues(false, false)
         socket.subscriptionAcks.getValue("child_order_events").call()
-        ready.assertValue(Unit)
+        availability.assertValues(false, false, true)
+    }
+
+    @Test
+    fun submitsStopWhenPrivateSubscriptionsWereAcknowledgedBeforeStatusServiceStarted() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        socket.receive(Socket.EVENT_CONNECT)
+        socket.authAck!!.call()
+        socket.acknowledgePrivateSubscriptions()
+
+        val api = stopOrderApi()
+        whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("submitted-stop")))
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                val stops = service.privateState.stopOrders
+                val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+                val results = mutableListOf<Result<String>>()
+                assertTrue(stops.submit(stops.confirmation(order)) { results += it })
+                scheduler.triggerActions()
+                assertEquals(listOf(Result.success("submitted-stop")), results)
+                verify(api).sendParentOrder(any())
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
     }
 
     @Test
