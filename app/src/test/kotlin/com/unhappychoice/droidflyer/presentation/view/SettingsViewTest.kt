@@ -242,7 +242,9 @@ class SettingsViewTest {
                     .body("[]".toResponseBody())
                     .build()
             }.build()
-            val presenter = SettingsPresenter(APIClient(Gson(), preference, transport), preference, switchAccount = {}) {}
+            val presenter = SettingsPresenter(
+                APIClient(Gson(), preference, transport), preference, switchAccount = {}, updateRealtimeAccount = { it() }
+            )
             DI { bindInstance { presenter } }
         }
 

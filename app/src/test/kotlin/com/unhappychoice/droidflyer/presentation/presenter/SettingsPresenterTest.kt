@@ -101,7 +101,10 @@ class SettingsPresenterTest {
                 }.toResponseBody())
                 .build()
         }.build())
-    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { authenticated.add(savedCredentials()) }
+    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { save ->
+        save()
+        authenticated.add(savedCredentials())
+    }
 
     @Before
     fun setUp() {
@@ -152,7 +155,7 @@ class SettingsPresenterTest {
     }
 
     @Test
-    fun savesOnIoBeforeSwitchingAndEmittingSuccessOnMain() {
+    fun savesAndUpdatesRealtimeOnIoBeforeSwitchingAndEmittingSuccessOnMain() {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
@@ -168,12 +171,11 @@ class SettingsPresenterTest {
         assertFalse(stored.contains("key"))
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
         assertEquals(emptyList<APIClientV1?>(), switched)
-        assertEquals(emptyList<Pair<String, String>>(), authenticated)
+        assertEquals(listOf("submitted-key" to "submitted-secret"), authenticated)
         result.assertNoValues().assertNotComplete()
 
         main.triggerActions()
         assertEquals(1, switched.size)
-        assertEquals(listOf("submitted-key" to "submitted-secret"), authenticated)
         result.assertValueCount(1).assertComplete()
     }
 
@@ -279,7 +281,7 @@ class SettingsPresenterTest {
             assertEquals(List(4) { "/v1/board" }, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, status::switchAccount) {}
+            val settings = SettingsPresenter(api, preference, status::switchAccount) { it() }
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
             settings.saveCredentials().test().assertValueCount(1).assertComplete()

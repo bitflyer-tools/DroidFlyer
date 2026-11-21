@@ -23,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
@@ -51,7 +52,7 @@ class LimitOrderPresenterTest {
         val view = LimitOrderView(context, null)
         FrameLayout(context).addView(view)
         presenter.takeView(view)
-        presenter.amount.value = 0.01
+        presenter.amount.value = 0.001
     }
 
     @After
@@ -59,6 +60,19 @@ class LimitOrderPresenterTest {
         scope.destroy()
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun belowMinimumDoesNotSubmitLimitOrders() {
+        presenter.amount.value = 0.0001
+
+        assertFalse(presenter.canSubmitOrder)
+        presenter.amount.value = 0.001
+        submit(LimitOrderSide.BUY, 100, size = 0.0001)
+        submit(LimitOrderSide.SELL, 200, size = 0.0001)
+
+        verify(apiClient, never()).sendChildOrder(any())
+        assertFalse(presenter.isLoading.value)
     }
 
     @Test
@@ -91,8 +105,8 @@ class LimitOrderPresenterTest {
         verify(apiClient).sendChildOrder(request("SELL", 201))
     }
 
-    private fun submit(side: LimitOrderSide, price: Long) =
-        presenter.submitOrder(LimitOrderTerms(side, price, 0.01))
+    private fun submit(side: LimitOrderSide, price: Long, size: Double = 0.001) =
+        presenter.submitOrder(LimitOrderTerms(side, price, size))
 
     private fun verifyPendingOrder(side: String, price: Long) {
         assertFalse(presenter.canSubmitOrder)
@@ -101,5 +115,5 @@ class LimitOrderPresenterTest {
     }
 
     private fun request(side: String, price: Long) =
-        SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, 0.01)
+        SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, 0.001)
 }
