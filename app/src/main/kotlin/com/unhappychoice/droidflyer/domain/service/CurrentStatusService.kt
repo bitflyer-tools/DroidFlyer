@@ -91,7 +91,7 @@ class CurrentStatusService internal constructor(
             .subscribeNext { stopOrders.onParentUpdates() }
             .addTo(bag)
 
-        childUpdates.debounce(1, TimeUnit.SECONDS)
+        childUpdates.sample(1, TimeUnit.SECONDS, true)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { stopOrders.onChildUpdates() }
             .addTo(bag)

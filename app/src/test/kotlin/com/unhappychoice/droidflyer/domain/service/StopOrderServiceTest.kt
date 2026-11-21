@@ -29,6 +29,7 @@ import org.mockito.Mockito.mock
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 
 class StopOrderServiceTest {
@@ -75,7 +76,7 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun childExecutionsRefreshTriggeredStopThroughPartialAndFullExecution() =
+    fun continuousChildExecutionsRefreshTriggeredStopThroughPartialAndFullExecution() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.triggerActions()
@@ -89,7 +90,7 @@ class StopOrderServiceTest {
             scheduler.triggerActions()
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
             assertFalse(stops.orders.value.single().canCancel)
-            scheduler.advanceTimeBy(1, SECONDS)
+            scheduler.advanceTimeBy(9, SECONDS)
 
             executedSize = 0.005
             val execution = childExecution()
@@ -102,14 +103,18 @@ class StopOrderServiceTest {
 
             executedSize = 0.0
             childOrders = marketChild(0.005)
-            realtime.childOrderEvents.onNext(listOf(execution))
-            scheduler.advanceTimeBy(20, SECONDS)
+            repeat(40) { index ->
+                realtime.childOrderEvents.onNext(listOf(execution.copy(execId = index + 1L)))
+                scheduler.advanceTimeBy(500, MILLISECONDS)
+            }
             assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
 
             parentState = "COMPLETED"
             childOrders = marketChild(0.01)
-            realtime.childOrderEvents.onNext(listOf(execution.copy(execId = 2)))
-            scheduler.advanceTimeBy(12, SECONDS)
+            repeat(24) { index ->
+                realtime.childOrderEvents.onNext(listOf(execution.copy(execId = index + 41L)))
+                scheduler.advanceTimeBy(500, MILLISECONDS)
+            }
             assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
         }
 
