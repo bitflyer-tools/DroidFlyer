@@ -5,6 +5,7 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager.widget.ViewPager
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -12,6 +13,7 @@ import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
+import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter.Companion.LIMIT_POSITION
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderTerms
@@ -19,8 +21,8 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
+import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -56,11 +58,13 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             .filter { presenter.canSubmitOrder }
             .subscribeNext { confirmOrder(LimitOrderSide.BUY, it.price) }.addTo(bag)
 
-        Observables.combineLatest(
-            observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable()),
-            currentStatusService.orders.asObservable()
-        ) { rows, orders -> rows to orders }
-            .observeOn(AndroidSchedulers.mainThread())
+        observeLimitOrderRows(
+            observePageSelection(),
+            currentStatusService.board.asObservable(),
+            presenter.groupingSize.asObservable(),
+            currentStatusService.orders.asObservable(),
+            AndroidSchedulers.mainThread()
+        )
             .subscribeNext { (rows, orders) ->
                 askAdapter.applyRows(rows.asks, rows.groupingSize, orders)
                 bidAdapter.applyRows(rows.bids, rows.groupingSize, orders)
@@ -89,6 +93,20 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun observePageSelection(): Observable<Boolean> {
+        val pager = parent as? ViewPager ?: return Observable.just(false)
+        return Observable.create { emitter ->
+            val listener = object : ViewPager.SimpleOnPageChangeListener() {
+                override fun onPageSelected(position: Int) {
+                    emitter.onNext(position == LIMIT_POSITION)
+                }
+            }
+            pager.addOnPageChangeListener(listener)
+            emitter.setCancellable { pager.removeOnPageChangeListener(listener) }
+            emitter.onNext(pager.currentItem == LIMIT_POSITION)
+        }
     }
 
     private fun confirmOrder(side: LimitOrderSide, price: Long) {
