@@ -25,12 +25,12 @@ class TradingTotalsTest {
         val awaitingPrice = observeTradingTotals(
             price.asObservable(), positions.asObservable(), collateral.asObservable(), scheduler
         ).test()
-        awaitingPrice.assertValue(TradingTotals(null, null, 1000L))
+        awaitingPrice.assertValue(TradingTotals(null, null, 1000L, null))
 
         price.value = MarketPrice(140.75)
         awaitingPrice.assertValues(
-            TradingTotals(null, null, 1000L),
-            TradingTotals(20L, 40L, 1020L)
+            TradingTotals(null, null, 1000L, null),
+            TradingTotals(20L, 40L, 1020L, 140L)
         )
     }
 
@@ -42,8 +42,8 @@ class TradingTotalsTest {
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(20L, 40L, 1020L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(20L, 40L, 1020L, 140L)
         )
     }
 
@@ -56,9 +56,9 @@ class TradingTotalsTest {
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(10L, 20L, 1010L),
-            TradingTotals(20L, 40L, 1520L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(10L, 20L, 1010L, 120L),
+            TradingTotals(20L, 40L, 1520L, 140L)
         )
     }
 
@@ -70,10 +70,10 @@ class TradingTotalsTest {
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(5L, 10L, 1005L),
-            TradingTotals(5L, 10L, 1505L),
-            TradingTotals(-5L, -11L, 1495L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(5L, 10L, 1005L, 120L),
+            TradingTotals(5L, 10L, 1505L, 120L),
+            TradingTotals(-5L, -11L, 1495L, 99L)
         )
     }
 
@@ -86,9 +86,9 @@ class TradingTotalsTest {
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(-10L, -20L, 990L),
-            TradingTotals(10L, 20L, 1010L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(-10L, -20L, 990L, 120L),
+            TradingTotals(10L, 20L, 1010L, 80L)
         )
     }
 
@@ -115,9 +115,9 @@ class TradingTotalsTest {
 
         scheduler.advanceTimeBy(20, MILLISECONDS)
         totals.assertValues(
-            TradingTotals(0L, 120L, 1000L),
-            TradingTotals(10L, 20L, 1010L),
-            TradingTotals(20L, 40L, 1020L)
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(10L, 20L, 1010L, 120L),
+            TradingTotals(20L, 40L, 1020L, 140L)
         )
         assertEquals(initialTraversals + 1, trackedPositions.traversals)
     }
