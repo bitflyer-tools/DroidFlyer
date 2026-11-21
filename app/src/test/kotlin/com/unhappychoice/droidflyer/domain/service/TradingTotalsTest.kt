@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TradingTotalsTest {
-    private val price = Variable(120.75)
+    private val price = Variable(MarketPrice(120.75))
     private val positions = Variable<List<Position>>(emptyList())
     private val collateral = Variable(Collateral(1000.75))
     private val scheduler = TestScheduler()
@@ -19,8 +19,24 @@ class TradingTotalsTest {
     private val position = Position("FX_BTC_JPY", "BUY", 100L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0)
 
     @Test
+    fun firstPriceValuesAnExistingPositionBeforeWindowEnds() {
+        price.value = MarketPrice(null)
+        positions.value = listOf(position)
+        val awaitingPrice = observeTradingTotals(
+            price.asObservable(), positions.asObservable(), collateral.asObservable(), scheduler
+        ).test()
+        awaitingPrice.assertValue(TradingTotals(null, null, 1000L))
+
+        price.value = MarketPrice(140.75)
+        awaitingPrice.assertValues(
+            TradingTotals(null, null, 1000L),
+            TradingTotals(20L, 40L, 1020L)
+        )
+    }
+
+    @Test
     fun positionUpdateUsesLatestPriceBeforeWindowEnds() {
-        price.value = 140.75
+        price.value = MarketPrice(140.75)
         positions.value = listOf(position)
         totals.assertValueCount(2)
         scheduler.advanceTimeBy(100, MILLISECONDS)
@@ -34,7 +50,7 @@ class TradingTotalsTest {
     @Test
     fun collateralUpdateUsesLatestPriceBeforeWindowEnds() {
         positions.value = listOf(position)
-        price.value = 140.75
+        price.value = MarketPrice(140.75)
         collateral.value = Collateral(1500.75)
         totals.assertValueCount(3)
         scheduler.advanceTimeBy(100, MILLISECONDS)
@@ -50,7 +66,7 @@ class TradingTotalsTest {
     fun unavailableCollateralKeepsBalanceUnknownWithOpenPositions() {
         collateral.value = Collateral(null)
         positions.value = listOf(position)
-        price.value = 140.75
+        price.value = MarketPrice(140.75)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
@@ -65,7 +81,7 @@ class TradingTotalsTest {
     fun priceUpdateUsesLatestPositionAndCollateral() {
         positions.value = listOf(position.copy(price = 110L))
         collateral.value = Collateral(1500.75)
-        price.value = 99.75
+        price.value = MarketPrice(99.75)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
@@ -73,6 +89,21 @@ class TradingTotalsTest {
             TradingTotals(5L, 10L, 1005L),
             TradingTotals(5L, 10L, 1505L),
             TradingTotals(-5L, -11L, 1495L)
+        )
+    }
+
+    @Test
+    fun shortPositionSpreadIsPositiveBelowEntryAndNegativeAboveEntry() {
+        positions.value = listOf(position.copy(side = "SELL"))
+        totals.assertValueCount(2)
+
+        price.value = MarketPrice(80.75)
+        scheduler.advanceTimeBy(100, MILLISECONDS)
+
+        totals.assertValues(
+            TradingTotals(0L, 120L, 1000L),
+            TradingTotals(-10L, -20L, 990L),
+            TradingTotals(10L, 20L, 1010L)
         )
     }
 
@@ -91,7 +122,7 @@ class TradingTotalsTest {
         val initialTraversals = trackedPositions.traversals
 
         repeat(20) {
-            price.value = 121.75 + it
+            price.value = MarketPrice(121.75 + it)
             scheduler.advanceTimeBy(4, MILLISECONDS)
         }
         totals.assertValueCount(2)

@@ -6,10 +6,12 @@ import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.subjects.CompletableSubject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
@@ -33,7 +35,7 @@ class CurrentStatusService internal constructor(
 
     internal val privateState = PrivateTradingState(privateClient)
 
-    val currentPrice = Variable(0.0)
+    internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = privateState.position
@@ -44,13 +46,19 @@ class CurrentStatusService internal constructor(
     val orders = privateState.orders
 
     private val bag = CompositeDisposable()
+    private var accountChanged = CompletableSubject.create()
+    private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val realtimeBoardRevision = AtomicLong()
 
     init {
         executions
             .filter { it.isNotEmpty() }
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { currentPrice.value = it.first().price }
+            .subscribeNext { batch ->
+                batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }?.let {
+                    currentPrice.value = MarketPrice(it.price)
+                }
+            }
             .addTo(bag)
 
         boardUpdates
@@ -75,25 +83,37 @@ class CurrentStatusService internal constructor(
 
     fun dispose() {
         bag.dispose()
+        statusRefresh.dispose()
         privateState.dispose()
     }
 
-    fun updateStatus() {
+    fun updateStatus() = statusRefresh.request(followUp = true)
+
+    fun pollStatus() = statusRefresh.request(followUp = false)
+
+    internal fun switchAccount(client: APIClientV1) {
         if (bag.isDisposed) return
 
-        privateState.refresh()
-
-        refreshBoard()
+        val previous = accountChanged
+        accountChanged = CompletableSubject.create()
+        privateState.switchAccount(client)
+        // Queue the new account before ending an in-flight refresh.
+        updateStatus()
+        previous.onComplete()
     }
 
-    private fun refreshBoard() {
+    private fun refreshStatus(): Completable = Completable.ambArray(
+        accountChanged,
+        Completable.mergeArray(privateState.refresh(), refreshBoard())
+    )
+
+    private fun refreshBoard(): Completable {
         val requestRevision = realtimeBoardRevision.get()
-        apiClient.getBoard("FX_BTC_JPY")
+        return apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { snapshot ->
+            .publishStatus { snapshot ->
                 if (realtimeBoardRevision.get() == requestRevision) board.value = snapshot
             }
-            .addTo(bag)
     }
 }
 

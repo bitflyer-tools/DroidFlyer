@@ -4,13 +4,13 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -31,39 +31,43 @@ class PrivateTradingStateTest {
     fun rejectedCollateralStaysUnavailableUntilZeroIsLoaded() {
         accountA.client.getBalance().test().assertValue(emptyList()).assertComplete()
         val totals = observeTradingTotals(
-            Observable.just(120.0), state.position.asObservable(), state.collateral.asObservable()
+            Observable.just(MarketPrice(120.0)), state.position.asObservable(), state.collateral.asObservable()
         ).test()
 
-        state.refresh()
+        val rejected = state.refresh().test()
         scheduler.triggerActions()
         accountA.positions.onNext(emptyList())
+        accountA.orders.onNext(emptyList())
         accountA.collateral.onError(SecurityException("Missing collateral permission"))
         scheduler.triggerActions()
+        rejected.assertComplete()
         val unavailable = TradingTotals(0L, 120L, null)
         totals.assertValues(unavailable, unavailable)
 
         accountA.collateral = PublishSubject.create()
-        state.refresh()
+        val loaded = state.refresh().test()
         scheduler.triggerActions()
         accountA.collateral.onNext(mapOf("collateral" to 0))
+        accountA.positions.onNext(emptyList())
+        accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
-        totals.assertValues(unavailable, unavailable, TradingTotals(0L, 120L, 0L)).assertNoErrors()
+        loaded.assertComplete()
+        totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L)).assertNoErrors()
     }
 
     @Test
-    fun switchingClearsAllPrivateDataAndRefreshesTheNewAccount() {
-        state.refresh()
+    fun switchingClearsAllPrivateDataAndIgnoresResponsesFromThePreviousAccount() {
+        val initial = state.refresh().test()
         scheduler.triggerActions()
         accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
+        initial.assertComplete()
         assertPrivateData(listOf(position), 10.0, listOf(order))
 
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         state.switchAccount(accountB.client)
-        assertFalse(accountA.positions.hasObservers())
-        assertFalse(accountA.collateral.hasObservers())
-        assertFalse(accountA.orders.hasObservers())
+        state.refresh().test()
         assertPrivateData(emptyList(), null, emptyList())
         assertNull(state.cancelOrder(order))
         scheduler.triggerActions()
@@ -85,19 +89,20 @@ class PrivateTradingStateTest {
 
     @Test
     fun equalOrderRefreshKeepsDisplayedCancellationValidOnlyForTheCurrentAccount() {
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountA.orders.onNext(listOf(order))
         scheduler.triggerActions()
         val previousAccountOrder = state.orders.value.single()
 
         state.switchAccount(accountB.client)
+        state.refresh().test()
         scheduler.triggerActions()
         accountB.orders.onNext(listOf(order.copy()))
         scheduler.triggerActions()
         val displayedOrder = state.orders.value.single()
 
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountB.orders.onNext(listOf(order.copy()))
         scheduler.triggerActions()
@@ -111,13 +116,14 @@ class PrivateTradingStateTest {
 
     @Test
     fun oldConfirmationStaysInvalidEvenWhenTheNewAccountLoadsTheSamePosition() {
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         scheduler.triggerActions()
         val oldConfirmation = checkNotNull(state.closeConfirmation())
 
         state.switchAccount(accountB.client)
+        state.refresh().test()
         assertNull(state.closeConfirmation())
         assertNull(state.closePosition(oldConfirmation))
 
@@ -143,7 +149,7 @@ class PrivateTradingStateTest {
 
     @Test
     fun changingPositionWithinTheSameAccountRequiresFreshConfirmation() {
-        state.refresh()
+        state.refresh().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         scheduler.triggerActions()
@@ -190,7 +196,7 @@ class PrivateTradingStateTest {
                 ))
                 "sendChildOrder" -> Observable.fromCallable {
                     sent.add(args[0] as SendChildOrderRequest)
-                    mapOf<String, Any>("child_order_acceptance_id" to "acceptance")
+                    ChildOrderAcceptance("acceptance")
                 }
                 "cancelChildOrder" -> Completable.fromAction {
                     cancelled.add(args[0] as CancelChildOrderRequest)
