@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
@@ -28,6 +29,7 @@ import java.util.concurrent.TimeUnit
 @Config(manifest = Config.NONE, sdk = [29])
 class APIClientTest {
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+    private val credentials = APICredentials("dummy-key", "dummy-secret")
     private val order = SendChildOrderRequest(childOrderType = "LIMIT", side = "BUY", price = 100L, size = 0.01)
     private val invalidAcceptanceBodies = listOf(
         "{}",
@@ -64,6 +66,25 @@ class APIClientTest {
 
             assertSignedRequest(origin, "GET", "/v1/me/getpositions?product_code=FX_BTC_JPY", "")
             assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+        }
+    }
+
+    @Test
+    fun sharedClientSignsRequestsWithUpdatedCredentials() {
+        MockWebServer().use { origin ->
+            origin.start()
+            repeat(2) { origin.enqueue(MockResponse.Builder().body("[]").build()) }
+            val preference = credentialPreference()
+            val client = client(origin, preference)
+            val target = "/v1/me/getpermissions"
+
+            client.getPermissions().test().assertComplete().assertNoErrors()
+            assertSignedRequest(origin, "GET", target, "")
+
+            val updated = APICredentials("updated-key", "updated-secret")
+            preference.save(updated)
+            client.getPermissions().test().assertComplete().assertNoErrors()
+            assertSignedRequest(origin, "GET", target, "", updated)
         }
     }
 
@@ -150,24 +171,30 @@ class APIClientTest {
         }
     }
 
-    private fun client(origin: MockWebServer): APIClientV1 {
-        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
-            save(APICredentials("dummy-key", "dummy-secret"))
-        }
+    private fun credentialPreference() =
+        testAPITokenPreference(RuntimeEnvironment.getApplication()).apply { save(credentials) }
+
+    private fun client(origin: MockWebServer, preference: APITokenPreference = credentialPreference()): APIClientV1 {
         val transport = OkHttpClient.Builder().followRedirects(true).build()
         return APIClient(gson, preference, transport, origin.url("/v1/").toString()).client()
     }
 
-    private fun assertSignedRequest(origin: MockWebServer, method: String, target: String, body: String) {
+    private fun assertSignedRequest(
+        origin: MockWebServer,
+        method: String,
+        target: String,
+        body: String,
+        expected: APICredentials = credentials
+    ) {
         val request = checkNotNull(origin.takeRequest(5, TimeUnit.SECONDS))
         assertEquals(method, request.method)
         assertEquals(target, request.target)
         assertEquals(body, request.body?.utf8().orEmpty())
-        assertEquals("dummy-key", request.headers["Access-Key"])
+        assertEquals(expected.key, request.headers["Access-Key"])
         val timestamp = request.headers["Access-Timestamp"]
         assertNotNull(timestamp?.toLongOrNull())
         assertEquals(
-            (timestamp + method + target + body).toHmacSHA256("dummy-secret"),
+            (timestamp + method + target + body).toHmacSHA256(expected.secret),
             request.headers["Access-Sign"]
         )
     }

@@ -21,7 +21,7 @@ class APIClient internal constructor(
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, OkHttpClient())
 
-    fun client(): APIClientV1 = createClient(null)
+    fun client(): APIClientV1 = defaultClient
 
     fun client(credentials: APICredentials): APIClientV1 = createClient(credentials)
 
@@ -32,6 +32,8 @@ class APIClient internal constructor(
         .followRedirects(false)
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
+
+    private val defaultClient by lazy { createClient(null) }
 
     private fun authenticatedTransport(credentials: APICredentials?) = okHttp.newBuilder()
         .apply {
