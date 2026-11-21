@@ -25,6 +25,9 @@ class APIClient internal constructor(
 
     fun client(credentials: APICredentials): APIClientV1 = createClient(credentials)
 
+    internal fun privateStatusClient(credentials: APICredentials): APIClientV1? =
+        credentials.takeIf { it.isConfigured }?.let(::client)
+
     private val okHttp = transport.newBuilder()
         .followRedirects(false)
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
@@ -46,7 +49,7 @@ class APIClient internal constructor(
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "application/json")
             .apply {
-                if (credentials.key.isNotEmpty() && credentials.secret.isNotEmpty()) {
+                if (credentials.isConfigured) {
                     addHeader("Access-Key", credentials.key)
                     addHeader("Access-Timestamp", timestamp)
                     addHeader("Access-Sign", sign(request, timestamp, credentials.secret))

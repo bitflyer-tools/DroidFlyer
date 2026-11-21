@@ -82,7 +82,7 @@ class TradingTotalsTest {
         positions.value = listOf(position.copy(side = "SELL"))
         totals.assertValueCount(2)
 
-        price.value = 80.75
+        price.value = MarketPrice(80.75)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
         totals.assertValues(
