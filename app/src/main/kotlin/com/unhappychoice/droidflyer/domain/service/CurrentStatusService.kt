@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
@@ -14,20 +15,24 @@ import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.CompletableSubject
 import io.reactivex.subjects.PublishSubject
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<BoardUpdate>,
-    orderEvents: Observable<Unit>,
+    orderEvents: Observable<PrivateEvent<*>>,
     privateClient: APIClientV1? = apiClient
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
-        realtimeClient.orderChanges,
+        Observable.merge(
+            realtimeClient.childOrderEvents,
+            realtimeClient.parentOrderEvents
+        ),
         privateClient
     )
 
@@ -78,6 +83,9 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
 
         orderEvents
+            .debounce(1, TimeUnit.SECONDS)
+            .subscribeOnIoObserveOnUI()
+            .filter { it.isCurrent() }
             .subscribeNext { updateStatus() }
             .addTo(bag)
 
@@ -94,19 +102,16 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
-    internal fun switchAccount(client: APIClientV1?) = changeAccount { privateState.switchAccount(client) }
-
-    internal fun unlinkAccount() = changeAccount { privateState.unlink() }
-
-    private fun changeAccount(change: () -> Unit) {
+    internal fun switchAccount(client: APIClientV1?) {
         if (bag.isDisposed) return
 
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
-        change()
-        // Queue the new account before ending an in-flight refresh.
-        updateStatus()
-        previous.onComplete()
+        privateState.switchAccount(client) {
+            // Queue the new account before ending an in-flight refresh.
+            updateStatus()
+            previous.onComplete()
+        }
     }
 
     private fun refreshStatus(): Completable = Completable.ambArray(

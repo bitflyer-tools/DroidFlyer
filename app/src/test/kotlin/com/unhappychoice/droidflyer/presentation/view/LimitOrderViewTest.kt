@@ -31,6 +31,7 @@ import org.kodein.di.bindInstance
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
@@ -54,7 +55,7 @@ class LimitOrderViewTest {
         val statusClient = mock<APIClientV1>()
         whenever(statusClient.getPositions()).thenReturn(Observable.empty())
         whenever(statusClient.getCollateral()).thenReturn(Observable.empty())
-        whenever(statusClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(statusClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(statusClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         status = CurrentStatusService(statusClient, Observable.never(), Observable.never(), Observable.never())
     }
@@ -67,16 +68,7 @@ class LimitOrderViewTest {
 
     @Test
     fun confirmationsKeepTheirTermsAndPendingSubmissionBlocksAnOpenDialog() {
-        Robolectric.buildActivity(LimitOrderHost::class.java).setup().use { controller ->
-            val host = controller.get()
-            host.setTheme(R.style.AppTheme)
-            val view = host.layoutInflater.inflate(R.layout.limit_order_view, null) as LimitOrderView
-            view.inject(DI {
-                bindInstance { presenter }
-                bindInstance { status }
-            })
-            host.setContentView(view)
-
+        withLimitView { view ->
             presenter.amount.value = 0.01
             val buy = view.confirmation(R.id.bidList, R.string.buy, 100, 0.01)
             presenter.amount.value = 0.02
@@ -97,6 +89,37 @@ class LimitOrderViewTest {
             latestSell.accept()
             verify(orderClient).sendChildOrder(request("SELL", 201, 0.03))
             verifyNoMoreInteractions(orderClient)
+        }
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun obscuredConfirmationDoesNotSubmitAndClearTapSubmitsOnce() {
+        withLimitView { view ->
+            presenter.amount.value = 0.01
+            val dialog = view.confirmation(R.id.bidList, R.string.buy, 100, 0.01)
+            val button = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+            val window = requireNotNull(dialog.window)
+
+            window.tapWithObscuration(button)
+            verifyNoInteractions(orderClient)
+            window.tap(button)
+            verify(orderClient).sendChildOrder(request("BUY", 100, 0.01))
+            verifyNoMoreInteractions(orderClient)
+        }
+    }
+
+    private fun withLimitView(test: (LimitOrderView) -> Unit) {
+        Robolectric.buildActivity(LimitOrderHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            host.setTheme(R.style.AppTheme)
+            val view = host.layoutInflater.inflate(R.layout.limit_order_view, null) as LimitOrderView
+            view.inject(DI {
+                bindInstance { presenter }
+                bindInstance { status }
+            })
+            host.setContentView(view)
+            test(view)
         }
     }
 

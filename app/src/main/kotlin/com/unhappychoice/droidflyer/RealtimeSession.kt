@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import io.reactivex.disposables.CompositeDisposable
@@ -16,15 +17,17 @@ internal class RealtimeSession(
     init {
         client.preference.accountUnlinked
             .subscribeNext {
-                status.unlinkAccount()
-                client.restartConnection()
+                client.updateAccount {}
+                status.switchAccount(null)
             }
             .addTo(subscriptions)
     }
 
     fun notifyExecutions(onExecution: (ChildOrderEvent) -> Unit) {
         client.childOrderEvents
-            .subscribeNext { events -> events.filter(ChildOrderEvent::isExecution).forEach(onExecution) }
+            .subscribeOnIoObserveOnUI()
+            .filter { it.isCurrent() }
+            .subscribeNext { batch -> batch.value.filter(ChildOrderEvent::isExecution).forEach(onExecution) }
             .addTo(subscriptions)
     }
 

@@ -54,7 +54,7 @@ class RealtimeSessionTest {
     fun replacementSessionAloneRefreshesStatusAndDeliversExecutions() {
         val old = Session()
         assertEquals(1, old.refreshes)
-        old.socket.receiveExecution()
+        old.accountSockets.single().receiveExecution()
         assertTrue(old.positions.hasObservers())
         old.status.updateStatus()
         old.lifecycle.close()
@@ -63,13 +63,14 @@ class RealtimeSessionTest {
         val replacement = Session()
         try {
             assertFalse(old.socket.connected())
-            assertFalse(old.socket.hasListeners("child_order_events"))
+            assertFalse(old.accountSockets.single().connected())
+            assertFalse(old.accountSockets.single().hasListeners("child_order_events"))
             assertTrue(replacement.socket.connected())
 
-            old.socket.receiveExecution()
+            old.accountSockets.single().receiveExecution()
             old.status.updateStatus()
             old.status.pollStatus()
-            replacement.socket.receiveExecution()
+            replacement.accountSockets.single().receiveExecution()
             time.advanceTimeBy(1, TimeUnit.SECONDS)
 
             assertEquals(1, old.refreshes)
@@ -85,19 +86,21 @@ class RealtimeSessionTest {
     }
 
     @Test
-    fun unlinkSignalClearsActiveSessionAndLeavesTheReplacementSocketOpen() {
+    fun unlinkSignalClearsActiveSessionAndKeepsPublicSocketOpen() {
         val session = Session()
         try {
             session.status.balance.value = 500.0
-            session.socket.receiveExecution()
+            val account = session.accountSockets.single()
+            account.receiveExecution()
 
             assertTrue(session.preference.clear())
             time.advanceTimeBy(1, TimeUnit.SECONDS)
 
             assertEquals(0.0, session.status.balance.value, 0.0)
             assertFalse(session.positions.hasObservers())
-            assertFalse(session.socket.connected())
-            assertTrue(session.replacement.connected())
+            assertFalse(account.connected())
+            assertTrue(session.socket.connected())
+            assertEquals(listOf(account), session.accountSockets)
             assertEquals(0, session.notifications)
             assertEquals(1, session.refreshes)
 
@@ -108,9 +111,31 @@ class RealtimeSessionTest {
         }
     }
 
+    @Test
+    fun queuedExecutionFromPreviousAccountIsDroppedBeforeNotification() {
+        val session = Session()
+        try {
+            session.accountSockets.single().receiveExecution()
+            session.client.updateAccount {
+                session.preference.save(APICredentials("replacement", "secret"))
+            }
+            val replacement = session.accountSockets.last()
+            replacement.receiveExecution()
+            time.advanceTimeBy(1, TimeUnit.SECONDS)
+            assertEquals(0, session.notifications)
+            assertEquals(1, session.refreshes)
+
+            replacement.authenticate()
+            replacement.receiveExecution()
+            time.triggerActions()
+            assertEquals(1, session.notifications)
+        } finally {
+            session.lifecycle.close()
+        }
+    }
+
     private class Session {
         val socket = TestSocket()
-        val replacement = TestSocket()
         val positions = PublishSubject.create<List<Position>>()
         var refreshes = 0
         var notifications = 0
@@ -128,10 +153,12 @@ class RealtimeSessionTest {
         } as APIClientV1
         private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
-            save(APICredentials("key", "secret"))
+            save(APICredentials("initial", "secret"))
         }
-        private val client = RealtimeClient(gson, preference, listOf(socket, replacement).iterator()::next)
-            .also { socket.finishConnecting() }
+        val accountSockets = mutableListOf<TestSocket>()
+        val client = RealtimeClient(gson, preference, socket) {
+            TestSocket().also(accountSockets::add)
+        }.also { accountSockets.single().authenticate() }
         val status = CurrentStatusService(api, client, api)
         val lifecycle = RealtimeSession(client, status).apply { notifyExecutions { notifications++ } }
     }
@@ -139,18 +166,23 @@ class RealtimeSessionTest {
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
         private var open = false
 
-        override fun connect(): Socket = apply { open = true }
+        private var ack: Ack? = null
+
+        override fun connect(): Socket = apply {
+            open = true
+            listeners(EVENT_CONNECT).forEach { it.call() }
+        }
+
+        override fun emit(event: String, vararg args: Any): Emitter {
+            if (event == "auth") ack = args.last() as Ack
+            return this
+        }
+
+        fun authenticate() = checkNotNull(ack).call(JSONObject.NULL)
 
         override fun disconnect(): Socket = apply { open = false }
 
         override fun connected(): Boolean = open
-
-        override fun emit(event: String, vararg args: Any): Emitter {
-            if (event == "auth") (args.last() as Ack).call(JSONObject.NULL)
-            return this
-        }
-
-        fun finishConnecting() = listeners(EVENT_CONNECT).forEach { it.call() }
 
         fun receiveExecution() {
             val events = JSONArray("""[{"event_type":"EXECUTION"}]""")

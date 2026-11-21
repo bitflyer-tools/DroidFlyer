@@ -35,6 +35,7 @@ internal class StatusRefreshCoordinator(private val refresh: () -> Completable) 
 
     private fun onRefreshFinished() {
         synchronized(lock) {
+            activeRefresh.replace(null)
             if (activeRefresh.isDisposed || !pending) {
                 running = false
                 return

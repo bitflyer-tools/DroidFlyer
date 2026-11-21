@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -34,6 +35,8 @@ class APIClient internal constructor(
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()
 
+    private val privatePathPrefix = checkNotNull(baseUrl.toHttpUrl().resolve("me/")).encodedPath
+
     private val defaultClient by lazy { createClient(null) }
 
     private fun authenticatedTransport(credentials: APICredentials?): OkHttpClient {
@@ -51,19 +54,20 @@ class APIClient internal constructor(
     }
 
     private fun authenticatedRequest(request: Request, pinned: APICredentials?): Request {
-        val credentials = pinned ?: request.tag(APICredentials::class.java) ?: preference.read()
-        val timestamp = (System.currentTimeMillis() / 1000L).toString()
-
-        return request.newBuilder()
+        val builder = request.newBuilder()
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "application/json")
-            .apply {
-                if (credentials.isConfigured) {
-                    addHeader("Access-Key", credentials.key)
-                    addHeader("Access-Timestamp", timestamp)
-                    addHeader("Access-Sign", sign(request, timestamp, credentials.secret))
-                }
-            }.build()
+        if (!request.url.encodedPath.startsWith(privatePathPrefix)) return builder.build()
+
+        val credentials = pinned ?: request.tag(APICredentials::class.java) ?: preference.read()
+        if (!credentials.isConfigured) return builder.build()
+
+        val timestamp = (System.currentTimeMillis() / 1000L).toString()
+        return builder
+            .addHeader("Access-Key", credentials.key)
+            .addHeader("Access-Timestamp", timestamp)
+            .addHeader("Access-Sign", sign(request, timestamp, credentials.secret))
+            .build()
     }
 
     private fun createClient(credentials: APICredentials?): APIClientV1 = Retrofit.Builder()
