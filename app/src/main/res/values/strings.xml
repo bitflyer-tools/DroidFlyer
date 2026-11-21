@@ -53,7 +53,8 @@
     <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nTrigger price: %3$,d JPY\n\nWhen the trigger price is reached, bitFlyer submits a market order. The execution price may differ from the trigger price.</string>
     <string name="stop_submit">Submit stop</string>
     <string name="stop_accepted">Exchange accepted stop %1$s</string>
-    <string name="stop_submit_unconfirmed">Could not confirm stop submission. Check Orders before trying again.</string>
+    <string name="stop_submit_reconciling">Checking whether bitFlyer received your stop order. Stop orders are paused until it appears in Orders.</string>
+    <string name="stop_submit_check_failed">Could not check existing orders. Your stop order was not sent.</string>
     <string name="stop_review_again">Review the stop again before submitting</string>
     <string name="stop_load_retry">Could not load stop orders. Tap to retry.</string>
     <string name="stop_price">Trigger: %1$,d JPY</string>

@@ -8,7 +8,9 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.isVisible
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -18,6 +20,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrd
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import io.reactivex.Observable
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -55,6 +58,11 @@ class StopOrderView(context: Context) : BaseView(context, null) {
         setText(R.string.stop_review)
         setOnClickListener { reviewOrder() }
     }
+    private val reconciliationStatus = TextView(context).apply {
+        setText(R.string.stop_submit_reconciling)
+        setTextColor(DefaultStyle.accentColor)
+        isVisible = false
+    }
     private var dialog: AlertDialog? = null
 
     init {
@@ -67,6 +75,7 @@ class StopOrderView(context: Context) : BaseView(context, null) {
             addView(quantity)
             addView(price)
             addView(review)
+            addView(reconciliationStatus)
         }
         addView(
             ScrollView(context).apply { addView(form) },
@@ -76,7 +85,12 @@ class StopOrderView(context: Context) : BaseView(context, null) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        stops.submitting.asObservable().subscribeNext { review.isEnabled = !it }.addTo(bag)
+        Observable.combineLatest(stops.submitting.asObservable(), stops.reconcilingSubmission.asObservable()) {
+            submitting, reconciling -> submitting to reconciling
+        }.subscribeNext { (submitting, reconciling) ->
+            review.isEnabled = !submitting && !reconciling
+            reconciliationStatus.isVisible = reconciling
+        }.addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
@@ -113,11 +127,16 @@ class StopOrderView(context: Context) : BaseView(context, null) {
                 price.text.clear()
                 sides.clearCheck()
                 showMessage(context.getString(R.string.stop_accepted, it))
-            }.onFailure { showMessage(context.getString(R.string.stop_submit_unconfirmed)) }
+            }.onFailure {
+                if (!stops.reconcilingSubmission.value) showMessage(context.getString(R.string.stop_submit_check_failed))
+            }
         }
         if (!started) {
-            if (stops.orderEventsReady) showMessage(context.getString(R.string.stop_review_again))
-            else showOrderEventsHelp()
+            when {
+                stops.reconcilingSubmission.value -> showMessage(context.getString(R.string.stop_submit_reconciling))
+                stops.orderEventsReady -> showMessage(context.getString(R.string.stop_review_again))
+                else -> showOrderEventsHelp()
+            }
         }
     }
 

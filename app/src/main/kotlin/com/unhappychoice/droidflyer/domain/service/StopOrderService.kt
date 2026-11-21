@@ -22,12 +22,14 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     val orders = Variable<List<StopOrder>>(emptyList())
     val loadFailed = Variable(false)
     val submitting = Variable(false)
+    val reconcilingSubmission = Variable(false)
     val cancelling = Variable<Set<String>>(emptySet())
 
     val orderEventsReady: Boolean get() = !privateChannelsUnavailable
 
     private var account = Account(client)
     private val requests = CompositeDisposable()
+    private var pendingSubmission: PendingSubmission? = null
     private var enabled = false
     private var refreshing = false
     private var realtimeRefresh: RealtimeRefresh? = null
@@ -46,6 +48,8 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val previous = account
         account = Account(client)
         previous.ended.onComplete()
+        pendingSubmission = null
+        reconcilingSubmission.value = false
         refreshRequest.set(null)
         fallbackRefresh.set(null)
         refreshing = false
@@ -69,21 +73,27 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
 
     fun submit(confirmation: Confirmation, result: (Result<String>) -> Unit): Boolean {
         val current = account
-        if (confirmation.account !== current || !orderEventsReady || submitting.value || requests.isDisposed) return false
+        if (confirmation.account !== current || !orderEventsReady || submitting.value ||
+            reconcilingSubmission.value || requests.isDisposed
+        ) return false
         val client = current.client ?: return false
         submitting.value = true
-        client.sendParentOrder(SendParentOrderRequest(confirmation.order))
-            .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
+        client.getParentOrders().concatMap { parents ->
+            val pending = PendingSubmission(confirmation.order, parents.maxOfOrNull { it.id } ?: 0L)
+            Observable.defer { client.sendParentOrder(SendParentOrderRequest(confirmation.order)) }
+                .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
+                .map { SubmissionResult(Result.success(it)) }
+                .onErrorReturn { SubmissionResult(Result.failure(it), pending) }
+        }
             .subscribeOn(io).observeOn(main)
             .takeUntil(current.ended.toObservable<Unit>())
             .doFinally { submitting.value = false }
-            .subscribe({ accepted ->
+            .subscribe({ outcome ->
+                pendingSubmission = outcome.pending
+                reconcilingSubmission.value = outcome.pending != null
+                result(outcome.result)
                 refresh()
-                result(Result.success(accepted))
-            }, {
-                refresh()
-                result(Result.failure(it))
-            })
+            }, { result(Result.failure(it)) })
             .addTo(requests)
         return true
     }
@@ -252,8 +262,9 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
             if (current === account) {
                 val incomplete = rows.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
-                scheduleFallbackRefresh(incomplete)
                 orders.value = rows.map(::applyEvent)
+                reconcileSubmission(rows)
+                scheduleFallbackRefresh(incomplete || pendingSubmission != null)
                 loadFailed.value = incomplete
                 finishRefresh()
             }
@@ -268,6 +279,14 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         })
     }
 
+    private fun reconcileSubmission(rows: List<StopOrder>) {
+        val pending = pendingSubmission ?: return
+        if (rows.count(pending::matches) == 1) {
+            pendingSubmission = null
+            reconcilingSubmission.value = false
+        }
+    }
+
     private fun finishRefresh() {
         refreshing = false
         realtimeRefresh = null
@@ -277,7 +296,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private fun scheduleFallbackRefresh(retry: Boolean) {
         if (privateChannelsUnavailable || retry) {
             fallbackRefresh.set(
-                Observable.timer(30, TimeUnit.SECONDS)
+                Observable.timer(30, TimeUnit.SECONDS, io)
                     .observeOn(main)
                     .subscribeNext {
                         if (privateChannelsUnavailable) refresh() else onChildUpdates()
@@ -416,6 +435,15 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     enum class CancellationFailure { ACCOUNT_CHANGED, UNAVAILABLE, IN_PROGRESS, INELIGIBLE, REQUEST_FAILED }
 
     class CancellationConfirmation internal constructor(internal val account: Account, val acceptanceId: String)
+
+    private class SubmissionResult(val result: Result<String>, val pending: PendingSubmission? = null)
+
+    private class PendingSubmission(val order: StopOrderRequest, val lastParentId: Long) {
+        fun matches(row: StopOrder): Boolean =
+            row.parent.id > lastParentId && row.acceptanceId.isNotBlank() &&
+                row.parent.side == order.side.name && row.parent.size == order.size.toDouble() &&
+                row.triggerVerified && row.triggerPrice == order.triggerPrice
+    }
 
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
 

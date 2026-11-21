@@ -29,12 +29,15 @@ import org.mockito.Mockito.mock
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.IOException
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 
 class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
     private var parentOrderStatus = 200
+    private var parentId = 100L
+    private var loseSubmissionResponse = false
     private var parentState = "ACTIVE"
     private var size = 0.01
     private var executedSize = 0.0
@@ -63,7 +66,7 @@ class StopOrderServiceTest {
         assertTrue(service.submit(service.confirmation(stopRequest())) { received += it.getOrThrow() })
         serviceScheduler.advanceTimeBy(20, SECONDS)
         assertEquals(listOf("acceptance-1"), received)
-        val request = requests.first()
+        val request = requests.single { it.method == "POST" }
         assertEquals("POST", request.method)
         assertEquals("/v1/me/sendparentorder", request.url.encodedPath)
         assertJsonBody(request, """
@@ -76,6 +79,58 @@ class StopOrderServiceTest {
         assertEquals(StopOrderStatus.WAITING, order.status)
         assertTrue(order.canCancel)
         assertTrue(requests.any { it.url.queryParameter("parent_order_state") == "ACTIVE" })
+    }
+
+    @Test
+    fun lostSubmissionResponseBlocksResendingUntilNewMatchingOrderIsListed() {
+        val service = service()
+        val confirmation = service.confirmation(stopRequest())
+        loseSubmissionResponse = true
+        val results = mutableListOf<Result<String>>()
+
+        assertTrue(service.submit(confirmation) { results += it })
+        assertFalse(service.submit(confirmation) { fail("Submitted while sending") })
+        serviceScheduler.advanceTimeBy(20, SECONDS)
+
+        assertTrue(results.single().isFailure)
+        assertTrue(service.reconcilingSubmission.value)
+        assertEquals(100L, service.orders.value.single().parent.id)
+        assertFalse(service.submit(confirmation) { fail("Submitted while reconciling") })
+
+        parentId = 101
+        size = 0.02
+        outstandingSize = size
+        serviceScheduler.advanceTimeBy(40, SECONDS)
+        assertTrue(service.reconcilingSubmission.value)
+        assertEquals(101L, service.orders.value.single().parent.id)
+
+        parentId = 102
+        size = 0.01
+        outstandingSize = size
+        serviceScheduler.advanceTimeBy(40, SECONDS)
+        assertFalse(service.reconcilingSubmission.value)
+        assertEquals(102L, service.orders.value.single().parent.id)
+        assertEquals(1, requests.count { it.method == "POST" })
+
+        loseSubmissionResponse = false
+        assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
+        serviceScheduler.triggerActions()
+        assertEquals("acceptance-1", results.last().getOrThrow())
+    }
+
+    @Test
+    fun failedPreflightDoesNotSendOrEnterReconciliation() {
+        val service = service()
+        parentOrderStatus = 503
+        val results = mutableListOf<Result<String>>()
+
+        assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
+        serviceScheduler.triggerActions()
+
+        assertTrue(results.single().isFailure)
+        assertFalse(service.submitting.value)
+        assertFalse(service.reconcilingSubmission.value)
+        assertTrue(requests.none { it.method == "POST" })
     }
 
     @Test
@@ -1053,7 +1108,10 @@ class StopOrderServiceTest {
         "/v1/board" -> 200 to """{"mid_price":0,"bids":[],"asks":[]}"""
         "/v1/me/getpositions" -> 200 to "[]"
         "/v1/me/getcollateral" -> 200 to """{"collateral":0}"""
-        "/v1/me/sendparentorder" -> 200 to """{"parent_order_acceptance_id":"acceptance-1"}"""
+        "/v1/me/sendparentorder" -> {
+            if (loseSubmissionResponse) throw IOException("Connection closed before receiving the response")
+            200 to """{"parent_order_acceptance_id":"acceptance-1"}"""
+        }
         "/v1/me/getparentorders" -> {
             assertEquals("FX_BTC_JPY", request.url.queryParameter("product_code"))
             val active = request.url.queryParameter("parent_order_state") == "ACTIVE"
@@ -1083,7 +1141,7 @@ class StopOrderServiceTest {
     }.map { it.url.encodedPath }
 
     private fun parentOrders() = """
-        [{"id":100,"parent_order_id":"parent-1","parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY",
+        [{"id":$parentId,"parent_order_id":"parent-1","parent_order_acceptance_id":"acceptance-${parentId - 99}","product_code":"FX_BTC_JPY",
           "parent_order_type":"STOP","parent_order_state":"$parentState","side":"SELL","size":$size,
           "executed_size":$executedSize,"outstanding_size":$outstandingSize,"cancel_size":0},
          {"parent_order_type":"STOP_LIMIT","product_code":"FX_BTC_JPY"},
