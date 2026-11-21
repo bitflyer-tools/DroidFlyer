@@ -101,4 +101,12 @@
             android:textSize="22sp"
             android:clickable="true"/>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/minimumOrderSizeMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:accessibilityLiveRegion="polite"
+        android:gravity="center"
+        android:visibility="gone"/>
 </LinearLayout>

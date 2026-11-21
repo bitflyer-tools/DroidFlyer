@@ -5,6 +5,7 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.bindTo
@@ -16,6 +17,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
@@ -45,7 +47,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         Observables.combineLatest(
             presenter.amount.asObservable(),
             presenter.isLoading.asObservable()
-        ) { amount, isLoading -> amount != 0.0 && !isLoading }
+        ) { amount, isLoading -> CryptoCfdOrderSize.isValid(amount) && !isLoading }
             .subscribeNext {
                 binding.buyButton.isEnabled = it
                 binding.sellButton.isEnabled = it
@@ -95,7 +97,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
                 presenter.clearPosition(confirmation, ::showCloseConfirmation)
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
     }
 
     private fun setupStyle() {

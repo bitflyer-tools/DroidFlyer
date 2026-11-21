@@ -23,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import org.mockito.kotlin.any
 import retrofit2.HttpException
 import retrofit2.Response
 
@@ -43,7 +44,7 @@ class MarketOrderPresenterTest {
 
         Mockito.`when`(apiClient.getCollateral()).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.empty())
         status = CurrentStatusService(apiClient, Observable.empty(), Observable.empty(), Observable.empty())
         presenter = MarketOrderPresenter(apiClient, status) { messages.add(it) }
@@ -56,9 +57,22 @@ class MarketOrderPresenterTest {
     }
 
     @Test
+    fun invalidQuantitiesDoNotSubmitMarketOrders() {
+        listOf(0.0001, -0.001, Double.NaN, Double.POSITIVE_INFINITY).forEach { size ->
+            presenter.amount.value = size
+            presenter.buy()
+            presenter.sell()
+        }
+        scheduler.triggerActions()
+
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(any())
+        assertFalse(presenter.isLoading.value)
+    }
+
+    @Test
     fun acceptanceIdReportsMarketBuyAcceptance() {
         stubAcceptance("BUY")
-        presenter.amount.value = 0.5
+        presenter.amount.value = 0.001
 
         presenter.buy()
         scheduler.triggerActions()
@@ -69,7 +83,7 @@ class MarketOrderPresenterTest {
     @Test
     fun acceptanceIdReportsMarketSellAcceptance() {
         stubAcceptance("SELL")
-        presenter.amount.value = 0.5
+        presenter.amount.value = 0.001
 
         presenter.sell()
         scheduler.triggerActions()
@@ -202,7 +216,7 @@ class MarketOrderPresenterTest {
         val newAccount = Mockito.mock(APIClientV1::class.java)
         Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
         Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
-        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         status.switchAccount(newAccount)
         scheduler.triggerActions()
         assertFalse(oldBoard.hasObservers())
@@ -252,7 +266,7 @@ class MarketOrderPresenterTest {
     }
 
     private fun stubAcceptance(side: String) {
-        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5)
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.001)
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
     }
 
