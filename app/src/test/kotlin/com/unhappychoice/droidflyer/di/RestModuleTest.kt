@@ -40,13 +40,15 @@ class RestModuleTest {
     private fun assertSharedClient() {
         val application = RuntimeEnvironment.getApplication() as DroidFlyerApplication
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
-        val socket = object : Socket(Manager(), "/", Manager.Options()) {
+        fun disconnectedSocket() = object : Socket(Manager(), "/", Manager.Options()) {
             override fun connect(): Socket = this
         }
         val graph = DI {
             import(applicationModule(application))
             import(activityModule(activity))
-            bindSingleton<RealtimeClient>(overrides = true) { RealtimeClient(instance(), instance(), socket) }
+            bindSingleton<RealtimeClient>(overrides = true) {
+                RealtimeClient(instance(), instance(), disconnectedSocket(), ::disconnectedSocket)
+            }
         }
 
         val status = graph.direct.instance<CurrentStatusService>()

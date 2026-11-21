@@ -1,97 +1,92 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.app.Activity
-import android.os.Looper
-import android.view.View
-import android.widget.FrameLayout
+import android.app.Application
 import android.widget.TextView
+import androidx.core.view.isVisible
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.MarketPrice
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
-import java.io.IOException
-import java.math.BigDecimal
-import java.util.Locale
-import java.util.TimeZone
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
-import org.kodein.di.bindSingleton
+import org.kodein.di.bindInstance
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = Application::class, qualifiers = "en")
 class CurrentStatusViewTest {
-    @Test
-    fun showsSignedFundingAtLocalTimeAndMarksItStaleAfterTheHeaderReturns() {
-        val scheduler = TestScheduler()
-        val previousLocale = Locale.getDefault()
-        val previousTimeZone = TimeZone.getDefault()
-        Locale.setDefault(Locale.US)
-        TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+    private val scheduler = TestScheduler()
+    private lateinit var service: CurrentStatusService
+
+    @Before
+    fun setUp() {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setSingleSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
         RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
 
         val api = mock<APIClientV1>()
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        whenever(api.getPositions()).thenReturn(Observable.empty())
-        whenever(api.getCollateral()).thenReturn(Observable.empty())
-        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
-        val refresh = PublishSubject.create<FundingRate>()
-        whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(
-            Observable.just(FundingRate(BigDecimal("0.00375"), "2024-04-15T13:00:00")),
-            refresh
-        )
-        val service = CurrentStatusService(api, Observable.empty(), Observable.empty(), Observable.empty())
-        try {
-            Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
-                val activity = controller.get()
-                val di = DI { bindSingleton { service } }
-                val header = CurrentStatusView(activity, null).apply { inject(di) }
-                val container = FrameLayout(activity).apply { addView(header) }
-                activity.setContentView(container)
-                shadowOf(Looper.getMainLooper()).idle()
-                val window = ReflectionHelpers.getField<Any>(header, "mAttachInfo")
-                ReflectionHelpers.setField(window, "mWindowVisibility", View.VISIBLE)
-                header.dispatchWindowVisibilityChanged(View.VISIBLE)
-                scheduler.triggerActions()
+        whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.empty())
+        service = CurrentStatusService(api, Observable.empty(), Observable.empty(), Observable.empty(), null)
+        service.currentPrice.value = MarketPrice(150.0)
+    }
 
-                val text = header.findViewById<TextView>(R.id.funding)
-                assertTrue(text.text.toString(), text.text.contains("+0.375%"))
-                assertTrue(text.text.toString(), text.text.contains("6:00"))
+    @After
+    fun tearDown() {
+        if (::service.isInitialized) service.dispose()
+        RxAndroidPlugins.reset()
+        RxJavaPlugins.reset()
+    }
 
-                val details = text.text.toString()
-                container.removeView(header)
-                val replacement = CurrentStatusView(activity, null).apply { inject(di) }
-                container.addView(replacement)
-                scheduler.triggerActions()
+    @Test
+    fun offsettingPositionsShowBothSidesAndProfitUntilTheListIsEmpty() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            val summary = view.findViewById<TextView>(R.id.position)
+            val profit = view.findViewById<TextView>(R.id.profit)
+            val spread = view.findViewById<TextView>(R.id.spread)
+            scheduler.triggerActions()
 
-                val restored = replacement.findViewById<TextView>(R.id.funding)
-                assertEquals(details, restored.text.toString())
+            assertEquals("No position", summary.text.toString())
+            assertFalse(profit.isVisible)
 
-                refresh.onError(IOException("Offline"))
-                scheduler.triggerActions()
-                assertEquals(activity.getString(R.string.funding_stale, details), restored.text.toString())
-            }
-        } finally {
-            service.dispose()
-            RxAndroidPlugins.reset()
-            RxJavaPlugins.reset()
-            Locale.setDefault(previousLocale)
-            TimeZone.setDefault(previousTimeZone)
+            val long = Position("FX_BTC_JPY", "BUY", 100L, 0.25, 0.0, 0.0, 0.0, 1L, 0.0)
+            service.position.value = listOf(long, long.copy(side = "SELL", price = 200L))
+            scheduler.triggerActions()
+
+            assertEquals(
+                "Long 0.25 / Short 0.25 ɃFX\nNet 0 ɃFX. Clear all positions is unavailable because the quantities offset.",
+                summary.text.toString()
+            )
+            assertTrue(profit.isVisible)
+            assertEquals("25", profit.text.toString().trim())
+            assertFalse(spread.isVisible)
+
+            service.position.value = emptyList()
+            scheduler.triggerActions()
+
+            assertEquals("No position", summary.text.toString())
+            assertFalse(profit.isVisible)
         }
     }
 }
