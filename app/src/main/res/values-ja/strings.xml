@@ -30,7 +30,7 @@
     <string name="setting">設定</string>
     <string name="api_key_not_saved">APIキーが間違っています</string>
     <string name="api_key_saved">APIキーを保存しました</string>
-    <string name="order_executed">約定しました %1$s / %2$s / %3$f / %4$d</string>
+    <string name="order_executed">約定しました %1$s / %2$s / %3$f / %4$s</string>
     <string name="chart_loading">チャートを読み込み中</string>
     <string name="chart_load_error">チャートを読み込めませんでした。</string>
     <string name="chart_retry">再試行</string>

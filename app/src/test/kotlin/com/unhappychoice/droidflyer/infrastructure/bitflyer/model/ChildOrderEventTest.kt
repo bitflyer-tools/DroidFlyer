@@ -4,6 +4,7 @@ import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.winterbe.expekt.should
+import java.math.BigDecimal
 import org.junit.Test
 
 class ChildOrderEventTest {
@@ -38,7 +39,7 @@ class ChildOrderEventTest {
     fun parsesExecutionEvent() {
         val event = parse().first()
         event.childOrderAcceptanceId.should.equal("JRF20180101-000000-000001")
-        event.price.should.equal(1000000L)
+        event.price.should.equal(BigDecimal("1000000"))
         event.size.should.equal(0.01)
     }
 

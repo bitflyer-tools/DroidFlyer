@@ -45,11 +45,9 @@ internal class ClosePositionService(
             .onErrorResumeNext { error ->
                 Single.error(if (onFirstAccepted != null) InitialOrderSubmissionException(error) else error)
             }
-            .flatMap { response ->
-                val acceptanceId = response["child_order_acceptance_id"] as? String
-                check(!acceptanceId.isNullOrBlank()) { "Missing close order acceptance ID" }
+            .flatMap { acceptance ->
                 onFirstAccepted?.invoke()
-                executedSize(acceptanceId)
+                executedSize(acceptance.acceptanceId)
             }
             .flatMap { filled ->
                 check(filled > 0.0 && filled <= request.size) { "Invalid close order fill size" }
