@@ -1,9 +1,10 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import android.app.Application
+import android.os.Looper
 import android.view.ContextThemeWrapper
 import android.widget.FrameLayout
-import com.google.gson.JsonParseException
+import android.widget.TextView
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -15,8 +16,11 @@ import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -28,7 +32,11 @@ import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import retrofit2.HttpException
+import retrofit2.Response
+import com.google.android.material.R as MaterialR
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -40,6 +48,8 @@ class LimitOrderPresenterTest {
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")
 
+    private lateinit var container: FrameLayout
+
     @Before
     fun setUp() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
@@ -49,7 +59,7 @@ class LimitOrderPresenterTest {
         val themedContext = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.AppTheme)
         val context = scope.createContext(themedContext)
         val view = LimitOrderView(context, null)
-        FrameLayout(context).addView(view)
+        container = FrameLayout(context).apply { addView(view) }
         presenter.takeView(view)
         presenter.amount.value = 0.01
     }
@@ -69,6 +79,7 @@ class LimitOrderPresenterTest {
 
         verifyPendingOrder("BUY", 100)
         pending.onNext(ChildOrderAcceptance("test"))
+        assertEquals(container.context.getString(R.string.ordered_buy, 0.01, 100L), snackbarMessage())
         assertFalse(presenter.canSubmitOrder)
         pending.onComplete()
 
@@ -78,17 +89,24 @@ class LimitOrderPresenterTest {
     }
 
     @Test
-    fun sellCanBeSubmittedAgainAfterFailure() {
+    fun rejectedSellShowsFailureAndRestoresControls() {
         submit(LimitOrderSide.SELL, 200)
         submit(LimitOrderSide.SELL, 200)
         submit(LimitOrderSide.BUY, 100)
 
         verifyPendingOrder("SELL", 200)
-        pending.onError(JsonParseException("Invalid acceptance ID"))
+        assertNull(snackbarMessage())
+        pending.onError(HttpException(Response.error<Any>(400, "".toResponseBody())))
 
         assertTrue(presenter.canSubmitOrder)
+        assertEquals(container.context.getString(R.string.limit_order_failed), snackbarMessage())
         submit(LimitOrderSide.SELL, 201)
         verify(apiClient).sendChildOrder(request("SELL", 201))
+    }
+
+    private fun snackbarMessage(): String? {
+        shadowOf(Looper.getMainLooper()).idle()
+        return container.findViewById<TextView>(MaterialR.id.snackbar_text)?.text?.toString()
     }
 
     private fun submit(side: LimitOrderSide, price: Long) =

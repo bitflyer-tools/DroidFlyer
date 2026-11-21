@@ -1,6 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
-import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
+import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
@@ -54,7 +54,11 @@ class LimitOrderPresenter(val apiClient: APIClientV1) : ViewPresenter<LimitOrder
         Observable.defer { apiClient.sendChildOrder(request) }
             .subscribeOnIoObserveOnUI()
             .doFinally { isLoading.value = false }
-            .subscribeNextWithSnackBar(orderView, message)
+            .subscribe({
+                Snackbar.make(orderView, message, Snackbar.LENGTH_SHORT).show()
+            }, {
+                Snackbar.make(orderView, R.string.limit_order_failed, Snackbar.LENGTH_LONG).show()
+            })
             .addTo(bag)
     }
 }
