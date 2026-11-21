@@ -92,28 +92,25 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         ) return false
         val client = current.client ?: return false
         submitting.value = true
-        client.getParentOrders().concatMap { parents ->
-            val pending = PendingSubmission(confirmation.order, parents.maxOfOrNull { it.id } ?: 0L)
-            Observable.defer { client.sendParentOrder(SendParentOrderRequest(confirmation.order)) }
-                .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
-                .map { SubmissionResult(Result.success(it)) }
-                .onErrorReturn { error ->
-                    if (error is HttpException && error.code() in 400..499 && error.code() != 408) {
-                        SubmissionResult(Result.failure(SubmissionRejected(error)))
-                    } else {
-                        SubmissionResult(Result.failure(error), pending)
-                    }
+        Observable.defer { client.sendParentOrder(SendParentOrderRequest(confirmation.order)) }
+            .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
+            .map { SubmissionResult(Result.success(it)) }
+            .onErrorReturn { error ->
+                if (error is HttpException && error.code() in 400..499 && error.code() != 408) {
+                    SubmissionResult(Result.failure(SubmissionRejected(error)))
+                } else {
+                    SubmissionResult(Result.failure(error), PendingSubmission())
                 }
-        }
+            }
             .subscribeOn(io).observeOn(main)
             .takeUntil(current.ended.toObservable<Unit>())
             .doFinally { submitting.value = false }
-            .subscribe({ outcome ->
+            .subscribeNext { outcome ->
                 pendingSubmission = outcome.pending
                 reconcilingSubmission.value = outcome.pending != null
                 result(outcome.result)
                 refresh()
-            }, { result(Result.failure(it)) })
+            }
             .addTo(requests)
         return true
     }
@@ -283,8 +280,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                 val incomplete = rows.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
                 orders.value = rows.map(::applyEvent)
-                reconcileSubmission(rows)
-                scheduleFallbackRefresh(incomplete || pendingSubmission != null)
+                scheduleFallbackRefresh(incomplete)
                 loadFailed.value = incomplete
                 finishRefresh()
             }
@@ -297,11 +293,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                 finishRefresh()
             }
         })
-    }
-
-    private fun reconcileSubmission(rows: List<StopOrder>) {
-        val pending = pendingSubmission ?: return
-        if (rows.count(pending::matches) == 1) clearPendingSubmission()
     }
 
     private fun clearPendingSubmission() {
@@ -460,12 +451,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
 
     private class SubmissionResult(val result: Result<String>, val pending: PendingSubmission? = null)
 
-    private class PendingSubmission(val order: StopOrderRequest, val lastParentId: Long) {
-        fun matches(row: StopOrder): Boolean =
-            row.parent.id > lastParentId && row.acceptanceId.isNotBlank() &&
-                row.parent.side == order.side.name && row.parent.size == order.size.toDouble() &&
-                row.triggerVerified && row.triggerPrice == order.triggerPrice
-    }
+    private class PendingSubmission
 
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
 

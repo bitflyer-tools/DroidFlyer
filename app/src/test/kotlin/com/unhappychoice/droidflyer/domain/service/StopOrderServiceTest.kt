@@ -106,7 +106,7 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun lostSubmissionResponseBlocksResendingUntilNewMatchingOrderIsListed() {
+    fun matchingOrderDoesNotUnblockSubmissionAfterLostResponse() {
         val service = service()
         val confirmation = service.confirmation(stopRequest())
         loseSubmissionResponse = true
@@ -123,20 +123,22 @@ class StopOrderServiceTest {
         val confirmRecovery = requireNotNull(service.confirmSubmissionRecovery())
 
         parentId = 101
-        size = 0.02
-        outstandingSize = size
-        serviceScheduler.advanceTimeBy(40, SECONDS)
-        assertTrue(service.reconcilingSubmission.value)
-        assertEquals(101L, service.orders.value.single().parent.id)
+        service.onParentUpdates()
+        serviceScheduler.advanceTimeBy(20, SECONDS)
 
-        parentId = 102
-        size = 0.01
-        outstandingSize = size
-        serviceScheduler.advanceTimeBy(40, SECONDS)
-        assertFalse(service.reconcilingSubmission.value)
-        assertEquals(102L, service.orders.value.single().parent.id)
+        val matchingOrder = service.orders.value.single()
+        assertEquals(101L, matchingOrder.parent.id)
+        assertEquals("SELL", matchingOrder.parent.side)
+        assertEquals(0.01, matchingOrder.parent.size, 0.0)
+        assertEquals(5000000L, matchingOrder.triggerPrice)
+        assertTrue(matchingOrder.triggerVerified)
+        assertTrue(service.reconcilingSubmission.value)
+        assertFalse(service.submit(confirmation) { fail("Submitted after seeing a matching order") })
         assertEquals(1, requests.count { it.method == "POST" })
+
+        assertTrue(confirmRecovery())
         assertFalse(confirmRecovery())
+        assertFalse(service.reconcilingSubmission.value)
 
         loseSubmissionResponse = false
         assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
@@ -183,21 +185,6 @@ class StopOrderServiceTest {
 
         assertFalse(confirmRecovery())
         assertTrue(service.reconcilingSubmission.value)
-    }
-
-    @Test
-    fun failedPreflightDoesNotSendOrEnterReconciliation() {
-        val service = service()
-        parentOrderStatus = 503
-        val results = mutableListOf<Result<String>>()
-
-        assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
-        serviceScheduler.triggerActions()
-
-        assertTrue(results.single().isFailure)
-        assertFalse(service.submitting.value)
-        assertFalse(service.reconcilingSubmission.value)
-        assertTrue(requests.none { it.method == "POST" })
     }
 
     @Test

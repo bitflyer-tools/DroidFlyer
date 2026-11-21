@@ -135,10 +135,8 @@ class StopOrderView(context: Context) : BaseView(context, null) {
                 sides.clearCheck()
                 showMessage(context.getString(R.string.stop_accepted, it))
             }.onFailure {
-                when {
-                    it is StopOrderService.SubmissionRejected -> showMessage(context.getString(R.string.stop_submit_rejected))
-                    !stops.reconcilingSubmission.value -> showMessage(context.getString(R.string.stop_submit_check_failed))
-                    else -> Unit
+                if (it is StopOrderService.SubmissionRejected) {
+                    showMessage(context.getString(R.string.stop_submit_rejected))
                 }
             }
         }
