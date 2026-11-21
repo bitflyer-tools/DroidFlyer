@@ -20,6 +20,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          problem-matcher: true
 
       - name: Install Android compile SDK
         run: |
