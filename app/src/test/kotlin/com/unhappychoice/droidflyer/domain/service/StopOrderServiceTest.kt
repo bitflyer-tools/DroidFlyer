@@ -45,6 +45,7 @@ class StopOrderServiceTest {
     private var outstandingSize: Double? = size
     private var childOrders = "[]"
     private var childOrderStatus = 200
+    private var omitStopFromActiveParents = false
     private var activeParentPage: ((String?) -> String)? = null
     private var cancelStatus = 200
     private val serviceScheduler = TestScheduler()
@@ -626,6 +627,27 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun reconnectRestoresCancellationForFullyOutstandingActiveStop() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(12, SECONDS)
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+            realtime.privateChannelAvailability.onNext(false)
+            scheduler.advanceTimeBy(12, SECONDS)
+            assertCancellationBlocked(stops, confirmation)
+
+            realtime.privateChannelAvailability.onNext(true)
+            scheduler.advanceTimeBy(12, SECONDS)
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            assertTrue(stops.orders.value.single().canCancel)
+
+            stops.cancel(confirmation) { fail("Cancellation failed: $it") }
+            scheduler.triggerActions()
+            assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
     fun reconnectKeepsStopUnknownWhenRestOmitsUnfilledExpiredChild() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
@@ -638,7 +660,8 @@ class StopOrderServiceTest {
             realtime.privateChannelAvailability.onNext(false)
             scheduler.triggerActions()
             // The stop triggers and its unfilled market child expires during the gap.
-            // REST still reports the full parent quantity and omits the expired child.
+            // Recent history still reports the full quantity, but the parent is no longer listed as open.
+            omitStopFromActiveParents = true
             requests.clear()
             realtime.privateChannelAvailability.onNext(true)
             scheduler.advanceTimeBy(12, SECONDS)
@@ -1145,7 +1168,7 @@ class StopOrderServiceTest {
             when {
                 parentOrderStatus != 200 -> parentOrderStatus to ""
                 page != null && active -> 200 to page(request.url.queryParameter("before"))
-                page != null || (active && parentState != "ACTIVE") -> 200 to "[]"
+                page != null || (active && (parentState != "ACTIVE" || omitStopFromActiveParents)) -> 200 to "[]"
                 else -> 200 to parentOrders()
             }
         }

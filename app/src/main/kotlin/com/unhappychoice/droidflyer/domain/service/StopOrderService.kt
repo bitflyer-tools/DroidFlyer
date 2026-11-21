@@ -40,7 +40,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
-    private var channelGapObserved = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val refreshReads = StopOrderFallbackReads(io)
@@ -60,7 +59,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         pendingRealtimeRefresh = null
         privateChannelsUnavailable = true
         channelGapOpen = false
-        channelGapObserved = false
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -193,7 +191,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         }
         privateChannelsUnavailable = !ready
         channelGapOpen = !ready
-        channelGapObserved = channelGapObserved || !ready
         if (enabled) refresh(recoverTriggers = true)
     }
 
@@ -238,28 +235,35 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
-        val restWaitingAllowed = allowRestWaiting
+        val channelsReady = orderEventsReady
         refreshRequest.set(null)
         val request = loadActiveParents(client, reads = refreshReads).toList().toObservable().concatMap { active ->
             refreshReads.read { client.getParentOrders() }.map { recent ->
                 val history = recent.filter(::isCryptoCfdStop)
                 val byId = history.associateBy { it.parentOrderAcceptanceId }
-                val open = active.filter(::isCryptoCfdStop).map { byId[it.parentOrderAcceptanceId] ?: it }
+                val activeStops = active.filter(::isCryptoCfdStop)
+                // Recent history can still show ACTIVE after an unfilled child disappears.
+                val fullyOutstandingIds = activeStops.filter { it.isFullyOutstanding() }
+                    .map { it.parentOrderAcceptanceId }.toSet()
+                val open = activeStops.map { byId[it.parentOrderAcceptanceId] ?: it }
                 val pending = (open + history.filter { it.parentOrderState == "ACTIVE" })
                 (pending + history.filter { it.parentOrderState != "ACTIVE" }.take(10))
                     .distinctBy { it.parentOrderAcceptanceId }
+                    .map { it to (it.parentOrderAcceptanceId in fullyOutstandingIds) }
             }
         }.flatMap { rows ->
-            Observable.fromIterable(rows).concatMap { row ->
+            Observable.fromIterable(rows).concatMap { (row, activeAndOutstanding) ->
                 val cached = previous[row.parentOrderAcceptanceId]
                 val realtimeEvent = knownEvents[row.parentOrderAcceptanceId]
                 val event = realtimeEvent?.takeUnless { it == "ORDER" } ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, refreshReads).concatMap { stop ->
+                    val restWaitingConfirmed = channelsReady && activeAndOutstanding && parent.isFullyOutstanding()
                     val updated = stop.copy(
                         event = event,
                         childTermination = cached?.childTermination,
-                        waitingConfirmed = parent.hasWaitingEvidence(realtimeEvent, restWaitingAllowed)
+                        waitingConfirmed = realtimeEvent == "ORDER" || restWaitingConfirmed,
+                        restWaitingConfirmed = restWaitingConfirmed
                     )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
@@ -336,7 +340,10 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     }
 
     private fun invalidateWaitingOrder(order: StopOrder): StopOrder =
-        if (order.status == StopOrderStatus.WAITING) order.copy(triggerVerified = false) else order
+        order.copy(
+            triggerVerified = order.triggerVerified && order.status != StopOrderStatus.WAITING,
+            restWaitingConfirmed = false
+        )
 
     private fun loadActiveParents(
         client: APIClientV1,
@@ -361,16 +368,10 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
         return order.copy(
             event = event?.eventType?.takeUnless { it == "ORDER" } ?: order.event,
-            waitingConfirmed = order.parent.hasWaitingEvidence(event?.eventType, allowRestWaiting),
+            waitingConfirmed = event?.eventType == "ORDER" || (orderEventsReady && order.restWaitingConfirmed),
             childTermination = childTermination ?: order.childTermination
         )
     }
-
-    // An empty child list can also mean that an unfilled market child expired.
-    private val allowRestWaiting get() = !privateChannelsUnavailable && !channelGapObserved
-
-    private fun ParentOrder.hasWaitingEvidence(eventType: String?, allowRestWaiting: Boolean): Boolean =
-        eventType == "ORDER" || (allowRestWaiting && isFullyOutstanding())
 
     private fun ParentOrder.isFullyOutstanding(): Boolean =
         parentOrderState == "ACTIVE" && size > 0 && outstandingSize == size &&
@@ -387,7 +388,9 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         loadActiveParents(client)
             .filter { it.parentOrderAcceptanceId == order.acceptanceId && isCryptoCfdStop(it) }
             .take(1)
-            .concatMap { parent -> reconcileMarketChild(client, order.copy(parent = parent)) }
+            .concatMap { parent ->
+                reconcileMarketChild(client, order.copy(parent = parent, restWaitingConfirmed = parent.isFullyOutstanding()))
+            }
             .subscribeOn(io).observeOn(main)
             .map { verified ->
                 applyEvent(verified).canCancel && orders.value.any {
