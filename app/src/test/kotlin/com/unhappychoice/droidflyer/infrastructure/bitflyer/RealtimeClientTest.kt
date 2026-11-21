@@ -347,7 +347,10 @@ class RealtimeClientTest {
 
     private fun stopOrderApi(): APIClientV1 {
         val api = mock<APIClientV1>()
-        val parent = ParentOrder("parent-1", "acceptance-1", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0)
+        val parent = ParentOrder(
+            "parent-1", "acceptance-1", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0,
+            outstandingSize = 0.01, cancelSize = 0.0
+        )
         val details = ParentOrderDetails("SIMPLE", listOf(ParentOrderParameter("FX_BTC_JPY", "STOP", 5000000)))
         whenever(api.getPositions()).thenReturn(Observable.empty())
         whenever(api.getCollateral()).thenReturn(Observable.empty())

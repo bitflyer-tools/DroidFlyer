@@ -38,7 +38,7 @@ class StopOrderServiceTest {
     private var parentState = "ACTIVE"
     private var size = 0.01
     private var executedSize = 0.0
-    private var outstandingSize: Double? = null
+    private var outstandingSize: Double? = size
     private var childOrders = "[]"
     private var childOrderStatus = 200
     private var activeParentPage: ((String?) -> String)? = null
@@ -217,13 +217,28 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun initialRefreshKeepsStopUnknownWhenRestOmitsUnfilledExpiredChild() =
+        withRealtimeStops { stops, _, scheduler ->
+            outstandingSize = 0.0
+            stops.refresh()
+            scheduler.advanceTimeBy(12, SECONDS)
+
+            val order = stops.orders.value.single()
+            assertEquals("/v1/me/getchildorders", stopReadPaths().last())
+            assertEquals("ACTIVE", order.parent.parentOrderState)
+            assertEquals(StopOrderStatus.UNKNOWN, order.status)
+            assertCancellationBlocked(stops, stops.cancellationConfirmation(order))
+            assertFalse(stops.loadFailed.value)
+        }
+
+    @Test
     fun childUpdatesPaceReadsAndCoalesceDuringAnActiveRefresh() =
         withRealtimeStops { stops, realtime, scheduler ->
             activeParentPage = {
                 (1..2).joinToString(prefix = "[", postfix = "]") {
                     """{"id":$it,"parent_order_id":"parent-$it","parent_order_acceptance_id":"acceptance-$it",
                        "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE",
-                       "side":"SELL","size":0.01}"""
+                       "side":"SELL","size":0.01,"outstanding_size":0.01,"cancel_size":0}"""
                 }
             }
             stops.refresh()
@@ -264,7 +279,7 @@ class StopOrderServiceTest {
                 parentOrders().dropLast(1) +
                     """,{"id":2,"parent_order_id":"parent-2","parent_order_acceptance_id":"acceptance-2",
                         "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE",
-                        "side":"SELL","size":0.01}]"""
+                        "side":"SELL","size":0.01,"outstanding_size":0.01,"cancel_size":0}]"""
             }
 
             realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
@@ -413,7 +428,7 @@ class StopOrderServiceTest {
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
-            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
             childOrders = marketChild(0.0)
             scheduler.advanceTimeBy(38, SECONDS)
@@ -431,7 +446,7 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun cancelsRestVerifiedStopAfterPrivateChannelAuthenticationFails() =
+    fun blocksCancellationAfterPrivateChannelAuthenticationFailsAtStartup() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
             realtime.privateChannelAuthenticationFailed.onNext(Unit)
             scheduler.triggerActions()
@@ -439,17 +454,8 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(12, SECONDS)
 
             val order = stops.orders.value.single()
-            assertEquals(StopOrderStatus.WAITING, order.status)
-            assertTrue(order.canCancel)
-            requests.clear()
-
-            stops.cancel(stops.cancellationConfirmation(order)) { fail("Cancellation failed: $it") }
-            scheduler.triggerActions()
-
-            assertEquals(listOf("/v1/me/getparentorders", "/v1/me/getchildorders"), stopReadPaths().take(2))
-            val cancellation = requests[2]
-            assertEquals("/v1/me/cancelparentorder", cancellation.url.encodedPath)
-            assertJsonBody(cancellation, """{"parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY"}""")
+            assertEquals(StopOrderStatus.UNKNOWN, order.status)
+            assertCancellationBlocked(stops, stops.cancellationConfirmation(order))
         }
 
     @Test
@@ -460,6 +466,7 @@ class StopOrderServiceTest {
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
+            outstandingSize = null
             parentOrderStatus = 500
             realtime.privateChannelsDisconnected.onNext(Unit)
             scheduler.advanceTimeBy(4, SECONDS)
@@ -573,6 +580,7 @@ class StopOrderServiceTest {
     @Test
     fun newOrderEventAfterReconnectConfirmsWaitingStop() =
         withRealtimeStops { stops, realtime, scheduler ->
+            outstandingSize = null
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
             realtime.privateChannelsDisconnected.onNext(Unit)
@@ -645,6 +653,7 @@ class StopOrderServiceTest {
     @Test
     fun reconnectRecoversAnExpiredChildWhenRealtimeEvidenceArrives() =
         withRealtimeStops { stops, realtime, scheduler ->
+            outstandingSize = 0.0
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)
             realtime.privateChannelsDisconnected.onNext(Unit)
@@ -850,6 +859,7 @@ class StopOrderServiceTest {
         val order = service.orders.value.single()
         val confirmation = service.cancellationConfirmation(order)
         size = 0.02
+        outstandingSize = size
         service.refresh()
         serviceScheduler.advanceTimeBy(20, SECONDS)
         assertNotEquals(order, service.orders.value.single())

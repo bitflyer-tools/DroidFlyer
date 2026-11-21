@@ -33,8 +33,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
-    // REST can omit unfilled market children that expired during a realtime gap.
-    private var requireRealtimeOrder = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val refreshReads = StopOrderFallbackReads(io)
@@ -158,7 +156,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && channelGapOpen) return
         if ((!ready && !privateChannelsUnavailable) || (ready && channelGapOpen)) {
-            requireRealtimeOrder = true
             events.values.removeAll { it.eventType == "ORDER" }
         }
         privateChannelsUnavailable = !ready
@@ -207,7 +204,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
-        val requireOrder = requireRealtimeOrder
+        val channelsReady = !privateChannelsUnavailable
         refreshRequest.set(null)
         val request = loadActiveParents(client, reads = refreshReads).toList().toObservable().concatMap { active ->
             refreshReads.read { client.getParentOrders() }.map { recent ->
@@ -228,7 +225,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                     val updated = stop.copy(
                         event = event,
                         childTermination = cached?.childTermination,
-                        waitingConfirmed = !requireOrder || realtimeEvent == "ORDER"
+                        waitingConfirmed = parent.hasWaitingEvidence(realtimeEvent, channelsReady)
                     )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
@@ -238,7 +235,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                         parent.parentOrderState == "ACTIVE" &&
                             updated.status in waitingOrUnknown &&
                             (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed ||
-                                recover || (requireOrder && realtimeEvent != "ORDER")) ->
+                                recover || !updated.waitingConfirmed) ->
                             reconcileMarketChild(client, updated, refreshReads)
                         else -> Observable.just(updated)
                     }
@@ -325,13 +322,15 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
         return order.copy(
             event = event?.eventType?.takeUnless { it == "ORDER" } ?: order.event,
-            waitingConfirmed = !requireRealtimeOrder || event?.eventType == "ORDER" ||
-                (!privateChannelsUnavailable && order.parent.isFullyOutstanding()),
+            waitingConfirmed = order.parent.hasWaitingEvidence(event?.eventType, !privateChannelsUnavailable),
             childTermination = childTermination ?: order.childTermination
         )
     }
 
     // An empty child list can also mean that an unfilled market child expired.
+    private fun ParentOrder.hasWaitingEvidence(eventType: String?, channelsReady: Boolean): Boolean =
+        eventType == "ORDER" || (channelsReady && isFullyOutstanding())
+
     private fun ParentOrder.isFullyOutstanding(): Boolean =
         parentOrderState == "ACTIVE" && size > 0 && outstandingSize == size &&
             executedSize == 0.0 && cancelSize == 0.0
