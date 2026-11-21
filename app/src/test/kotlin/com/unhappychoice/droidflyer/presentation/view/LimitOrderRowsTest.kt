@@ -6,11 +6,10 @@ import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
 import org.junit.Test
-import java.util.concurrent.TimeUnit.MILLISECONDS
 
 class LimitOrderRowsTest {
     @Test
-    fun sampledBoardAndGroupingChangesPreserveTheFirstFiftyRowsPerSide() {
+    fun boardAndGroupingChangesAreGroupedOffThreadAndLimitedToFiftyRowsPerSide() {
         val levels = (1L..60L).flatMap { bucket ->
             listOf(Order(bucket * 10, bucket.toDouble()), Order(bucket * 10 + 1, 0.5))
         }
@@ -20,10 +19,9 @@ class LimitOrderRowsTest {
         val rows = observeLimitOrderRows(boards, groupingSizes, scheduler).test()
 
         boards.onNext(Board(0.0, levels, levels.reversed()))
-        scheduler.advanceTimeBy(299, MILLISECONDS)
         rows.assertNoValues()
 
-        scheduler.advanceTimeBy(1, MILLISECONDS)
+        scheduler.triggerActions()
         rows.assertValue(
             LimitOrderRows(
                 asks = levels.take(50),
