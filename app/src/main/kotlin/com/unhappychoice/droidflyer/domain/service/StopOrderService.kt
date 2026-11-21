@@ -6,6 +6,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import io.reactivex.Completable
@@ -35,6 +36,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val fallbackReads = StopOrderFallbackReads(io)
     private val events = LinkedHashMap<String, ParentOrderEvent>()
+    private val childTerminations = LinkedHashMap<String, ChildOrderEvent>()
 
     fun switchAccount(client: APIClientV1?) {
         val previous = account
@@ -46,6 +48,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         realtimeRefresh = null
         pendingRealtimeRefresh = null
         events.clear()
+        childTerminations.clear()
         orders.value = emptyList()
         loadFailed.value = false
         if (enabled) refresh(recoverTriggers = true)
@@ -130,6 +133,22 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         if (updates.isNotEmpty()) orders.value = orders.value.map(::applyEvent)
     }
 
+    fun onChildEvents(batch: List<ChildOrderEvent>) {
+        if (account.client == null) return
+
+        val updates = batch.filter {
+            it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() &&
+                it.terminationStatus() != null && !it.childOrderAcceptanceId.isNullOrBlank()
+        }
+        updates.forEach { event ->
+            val id = event.childOrderAcceptanceId
+            val previous = childTerminations[id]
+            if (previous == null || event.eventDate >= previous.eventDate) childTerminations[id] = event
+        }
+        while (childTerminations.size > 200) childTerminations.remove(childTerminations.keys.first())
+        if (updates.isNotEmpty()) orders.value = orders.value.map(::applyEvent)
+    }
+
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && privateChannelsUnavailable) return
         privateChannelsUnavailable = !ready
@@ -197,7 +216,9 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                     val updated = stop.copy(event = event, childTermination = cached?.childTermination)
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
-                            updated.isPartiallyExecuted -> reconcileMarketChild(client, updated, reads)
+                            updated.isPartiallyExecuted ||
+                            (realtime == RealtimeRefresh.CHILD && updated.childTermination != null) ->
+                            reconcileMarketChild(client, updated, reads)
                         updated.status == StopOrderStatus.WAITING &&
                             (cached?.triggerPrice == null || cached.triggerVerified == false || recover) ->
                             reconcileMarketChild(client, updated, reads)
@@ -281,8 +302,21 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
             }
     }
 
-    private fun applyEvent(order: StopOrder): StopOrder =
-        order.copy(event = events[order.acceptanceId]?.eventType ?: order.event)
+    private fun applyEvent(order: StopOrder): StopOrder {
+        val event = events[order.acceptanceId]
+        val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
+        return order.copy(
+            event = event?.eventType ?: order.event,
+            childTermination = childTermination ?: order.childTermination
+        )
+    }
+
+    private fun ChildOrderEvent.terminationStatus(): StopOrderStatus? = when (eventType) {
+        "CANCEL" -> StopOrderStatus.CANCELED
+        "EXPIRE" -> StopOrderStatus.EXPIRED
+        "ORDER_FAILED" -> StopOrderStatus.REJECTED
+        else -> null
+    }
 
     private fun verifyCancellation(client: APIClientV1, order: StopOrder): Completable =
         loadActiveParents(client)

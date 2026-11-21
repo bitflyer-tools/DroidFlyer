@@ -277,6 +277,55 @@ class StopOrderServiceTest {
         assertChildTermination("EXPIRE", "EXPIRED", StopOrderStatus.EXPIRED, 0.005)
 
     @Test
+    fun expiryBeforeTriggerRemainsVisibleWhenRestOmitsTheUnfilledChild() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+            val expiry = childExecution().copy(eventType = "EXPIRE")
+
+            realtime.childOrderEvents.onNext(listOf(expiry))
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+
+            realtime.parentOrderEvents.onNext(
+                listOf(triggerEvent().copy(childOrderAcceptanceId = expiry.childOrderAcceptanceId))
+            )
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.EXPIRED, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
+
+            scheduler.advanceTimeBy(20, SECONDS)
+            val order = stops.orders.value.single()
+            assertEquals(StopOrderStatus.EXPIRED, order.status)
+            assertEquals(0.0, order.parent.executedSize, 0.0)
+            assertFalse(order.canCancel)
+        }
+
+    @Test
+    fun matchingExpiryShowsImmediatelyAndRestRecoversEarlierPartialFill() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            val expiry = childExecution().copy(eventType = "EXPIRE")
+            realtime.parentOrderEvents.onNext(
+                listOf(triggerEvent().copy(childOrderAcceptanceId = expiry.childOrderAcceptanceId))
+            )
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+
+            childOrders = marketChild(0.005, "EXPIRED")
+            realtime.childOrderEvents.onNext(listOf(expiry))
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.EXPIRED, stops.orders.value.single().status)
+
+            scheduler.advanceTimeBy(20, SECONDS)
+            val order = stops.orders.value.single()
+            assertEquals(StopOrderStatus.EXPIRED, order.status)
+            assertEquals(0.005, order.parent.executedSize, 0.0)
+        }
+
+    @Test
     fun refreshRetainsChildTerminationWhenRestNoLongerReturnsTheChild() {
         childOrders = marketChild(0.005, "CANCELED")
         val service = service()

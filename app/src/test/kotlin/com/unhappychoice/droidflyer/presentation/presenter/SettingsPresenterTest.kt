@@ -179,6 +179,7 @@ class SettingsPresenterTest {
         expectedSavedCredentials = "" to ""
         val timer = TestScheduler()
         RxJavaPlugins.setComputationSchedulerHandler { timer }
+        RxJavaPlugins.setSingleSchedulerHandler { timer }
         val status = createStatus()
         assertEquals(listOf("/v1/board"), requestPaths())
         val scope = MortarScope.buildRootScope()
