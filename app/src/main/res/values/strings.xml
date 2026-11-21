@@ -28,6 +28,8 @@
     <string name="cleared_all_positions">Cleared all positions</string>
     <string name="minimum_order_size">Minimum order quantity is %1$s BTC-CFD</string>
     <string name="market_order_accepted">Market order accepted</string>
+    <string name="order_acceptance_uncertain">Order acceptance could not be confirmed. Check your orders before submitting again.</string>
+    <string name="limit_order_failed">Could not submit limit order</string>
     <string name="market_order_failed">Could not submit market order</string>
     <string name="ordered_buy">Ordered BUY / %1$f / %2$d</string>
     <string name="ordered_sell">Ordered SELL / %1$f / %2$d</string>

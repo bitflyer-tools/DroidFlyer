@@ -57,11 +57,12 @@ class MarketOrderPresenterTest {
     }
 
     @Test
-    fun belowMinimumDoesNotSubmitMarketOrders() {
-        presenter.amount.value = 0.0001
-
-        presenter.buy()
-        presenter.sell()
+    fun invalidQuantitiesDoNotSubmitMarketOrders() {
+        listOf(0.0001, -0.001, Double.NaN, Double.POSITIVE_INFINITY).forEach { size ->
+            presenter.amount.value = size
+            presenter.buy()
+            presenter.sell()
+        }
         scheduler.triggerActions()
 
         Mockito.verify(apiClient, Mockito.never()).sendChildOrder(any())
@@ -91,17 +92,22 @@ class MarketOrderPresenterTest {
     }
 
     @Test
-    fun invalidBuyAcceptanceReportsFailureAndRestoresControls() {
+    fun invalidBuyAcceptancePromptsOrderCheckAndRestoresControls() {
         presenter.amount.value = 0.5
 
-        assertRejected("BUY", error = JsonParseException("Invalid acceptance ID"), submit = presenter::buy)
+        assertSubmissionFailure(
+            "BUY",
+            error = JsonParseException("Invalid acceptance ID"),
+            message = R.string.order_acceptance_uncertain,
+            submit = presenter::buy
+        )
     }
 
     @Test
     fun rejectedSellReportsFailureAndRestoresControls() {
         presenter.amount.value = 0.5
 
-        assertRejected("SELL", submit = presenter::sell)
+        assertSubmissionFailure("SELL", submit = presenter::sell)
     }
 
     @Test
@@ -111,7 +117,25 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
             .thenReturn(Observable.just(status.position.value))
 
-        assertRejected("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+        assertSubmissionFailure("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+    }
+
+    @Test
+    fun uncertainMarketOrderPromptsOrderCheck() {
+        presenter.amount.value = 0.5
+
+        assertSubmissionFailure("BUY", error = orderHttpError(503), message = R.string.order_acceptance_uncertain,
+            submit = presenter::buy)
+    }
+
+    @Test
+    fun uncertainCloseOrderPromptsOrderCheck() {
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
+            .thenReturn(Observable.just(status.position.value))
+
+        assertSubmissionFailure("SELL", timeInForce = "IOC", error = orderHttpError(503),
+            message = R.string.order_acceptance_uncertain, submit = ::confirmPositionClose)
     }
 
     @Test
@@ -119,7 +143,7 @@ class MarketOrderPresenterTest {
         stubClose("SELL", "BUY", positionSize = 12.0)
         val nextOrder = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 2.0, timeInForce = "IOC")
         Mockito.`when`(apiClient.sendChildOrder(nextOrder)).thenReturn(
-            Observable.error(HttpException(Response.error<Any>(400, "".toResponseBody())))
+            Observable.error(orderHttpError(400))
         )
 
         confirmPositionClose()
@@ -208,10 +232,11 @@ class MarketOrderPresenterTest {
         assertEquals(listOf(R.string.market_order_accepted), messages)
     }
 
-    private fun assertRejected(
+    private fun assertSubmissionFailure(
         side: String,
         timeInForce: String = "GTC",
-        error: Throwable = HttpException(Response.error<Any>(400, "".toResponseBody())),
+        error: Throwable = orderHttpError(400),
+        message: Int = R.string.market_order_failed,
         submit: () -> Unit
     ) {
         val response = PublishSubject.create<ChildOrderAcceptance>()
@@ -227,8 +252,11 @@ class MarketOrderPresenterTest {
         response.onError(error)
 
         loading.assertValues(false, true, false)
-        assertEquals(listOf(R.string.market_order_failed), messages)
+        assertEquals(listOf(message), messages)
     }
+
+    private fun orderHttpError(statusCode: Int) =
+        HttpException(Response.error<Any>(statusCode, "".toResponseBody()))
 
     private fun confirmPositionClose() {
         presenter.clearPosition(requireNotNull(presenter.positionCloseOrder())) {
