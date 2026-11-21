@@ -14,10 +14,12 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.subjects.CompletableSubject
 import mortar.ViewPresenter
 
 class SettingsPresenter internal constructor(
@@ -36,11 +38,11 @@ class SettingsPresenter internal constructor(
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
     private val bag = CompositeDisposable()
-    private var saving = false
+    private var pendingSave: CompletableSubject? = null
 
     fun loadCredentials(onLoaded: () -> Unit = {}): Disposable =
-        Observable.fromCallable(preference::read)
-            .subscribeOnIoObserveOnUI()
+        (pendingSave ?: Completable.complete())
+            .andThen(Observable.fromCallable(preference::read).subscribeOnIoObserveOnUI())
             .subscribeNext { credentials ->
                 key.value = credentials.key
                 secret.value = credentials.secret
@@ -53,12 +55,16 @@ class SettingsPresenter internal constructor(
     }
 
     fun save() {
-        if (saving) return
+        if (pendingSave != null) return
         bag.clear()
-        saving = true
         val snackbarAnchor = view.rootView.findViewById<View>(android.R.id.content) ?: view
+        val completion = CompletableSubject.create()
+        pendingSave = completion
         saveCredentials()
-            .doFinally { saving = false }
+            .doFinally {
+                pendingSave = null
+                completion.onComplete()
+            }
             .withErrorSnackBar(snackbarAnchor, snackbarAnchor.context.getString(R.string.api_key_not_saved))
             .subscribeNextWithSnackBar(snackbarAnchor, snackbarAnchor.context.getString(R.string.api_key_saved))
             .addTo(bag)

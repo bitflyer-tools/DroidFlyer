@@ -113,6 +113,40 @@ class SettingsViewTest {
         }
     }
 
+    @Test
+    fun reopeningDuringApplyWaitsForTheSavedCredentials() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
+
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+            settings.saveButton.performClick()
+            host.setContentView(LinearLayout(host))
+
+            val loadIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { loadIo }
+            val reopened = host.openSettings()
+            loadIo.triggerActions()
+            assertFalse(reopened.apiTokenTextView.isEnabled)
+            assertFalse(reopened.apiSecretTextView.isEnabled)
+            assertFalse(reopened.saveButton.isEnabled)
+            assertEquals("", reopened.apiTokenTextView.text.toString())
+
+            saveIo.triggerActions()
+            loadIo.triggerActions()
+
+            assertEquals("new-key", reopened.apiTokenTextView.text.toString())
+            assertEquals("new-secret", reopened.apiSecretTextView.text.toString())
+            assertTrue(reopened.apiTokenTextView.isEnabled)
+            assertTrue(reopened.apiSecretTextView.isEnabled)
+            assertTrue(reopened.saveButton.isEnabled)
+            assertEquals(1, host.applyRequests)
+        }
+    }
+
     private fun assertSettingsReattachment(host: SettingsHost, settings: SettingsViewBinding, cycle: Int) {
         val presenter = settings.root.presenter
         val parent = settings.root.parent as ViewGroup
