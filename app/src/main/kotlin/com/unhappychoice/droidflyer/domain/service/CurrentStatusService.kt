@@ -17,6 +17,7 @@ import io.reactivex.subjects.CompletableSubject
 import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -54,6 +55,7 @@ class CurrentStatusService internal constructor(
     private var accountChanged = CompletableSubject.create()
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val realtimeBoardRevision = AtomicLong()
+    private val fundingStatus = AtomicReference(FundingStatus())
 
     init {
         executions
@@ -113,6 +115,32 @@ class CurrentStatusService internal constructor(
             previous.onComplete()
         }
     }
+
+    internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
+        Observable.defer {
+            visibility.distinctUntilChanged()
+                .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
+                .map(::updateFundingStatus)
+                .startWith(fundingStatus.get())
+                .distinctUntilChanged()
+        }
+
+    private fun updateFundingStatus(update: FundingStatus): FundingStatus {
+        do {
+            val previous = fundingStatus.get()
+            val next = if (update.funding != null) update else previous.copy(stale = previous.funding != null)
+            if (fundingStatus.compareAndSet(previous, next)) return next
+        } while (true)
+    }
+
+    private fun pollFunding(): Observable<FundingStatus> =
+        Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }
+            .firstOrError()
+            .map { FundingStatus(it.toNextFunding()) }
+            .onErrorReturnItem(FundingStatus())
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .repeatWhen { it.delay(1, TimeUnit.MINUTES) }
 
     private fun refreshStatus(): Completable = Completable.ambArray(
         accountChanged,
