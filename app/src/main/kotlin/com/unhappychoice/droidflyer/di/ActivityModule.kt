@@ -21,7 +21,7 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bind<CurrentStatusService> {
         eagerSingleton {
             val credentials = instance<APITokenPreference>().read()
-            CurrentStatusService(instance(), instance(), instance<APIClient>().client(credentials))
+            CurrentStatusService(instance(), instance(), instance<APIClient>().privateStatusClient(credentials))
         }
     }
     bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
