@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
@@ -32,6 +33,10 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
 
         presenter.orders
             .subscribeNext { orderAdapter.updateOrders(it) }
+            .addTo(bag)
+
+        presenter.ordersMayBeIncomplete
+            .subscribeNext { binding.orderLimitWarning.isVisible = it }
             .addTo(bag)
 
         presenter.cancellationFailures

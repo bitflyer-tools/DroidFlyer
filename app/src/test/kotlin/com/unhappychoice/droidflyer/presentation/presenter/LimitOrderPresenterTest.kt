@@ -57,7 +57,7 @@ class LimitOrderPresenterTest {
         val view = LimitOrderView(context, null)
         FrameLayout(context).addView(view)
         presenter.takeView(view)
-        presenter.amount.value = 0.01
+        presenter.amount.value = 0.001
     }
 
     @After
@@ -65,6 +65,18 @@ class LimitOrderPresenterTest {
         scope.destroy()
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun belowMinimumDoesNotSubmitLimitOrders() {
+        presenter.amount.value = 0.0001
+
+        assertFalse(presenter.canSubmitOrder)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.SELL, 200)
+
+        verify(apiClient, never()).sendChildOrder(any())
+        assertFalse(presenter.isLoading.value)
     }
 
     @Test
@@ -110,7 +122,7 @@ class LimitOrderPresenterTest {
         val newAccount = mock<APIClientV1>()
         whenever(newAccount.getPositions()).thenReturn(Observable.empty())
         whenever(newAccount.getCollateral()).thenReturn(Observable.empty())
-        whenever(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(newAccount.sendChildOrder(any())).thenReturn(Observable.empty())
         state.switchAccount(newAccount)
         sessionEnd.assertComplete()
@@ -146,5 +158,5 @@ class LimitOrderPresenterTest {
     }
 
     private fun request(side: String, price: Long) =
-        SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, 0.01)
+        SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side, price, 0.001)
 }

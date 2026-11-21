@@ -44,13 +44,15 @@ class RestModuleTest {
     private fun assertClientBindings() {
         val application = RuntimeEnvironment.getApplication() as DroidFlyerApplication
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
-        val socket = object : Socket(Manager(), "/", Manager.Options()) {
+        fun disconnectedSocket() = object : Socket(Manager(), "/", Manager.Options()) {
             override fun connect(): Socket = this
         }
         val graph = DI {
             import(applicationModule(application))
             import(activityModule(activity))
-            bindSingleton<RealtimeClient>(overrides = true) { RealtimeClient(instance(), instance(), socket) }
+            bindSingleton<RealtimeClient>(overrides = true) {
+                RealtimeClient(instance(), instance(), disconnectedSocket(), ::disconnectedSocket)
+            }
         }
 
         val status = graph.direct.instance<CurrentStatusService>()
@@ -64,7 +66,7 @@ class RestModuleTest {
             val accountClient = mock<APIClientV1>()
             whenever(accountClient.getPositions()).thenReturn(Observable.empty())
             whenever(accountClient.getCollateral()).thenReturn(Observable.empty())
-            whenever(accountClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+            whenever(accountClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
             status.switchAccount(accountClient)
             val confirmation = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
             assertSame(accountClient, confirmation.order.session.client)

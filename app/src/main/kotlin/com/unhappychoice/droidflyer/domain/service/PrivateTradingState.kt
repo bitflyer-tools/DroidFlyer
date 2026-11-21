@@ -29,6 +29,10 @@ internal class PrivateTradingState(
     private var session = Session(client)
     private var disposed = false
 
+    val ordersMayBeIncomplete = orders.asObservable()
+        .map { it.size >= ACTIVE_ORDER_LIMIT }
+        .distinctUntilChanged()
+
     fun orderRows(): Observable<List<OrderRow>> =
         orders.asObservable().map { currentOrders ->
             val current = session
@@ -40,15 +44,19 @@ internal class PrivateTradingState(
         session.ended.onComplete()
     }
 
-    fun switchAccount(client: APIClientV1?) {
+    fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
         if (disposed) return
 
         val previous = session
         session = Session(client)
         orders.value = emptyList()
-        previous.ended.onComplete()
         position.value = emptyList()
         balance.value = 0.0
+        try {
+            onSwitched()
+        } finally {
+            previous.ended.onComplete()
+        }
     }
 
     fun refresh(): Completable = Completable.defer {
@@ -60,9 +68,9 @@ internal class PrivateTradingState(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
             client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
                 .publishResponse { if (!disposed && current === session) balance.value = it },
-            client.getChildOrders("FX_BTC_JPY")
+            client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
-        )
+        ).takeUntil(current.ended)
     }
 
     fun prepareOrder(request: SendChildOrderRequest): NewOrder? =
@@ -125,6 +133,10 @@ internal class PrivateTradingState(
 
     class NewOrder internal constructor(internal val session: Session, val request: SendChildOrderRequest) {
         val sessionEnded: Completable get() = session.ended
+    }
+
+    companion object {
+        private const val ACTIVE_ORDER_LIMIT = 500
     }
 
     data class OrderRow(internal val session: Session, val order: ChildOrder)

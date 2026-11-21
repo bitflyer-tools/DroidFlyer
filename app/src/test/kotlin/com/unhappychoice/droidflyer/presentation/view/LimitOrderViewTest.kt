@@ -65,16 +65,7 @@ class LimitOrderViewTest {
 
     @Test
     fun confirmationsKeepTheirTermsAndAreDismissedOnAccountSwitch() {
-        Robolectric.buildActivity(LimitOrderHost::class.java).setup().use { controller ->
-            val host = controller.get()
-            host.setTheme(R.style.AppTheme)
-            val view = host.layoutInflater.inflate(R.layout.limit_order_view, null) as LimitOrderView
-            view.inject(DI {
-                bindInstance { presenter }
-                bindInstance { status }
-            })
-            host.setContentView(view)
-
+        withLimitView { view ->
             presenter.amount.value = 0.01
             val previousSell = view.confirmation(R.id.askList, R.string.sell, 200, 0.01)
             val buy = view.confirmation(R.id.bidList, R.string.buy, 100, 0.01)
@@ -102,6 +93,36 @@ class LimitOrderViewTest {
         }
     }
 
+    @Test
+    @Config(sdk = [30])
+    fun obscuredConfirmationDoesNotSubmitAndClearTapSubmitsOnce() {
+        withLimitView { view ->
+            presenter.amount.value = 0.01
+            val dialog = view.confirmation(R.id.bidList, R.string.buy, 100, 0.01)
+            val button = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+            val window = requireNotNull(dialog.window)
+
+            window.tapWithObscuration(button)
+            verify(orderClient, never()).sendChildOrder(any())
+            window.tap(button)
+            verify(orderClient).sendChildOrder(request("BUY", 100, 0.01))
+        }
+    }
+
+    private fun withLimitView(test: (LimitOrderView) -> Unit) {
+        Robolectric.buildActivity(LimitOrderHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            host.setTheme(R.style.AppTheme)
+            val view = host.layoutInflater.inflate(R.layout.limit_order_view, null) as LimitOrderView
+            view.inject(DI {
+                bindInstance { presenter }
+                bindInstance { status }
+            })
+            host.setContentView(view)
+            test(view)
+        }
+    }
+
     private fun LimitOrderView.confirmation(list: Int, label: Int, price: Long, size: Double): AlertDialog {
         val adapter = findViewById<RecyclerView>(list).adapter as BoardAdapter
         adapter.clickItems.onNext(Order(price, 1.0))
@@ -119,7 +140,7 @@ class LimitOrderViewTest {
     private fun mockAccount() = mock<APIClientV1>().also {
         whenever(it.getPositions()).thenReturn(Observable.empty())
         whenever(it.getCollateral()).thenReturn(Observable.empty())
-        whenever(it.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(it.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(it.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
     }
 

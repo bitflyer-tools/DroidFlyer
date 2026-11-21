@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.NewOrder
 import com.unhappychoice.droidflyer.extension.Variable
@@ -22,7 +23,7 @@ class LimitOrderPresenter internal constructor(private val state: PrivateTrading
     val groupingSize = Variable(1L)
 
     val canSubmitOrder: Boolean
-        get() = !isLoading.value && amount.value != 0.0
+        get() = !isLoading.value && CryptoCfdOrderSize.isValid(amount.value)
 
     private val groupingSizes = listOf(1L, 10L, 50L, 100L, 250L, 500L, 1000L, 2500L, 5000L)
     private val bag = CompositeDisposable()
@@ -44,7 +45,7 @@ class LimitOrderPresenter internal constructor(private val state: PrivateTrading
 
     internal fun prepareOrder(side: LimitOrderSide, price: Long): LimitOrderConfirmation? {
         if (!canSubmitOrder) return null
-        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, Math.abs(amount.value))
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, amount.value)
         return state.prepareOrder(request)?.let { LimitOrderConfirmation(side, it) }
     }
 

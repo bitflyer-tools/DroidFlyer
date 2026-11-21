@@ -17,6 +17,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
@@ -97,7 +98,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             .setMessage("${context.getString(confirmation.side.label)} / ${order.request.price} / ${order.request.size}")
             .setPositiveButton(R.string.ok) { _, _ -> presenter.submitOrder(confirmation) }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
         confirmationDialog = dialog
         val sessionEnd = order.sessionEnded.subscribe { dialog.dismiss() }
         dialog.setOnDismissListener {
