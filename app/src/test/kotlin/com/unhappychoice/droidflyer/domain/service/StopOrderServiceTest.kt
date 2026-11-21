@@ -217,7 +217,9 @@ class StopOrderServiceTest {
             assertTrue(stops.loadFailed.value)
 
             parentOrderStatus = 200
-            scheduler.advanceTimeBy(6, SECONDS)
+            scheduler.advanceTimeBy(29, SECONDS)
+            assertTrue(stops.loadFailed.value)
+            scheduler.advanceTimeBy(9, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
             assertTrue(stops.orders.value.single().canCancel)
             assertFalse(stops.loadFailed.value)
@@ -226,8 +228,40 @@ class StopOrderServiceTest {
             scheduler.triggerActions()
             assertTrue(stops.orders.value.single().canCancel)
             val requestCount = requests.size
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(60, SECONDS)
             assertEquals(requestCount, requests.size)
+        }
+
+    @Test
+    fun disconnectedRefreshPacesListsDetailsAndChildLookupsAcrossManyStops() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            activeParentPage = { before ->
+                if (before == null) (201 downTo 102).joinToString(prefix = "[", postfix = "]") {
+                    """{"id":$it,"parent_order_id":"parent-$it","parent_order_acceptance_id":"acceptance-$it",
+                       "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE","side":"SELL","size":0.01}"""
+                } else parentOrders()
+            }
+            realtime.privateChannelsDisconnected.onNext(Unit)
+            scheduler.triggerActions()
+            stops.refresh()
+            scheduler.triggerActions()
+            val initialRequests = stopReadPaths().size
+            scheduler.advanceTimeBy(299, SECONDS)
+
+            assertEquals(74, stopReadPaths().size - initialRequests)
+            assertEquals(
+                listOf("/v1/me/getparentorders", "/v1/me/getparentorders", "/v1/me/getparentorders",
+                    "/v1/me/getparentorder", "/v1/me/getchildorders"),
+                stopReadPaths().take(5)
+            )
+            assertTrue(stops.orders.value.any { it.canCancel })
+
+            realtime.privateChannelsReady.onNext(Unit)
+            scheduler.triggerActions()
+            assertEquals(101, stops.orders.value.size)
+            val requestCount = stopReadPaths().size
+            scheduler.advanceTimeBy(60, SECONDS)
+            assertEquals(requestCount, stopReadPaths().size)
         }
 
     @Test
@@ -238,7 +272,7 @@ class StopOrderServiceTest {
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
             realtime.privateChannelAuthenticationFailed.onNext(Unit)
-            scheduler.triggerActions()
+            scheduler.advanceTimeBy(8, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
             assertTrue(stops.orders.value.single().canCancel)
             assertFalse(stops.loadFailed.value)
@@ -246,7 +280,7 @@ class StopOrderServiceTest {
             childOrders = marketChild(0.0)
             val failures = mutableListOf<CancellationFailure>()
             stops.cancel(confirmation) { failures += it }
-            scheduler.triggerActions()
+            scheduler.advanceTimeBy(12, SECONDS)
 
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
@@ -277,15 +311,16 @@ class StopOrderServiceTest {
     fun cancellationSkipsPostWhenChildStatusCannotBeVerified() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            realtime.privateChannelAuthenticationFailed.onNext(Unit)
             scheduler.triggerActions()
+            realtime.privateChannelAuthenticationFailed.onNext(Unit)
+            scheduler.advanceTimeBy(8, SECONDS)
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
             childOrderStatus = 500
             val failures = mutableListOf<CancellationFailure>()
             stops.cancel(confirmation) { failures += it }
-            scheduler.triggerActions()
+            scheduler.advanceTimeBy(12, SECONDS)
 
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertFalse(stops.orders.value.single().canCancel)
@@ -578,7 +613,6 @@ class StopOrderServiceTest {
             }
         }
         "/v1/me/getparentorder" -> {
-            assertEquals("parent-1", request.url.queryParameter("parent_order_id"))
             200 to """{"order_method":"SIMPLE","parameters":[{"product_code":"FX_BTC_JPY",
                     "condition_type":"STOP","trigger_price":5000000}]}"""
         }
@@ -590,6 +624,10 @@ class StopOrderServiceTest {
         }
         else -> error("Unexpected request ${request.url}")
     }
+
+    private fun stopReadPaths() = requests.filter {
+        it.url.encodedPath.startsWith("/v1/me/getparent") || it.url.queryParameter("parent_order_id") != null
+    }.map { it.url.encodedPath }
 
     private fun parentOrders() = """
         [{"id":100,"parent_order_id":"parent-1","parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY",
