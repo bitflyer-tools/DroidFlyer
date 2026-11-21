@@ -51,9 +51,9 @@ internal class ClosePositionService(
                     } else error
                 )
             }
-            .flatMap { acceptanceId ->
+            .flatMap { acceptance ->
                 onFirstAccepted?.invoke()
-                executedSize(acceptanceId)
+                executedSize(acceptance.acceptanceId)
             }
             .flatMap { filled ->
                 check(filled > 0.0 && filled <= request.size) { "Invalid close order fill size" }

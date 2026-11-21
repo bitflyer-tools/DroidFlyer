@@ -13,7 +13,7 @@ To build a debug APK, run `./gradlew assembleDebug`. The APK is written to `app/
 Run the same build and test tasks used by [CircleCI](.circleci/config.yml) before opening a pull request:
 
 ```sh
-./gradlew assembleDebugUnitTest
+./gradlew assembleDebug assembleDebugUnitTest
 ./gradlew jacoco
 ```
 
