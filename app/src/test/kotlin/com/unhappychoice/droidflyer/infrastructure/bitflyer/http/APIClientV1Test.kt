@@ -69,14 +69,14 @@ class APIClientV1Test {
     }
 
     @Test
-    fun getExecutionPricesRequestsTheProductAndCountAndParsesPrices() {
+    fun getExecutionPricesRequestsTheCursorAndRetainsTimestamps() {
         val api = apiReturning(
-            "/v1/executions?product_code=FX_BTC_JPY&count=500",
-            """[{"id":123,"price":9876543.5},{"id":122,"price":9876543}]"""
+            "/v1/executions?product_code=FX_BTC_JPY&count=500&before=124",
+            """[{"id":123,"price":9876543.5,"exec_date":"2025-01-01T00:01:02.1234567"}]"""
         )
 
-        api.getExecutionPrices("FX_BTC_JPY", 500).test()
-            .assertResult(listOf(ExecutionPrice(123, 9876543.5), ExecutionPrice(122, 9876543.0)))
+        api.getExecutionPrices("FX_BTC_JPY", 500, before = 124).test()
+            .assertResult(listOf(ExecutionPrice(123, 9876543.5, "2025-01-01T00:01:02.1234567")))
     }
 
     @Test
