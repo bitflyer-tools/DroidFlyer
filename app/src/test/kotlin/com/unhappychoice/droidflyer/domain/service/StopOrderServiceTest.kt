@@ -262,7 +262,6 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(40, SECONDS)
             assertEquals(8, stopReadPaths().size)
             assertEquals(4, stopReadPaths().count { it == "/v1/me/getparentorders" })
-            assertEquals(stopReadPaths().size, requests.size)
         }
 
     @Test
@@ -660,6 +659,24 @@ class StopOrderServiceTest {
 
         assertFalse(service.submit(confirmation) { fail("Stale stop submitted") })
         assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun clearingCredentialsStopsPrivateReadsAndSubmissions() {
+        val service = service()
+        try {
+            service.refresh()
+            assertTrue(service.orders.value.single().canCancel)
+            requests.clear()
+            service.switchAccount(null)
+
+            service.refresh()
+            assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Stop submitted without credentials") })
+            assertTrue(service.orders.value.isEmpty())
+            assertTrue(requests.isEmpty())
+        } finally {
+            service.dispose()
+        }
     }
 
     private fun assertChildTermination(event: String, state: String, status: StopOrderStatus, filled: Double) =

@@ -20,14 +20,14 @@ class CurrentStatusService internal constructor(
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<(Board) -> Board>,
     orderEvents: Observable<Unit>,
-    privateClient: APIClientV1 = apiClient,
+    privateClient: APIClientV1? = apiClient,
     parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
     privateChannelsReady: Observable<Unit> = Observable.empty(),
     childEvents: Observable<List<ChildOrderEvent>> = Observable.empty(),
     privateChannelsDisconnected: Observable<Unit> = Observable.empty(),
     privateChannelAuthenticationFailed: Observable<Unit> = Observable.empty()
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
@@ -80,21 +80,21 @@ class CurrentStatusService internal constructor(
             .subscribeNext { it.updateMarketQuotes(buyPrice, sellPrice) }
             .addTo(bag)
 
-        orderEvents
+        val parentUpdates = parentEvents.filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
+        Observable.merge(orderEvents, parentUpdates.map { Unit })
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
             .subscribeNext { updateStatus() }
             .addTo(bag)
 
         val stopOrders = privateState.stopOrders
-        val parentUpdates = parentEvents
-            .observeOn(AndroidSchedulers.mainThread())
-            .filter { batch -> batch.any { it.productCode == "FX_BTC_JPY" } }
-            .doOnNext(stopOrders::onEvents)
         val childUpdates = childEvents.filter { batch ->
             batch.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
         }
-        parentUpdates.sample(1, TimeUnit.SECONDS)
+        parentUpdates
+            .observeOn(AndroidSchedulers.mainThread())
+            .doOnNext(stopOrders::onEvents)
+            .sample(1, TimeUnit.SECONDS)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { stopOrders.onParentUpdates() }
             .addTo(bag)
@@ -125,7 +125,7 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
-    internal fun switchAccount(client: APIClientV1) {
+    internal fun switchAccount(client: APIClientV1?) {
         if (bag.isDisposed) return
 
         val previous = accountChanged

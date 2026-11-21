@@ -17,7 +17,7 @@ import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.CompletableSubject
 import java.util.concurrent.TimeUnit
 
-internal class StopOrderService(client: APIClientV1, private val io: Scheduler, private val main: Scheduler) {
+internal class StopOrderService(client: APIClientV1?, private val io: Scheduler, private val main: Scheduler) {
     val orders = Variable<List<StopOrder>>(emptyList())
     val loadFailed = Variable(false)
     val submitting = Variable(false)
@@ -36,11 +36,12 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private val fallbackReads = StopOrderFallbackReads(io)
     private val events = LinkedHashMap<String, ParentOrderEvent>()
 
-    fun switchAccount(client: APIClientV1) {
+    fun switchAccount(client: APIClientV1?) {
         val previous = account
         account = Account(client)
         previous.ended.onComplete()
         refreshRequest.set(null)
+        fallbackRefresh.set(null)
         refreshing = false
         realtimeRefresh = null
         pendingRealtimeRefresh = null
@@ -60,8 +61,9 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     fun submit(confirmation: Confirmation, result: (Result<String>) -> Unit): Boolean {
         val current = account
         if (confirmation.account !== current || submitting.value || requests.isDisposed) return false
+        val client = current.client ?: return false
         submitting.value = true
-        current.client.sendParentOrder(SendParentOrderRequest(confirmation.order))
+        client.sendParentOrder(SendParentOrderRequest(confirmation.order))
             .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
             .subscribeOn(io).observeOn(main)
             .takeUntil(current.ended.toObservable<Unit>())
@@ -86,18 +88,19 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         val order = orders.value.firstOrNull { it.acceptanceId == id }
         val rejection = when {
             confirmation.account !== current -> CancellationFailure.ACCOUNT_CHANGED
-            requests.isDisposed || order == null -> CancellationFailure.UNAVAILABLE
+            requests.isDisposed || current.client == null || order == null -> CancellationFailure.UNAVAILABLE
             id in cancelling.value -> CancellationFailure.IN_PROGRESS
             !order.canCancel -> CancellationFailure.INELIGIBLE
             else -> null
         }
         if (rejection != null) return failed(rejection)
 
+        val client = requireNotNull(current.client)
         cancelling.value = cancelling.value + id
         val cancellation = Completable.defer {
-            current.client.cancelParentOrder(CancelParentOrderRequest(id))
+            client.cancelParentOrder(CancelParentOrderRequest(id))
         }.subscribeOn(io)
-        verifyCancellation(current.client, requireNotNull(order))
+        verifyCancellation(client, requireNotNull(order))
             .andThen(cancellation)
             .observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
@@ -115,6 +118,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     }
 
     fun onEvents(batch: List<ParentOrderEvent>) {
+        if (account.client == null) return
+
         val updates = batch.filter { it.productCode == "FX_BTC_JPY" && it.eventType != "ORDER" }
         updates.forEach { event ->
             val id = event.parentOrderAcceptanceId
@@ -157,6 +162,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private fun refresh(recoverTriggers: Boolean, realtime: RealtimeRefresh?) {
         if (requests.isDisposed) return
         enabled = true
+        val current = account
+        val client = current.client ?: return
         refreshing = true
         if (privateChannelsUnavailable || recoverTriggers) {
             pendingRealtimeRefresh = null
@@ -168,8 +175,6 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
-        val current = account
-        val client = current.client
         val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
@@ -348,7 +353,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
 
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
 
-    class Account(val client: APIClientV1) {
+    class Account(val client: APIClientV1?) {
         val ended = CompletableSubject.create()
     }
 }

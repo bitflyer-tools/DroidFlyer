@@ -63,6 +63,23 @@ class PrivateTradingStateTest {
     }
 
     @Test
+    fun switchingToAnUnconfiguredAccountClearsPrivateDataAndSkipsRefresh() {
+        state.refresh().test()
+        scheduler.triggerActions()
+        accountA.publish(position, 10.0, order)
+        scheduler.triggerActions()
+
+        state.switchAccount(null)
+        state.refresh().test().assertComplete()
+        scheduler.triggerActions()
+
+        assertFalse(accountA.positions.hasObservers())
+        assertFalse(accountA.collateral.hasObservers())
+        assertFalse(accountA.orders.hasObservers())
+        assertPrivateData(emptyList(), 0.0, emptyList())
+    }
+
+    @Test
     fun equalOrderRefreshKeepsDisplayedCancellationValidOnlyForTheCurrentAccount() {
         state.refresh().test()
         scheduler.triggerActions()

@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
@@ -21,6 +22,7 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.Manager
@@ -38,6 +40,7 @@ import org.junit.runner.RunWith
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
@@ -45,6 +48,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.math.BigDecimal
 import java.util.Date
+import java.util.concurrent.TimeUnit.SECONDS
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -102,6 +106,55 @@ class RealtimeClientTest {
         ready.assertValueCount(1)
         socket.authAck!!.call(JSONObject.NULL)
         ready.assertValues(Unit, Unit)
+    }
+
+    @Test
+    fun parentOrderEventsRefreshOrdersPositionsAndCollateral() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        val api = stopOrderApi()
+        val position = Position("FX_BTC_JPY", "BUY", 10_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
+        val order = ChildOrder(
+            1, "child-1", "FX_BTC_JPY", "BUY", "LIMIT", 10_000_000L, 0L, 0.1,
+            "ACTIVE", "child-acceptance-1", 0.1, 0.0, 0.0, 0.0
+        )
+        whenever(api.getPositions()).thenReturn(Observable.just(emptyList()), Observable.just(listOf(position)))
+        whenever(api.getCollateral()).thenReturn(Observable.just(emptyMap()), Observable.just(mapOf("collateral" to 200_000.0)))
+        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.just(emptyList()), Observable.just(listOf(order)))
+
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                socket.receive(Socket.EVENT_CONNECT)
+                checkNotNull(socket.authAck).call(JSONObject.NULL)
+                val channel = "parent_order_events"
+                val event = """
+                    [{"product_code":"FX_BTC_JPY","event_type":"CANCEL","parent_order_id":"parent-1",
+                      "parent_order_acceptance_id":"acceptance-1","event_date":"2026-01-01T00:00:00Z"}]
+                """.trimIndent()
+                socket.receive(channel, JSONArray(event.replace("FX_BTC_JPY", "BTC_JPY")))
+                scheduler.advanceTimeBy(1, SECONDS)
+                assertEquals(emptyList<ChildOrder>(), service.orders.value)
+
+                socket.receive(channel, JSONArray(event))
+                socket.receive(channel, JSONArray(event))
+                scheduler.advanceTimeBy(1, SECONDS)
+
+                assertEquals(listOf(order), service.orders.value)
+                assertEquals(listOf(position), service.position.value)
+                assertEquals(200_000.0, service.balance.value, 0.0)
+                verify(api, times(2)).getChildOrders("FX_BTC_JPY")
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
     }
 
     @Test
