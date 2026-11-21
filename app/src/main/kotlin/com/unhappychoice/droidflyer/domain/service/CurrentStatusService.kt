@@ -22,7 +22,8 @@ class CurrentStatusService internal constructor(
     parentEvents: Observable<List<ParentOrderEvent>> = Observable.empty(),
     privateChannelsReady: Observable<Unit> = Observable.empty(),
     childEvents: Observable<List<ChildOrderEvent>> = Observable.empty(),
-    privateChannelsDisconnected: Observable<Unit> = Observable.empty()
+    privateChannelsDisconnected: Observable<Unit> = Observable.empty(),
+    privateChannelAuthenticationFailed: Observable<Unit> = Observable.empty()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
         apiClient,
@@ -36,7 +37,8 @@ class CurrentStatusService internal constructor(
         realtimeClient.parentOrderEvents,
         realtimeClient.privateChannelsReady,
         realtimeClient.childOrderEvents,
-        realtimeClient.privateChannelsDisconnected
+        realtimeClient.privateChannelsDisconnected,
+        realtimeClient.privateChannelAuthenticationFailed
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -94,9 +96,17 @@ class CurrentStatusService internal constructor(
             .subscribeNext { recoverTriggers -> stopOrders.refreshIfEnabled(recoverTriggers) }
             .addTo(bag)
 
-        Observable.merge(privateChannelsReady.map { true }, privateChannelsDisconnected.map { false })
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext(stopOrders::onPrivateChannelAvailability)
+        Observable.merge(
+            privateChannelsReady.map<() -> Unit> { { stopOrders.onPrivateChannelAvailability(true) } },
+            privateChannelsDisconnected.map<() -> Unit> { { stopOrders.onPrivateChannelAvailability(false) } },
+            privateChannelAuthenticationFailed.map<() -> Unit> {
+                {
+                    stopOrders.onPrivateChannelAvailability(false)
+                    stopOrders.refreshIfEnabled()
+                }
+            }
+        ).observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext { update -> update() }
             .addTo(bag)
 
         updateStatus()

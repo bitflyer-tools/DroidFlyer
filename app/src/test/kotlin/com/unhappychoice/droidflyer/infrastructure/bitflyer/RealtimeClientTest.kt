@@ -5,11 +5,16 @@ import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderDetails
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderParameter
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -22,9 +27,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -87,6 +97,48 @@ class RealtimeClientTest {
         ready.assertValueCount(1)
         socket.authAck!!.call(JSONObject.NULL)
         ready.assertValues(Unit, Unit)
+    }
+
+    @Test
+    fun cancelsRestVerifiedStopAfterReconnectAuthenticationFails() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        val api = stopOrderApi()
+        whenever(api.cancelParentOrder(any())).thenReturn(Completable.complete())
+
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                val denied = JSONObject("""{"message":"Permission denied"}""")
+                socket.receive(Socket.EVENT_CONNECT)
+                checkNotNull(socket.authAck).call(denied)
+                val stops = service.privateState.stopOrders
+                stops.refresh()
+                assertTrue(stops.orders.value.single().canCancel)
+                val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+                socket.receive(Socket.EVENT_DISCONNECT)
+                assertFalse(stops.orders.value.single().canCancel)
+                socket.authAck = null
+                socket.receive(Socket.EVENT_CONNECT)
+                checkNotNull(socket.authAck).call(denied)
+
+                assertTrue(stops.orders.value.single().canCancel)
+                assertFalse(stops.loadFailed.value)
+                stops.cancel(confirmation) { fail("Cancellation failed: $it") }
+                val cancellation = argumentCaptor<CancelParentOrderRequest>()
+                verify(api).cancelParentOrder(cancellation.capture())
+                assertEquals("acceptance-1", cancellation.firstValue.parentOrderAcceptanceId)
+                assertEquals("FX_BTC_JPY", cancellation.firstValue.productCode)
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
     }
 
     @Test
@@ -175,6 +227,21 @@ class RealtimeClientTest {
                 Execution(124, "SELL", 99.0, 0.5, Date(1577836801000L), "buy-124", "sell-124")
             )
         )
+    }
+
+    private fun stopOrderApi(): APIClientV1 {
+        val api = mock<APIClientV1>()
+        val parent = ParentOrder("parent-1", "acceptance-1", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0)
+        val details = ParentOrderDetails("SIMPLE", listOf(ParentOrderParameter("FX_BTC_JPY", "STOP", 5000000)))
+        whenever(api.getPositions()).thenReturn(Observable.empty())
+        whenever(api.getCollateral()).thenReturn(Observable.empty())
+        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(Observable.just(listOf(parent)))
+        whenever(api.getParentOrders()).thenReturn(Observable.just(listOf(parent)))
+        whenever(api.getParentOrder("parent-1")).thenReturn(Observable.just(details))
+        whenever(api.getParentChildOrders("parent-1")).thenReturn(Observable.just(emptyList()))
+        return api
     }
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {

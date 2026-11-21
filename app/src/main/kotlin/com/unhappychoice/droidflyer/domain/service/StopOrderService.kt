@@ -24,7 +24,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private val requests = CompositeDisposable()
     private var enabled = false
     private var recoverOnRefresh = false
-    private var realtimeDisconnected = false
+    private var privateChannelsUnavailable = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val events = LinkedHashMap<String, ParentOrderEvent>()
 
@@ -105,8 +105,13 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     }
 
     fun onPrivateChannelAvailability(ready: Boolean) {
-        realtimeDisconnected = !ready
-        if (ready) refreshIfEnabled(recoverTriggers = true) else invalidateWaitingOrders()
+        privateChannelsUnavailable = !ready
+        if (ready) {
+            refreshIfEnabled(recoverTriggers = true)
+        } else {
+            refreshRequest.set(null)
+            invalidateWaitingOrders()
+        }
     }
 
     fun refreshIfEnabled(recoverTriggers: Boolean = false) {
@@ -118,7 +123,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         enabled = true
         if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
-        val recover = recoverOnRefresh
+        val recover = recoverOnRefresh || privateChannelsUnavailable
         val current = account
         val client = current.client
         val previous = orders.value.associateBy { it.acceptanceId }
@@ -154,8 +159,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         refreshRequest.set(request.subscribe({ rows ->
             if (current === account) {
                 recoverOnRefresh = false
-                val updated = rows.map(::applyEvent)
-                orders.value = if (realtimeDisconnected) updated.map(::invalidateWaitingOrder) else updated
+                orders.value = rows.map(::applyEvent)
                 loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
             }
         }, {

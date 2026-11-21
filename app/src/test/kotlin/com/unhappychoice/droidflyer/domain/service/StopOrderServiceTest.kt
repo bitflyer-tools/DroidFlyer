@@ -175,7 +175,7 @@ class StopOrderServiceTest {
     }
 
     @Test
-    fun disconnectBlocksOpenConfirmationAndOfflineRefreshUntilReconnect() =
+    fun disconnectBlocksCancellationUntilRestVerifiesWaitingOrder() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.triggerActions()
@@ -186,13 +186,23 @@ class StopOrderServiceTest {
             scheduler.triggerActions()
             assertCancellationBlocked(stops, confirmation)
 
+            childOrderStatus = 500
             stops.refresh()
             scheduler.triggerActions()
             assertCancellationBlocked(stops, confirmation)
+            assertTrue(stops.loadFailed.value)
 
-            realtime.privateChannelsReady.onNext(Unit)
+            childOrderStatus = 200
+            stops.refresh()
             scheduler.triggerActions()
             assertTrue(stops.orders.value.single().canCancel)
+            assertFalse(stops.loadFailed.value)
+
+            childOrders = marketChild(0.0)
+            stops.refresh()
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
         }
 
     @Test

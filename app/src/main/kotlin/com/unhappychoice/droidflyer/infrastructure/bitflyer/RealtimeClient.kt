@@ -38,6 +38,7 @@ class RealtimeClient internal constructor(
 
     val privateChannelsReady = PublishSubject.create<Unit>()
     internal val privateChannelsDisconnected = PublishSubject.create<Unit>()
+    internal val privateChannelAuthenticationFailed = PublishSubject.create<Unit>()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
@@ -91,6 +92,7 @@ class RealtimeClient internal constructor(
             subscribePrivateChannels()
             privateChannelsReady.onNext(Unit)
         } else {
+            privateChannelAuthenticationFailed.onNext(Unit)
             Log.d("Socket", "Authentication failed: $error")
         }
     }
