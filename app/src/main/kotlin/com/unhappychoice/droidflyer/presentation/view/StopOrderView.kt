@@ -63,6 +63,11 @@ class StopOrderView(context: Context) : BaseView(context, null) {
         setTextColor(DefaultStyle.accentColor)
         isVisible = false
     }
+    private val recoverSubmission = Button(context).apply {
+        setText(R.string.stop_submit_recovery)
+        setOnClickListener { reviewSubmissionRecovery() }
+        isVisible = false
+    }
     private var dialog: AlertDialog? = null
 
     init {
@@ -76,6 +81,7 @@ class StopOrderView(context: Context) : BaseView(context, null) {
             addView(price)
             addView(review)
             addView(reconciliationStatus)
+            addView(recoverSubmission)
         }
         addView(
             ScrollView(context).apply { addView(form) },
@@ -90,6 +96,7 @@ class StopOrderView(context: Context) : BaseView(context, null) {
         }.subscribeNext { (submitting, reconciling) ->
             review.isEnabled = !submitting && !reconciling
             reconciliationStatus.isVisible = reconciling
+            recoverSubmission.isVisible = !submitting && reconciling
         }.addTo(bag)
     }
 
@@ -142,6 +149,16 @@ class StopOrderView(context: Context) : BaseView(context, null) {
                 else -> showOrderEventsHelp()
             }
         }
+    }
+
+    private fun reviewSubmissionRecovery() {
+        val confirmRecovery = stops.confirmSubmissionRecovery() ?: return
+        dialog = AlertDialog.Builder(context, R.style.DialogStyle)
+            .setTitle(R.string.stop_submit_recovery)
+            .setMessage(R.string.stop_submit_recovery_warning)
+            .setPositiveButton(R.string.stop_submit_recovery_confirm) { _, _ -> confirmRecovery() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showOrderEventsHelp() {

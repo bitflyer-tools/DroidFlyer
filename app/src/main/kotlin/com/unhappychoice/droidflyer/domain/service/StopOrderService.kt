@@ -51,8 +51,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val previous = account
         account = Account(client)
         previous.ended.onComplete()
-        pendingSubmission = null
-        reconcilingSubmission.value = false
+        clearPendingSubmission()
         refreshRequest.set(null)
         fallbackRefresh.set(null)
         refreshing = false
@@ -73,6 +72,18 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     }
 
     fun confirmation(order: StopOrderRequest): Confirmation = Confirmation(account, order)
+
+    fun confirmSubmissionRecovery(): (() -> Boolean)? {
+        val pending = pendingSubmission ?: return null
+        return {
+            if (pendingSubmission !== pending || requests.isDisposed) {
+                false
+            } else {
+                clearPendingSubmission()
+                true
+            }
+        }
+    }
 
     fun submit(confirmation: Confirmation, result: (Result<String>) -> Unit): Boolean {
         val current = account
@@ -290,10 +301,12 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
 
     private fun reconcileSubmission(rows: List<StopOrder>) {
         val pending = pendingSubmission ?: return
-        if (rows.count(pending::matches) == 1) {
-            pendingSubmission = null
-            reconcilingSubmission.value = false
-        }
+        if (rows.count(pending::matches) == 1) clearPendingSubmission()
+    }
+
+    private fun clearPendingSubmission() {
+        pendingSubmission = null
+        reconcilingSubmission.value = false
     }
 
     private fun finishRefresh() {

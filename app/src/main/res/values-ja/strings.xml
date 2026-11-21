@@ -49,7 +49,10 @@
     <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nトリガー価格：%3$,d JPY\n\nトリガー価格に達すると、bitFlyer が成行注文を出します。約定価格はトリガー価格と異なる場合があります。</string>
     <string name="stop_submit">ストップ注文を送信</string>
     <string name="stop_accepted">ストップ注文を受け付けました：%1$s</string>
-    <string name="stop_submit_reconciling">ストップ注文が受け付けられたか確認中です。注文一覧に表示されるまで、ストップ注文は送信できません。</string>
+    <string name="stop_submit_reconciling">ストップ注文が受け付けられたか確認中です。受付結果が不明な間は、ストップ注文の送信を一時停止しています。</string>
+    <string name="stop_submit_recovery">注文状況を確認して再開</string>
+    <string name="stop_submit_recovery_warning">bitFlyer Lightning の未約定注文と注文履歴で、すでに発動した注文も含めて確認してください。ストップ注文が受け付けられていないことを確認できた場合のみ再開してください。再送信すると注文が重複するおそれがあります。</string>
+    <string name="stop_submit_recovery_confirm">確認したので再開する</string>
     <string name="stop_submit_rejected">bitFlyerがストップ注文を拒否しました。再度送信できます。</string>
     <string name="stop_submit_check_failed">既存の注文を確認できませんでした。ストップ注文は送信されていません。</string>
     <string name="stop_review_again">送信する前にストップ注文をもう一度確認してください</string>

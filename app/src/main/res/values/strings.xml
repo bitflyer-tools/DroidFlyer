@@ -53,7 +53,10 @@
     <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nTrigger price: %3$,d JPY\n\nWhen the trigger price is reached, bitFlyer submits a market order. The execution price may differ from the trigger price.</string>
     <string name="stop_submit">Submit stop</string>
     <string name="stop_accepted">Exchange accepted stop %1$s</string>
-    <string name="stop_submit_reconciling">Checking whether bitFlyer received your stop order. Stop orders are paused until it appears in Orders.</string>
+    <string name="stop_submit_reconciling">Checking whether bitFlyer received your stop order. Stop order submission is paused while the result is uncertain.</string>
+    <string name="stop_submit_recovery">Check order status and resume</string>
+    <string name="stop_submit_recovery_warning">Check open orders and order history in bitFlyer Lightning, including orders that may have already triggered. Resume only if you have confirmed that the stop order was not accepted. Sending it again could create a duplicate.</string>
+    <string name="stop_submit_recovery_confirm">I checked, resume</string>
     <string name="stop_submit_rejected">bitFlyer rejected your stop order. You can try again.</string>
     <string name="stop_submit_check_failed">Could not check existing orders. Your stop order was not sent.</string>
     <string name="stop_review_again">Review the stop again before submitting</string>

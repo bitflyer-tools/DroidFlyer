@@ -120,6 +120,7 @@ class StopOrderServiceTest {
         assertTrue(service.reconcilingSubmission.value)
         assertEquals(100L, service.orders.value.single().parent.id)
         assertFalse(service.submit(confirmation) { fail("Submitted while reconciling") })
+        val confirmRecovery = requireNotNull(service.confirmSubmissionRecovery())
 
         parentId = 101
         size = 0.02
@@ -135,11 +136,53 @@ class StopOrderServiceTest {
         assertFalse(service.reconcilingSubmission.value)
         assertEquals(102L, service.orders.value.single().parent.id)
         assertEquals(1, requests.count { it.method == "POST" })
+        assertFalse(confirmRecovery())
 
         loseSubmissionResponse = false
         assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
         serviceScheduler.triggerActions()
         assertEquals("acceptance-1", results.last().getOrThrow())
+    }
+
+    @Test
+    fun confirmedRecoveryAllowsManualResubmissionWhenNoMatchingOrderAppears() {
+        val service = service()
+        val results = mutableListOf<Result<String>>()
+        loseSubmissionResponse = true
+
+        assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
+        serviceScheduler.advanceTimeBy(90, SECONDS)
+        assertTrue(results.single().isFailure)
+        assertTrue(service.reconcilingSubmission.value)
+
+        val confirmRecovery = requireNotNull(service.confirmSubmissionRecovery())
+        assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Submitted before recovery was confirmed") })
+        assertTrue(confirmRecovery())
+        assertFalse(service.reconcilingSubmission.value)
+        assertEquals(1, requests.count { it.method == "POST" })
+
+        loseSubmissionResponse = false
+        assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
+        serviceScheduler.triggerActions()
+        assertEquals("acceptance-1", results.last().getOrThrow())
+        assertEquals(2, requests.count { it.method == "POST" })
+    }
+
+    @Test
+    fun staleRecoveryConfirmationCannotClearAnotherAccountsPendingSubmission() {
+        val service = service()
+        loseSubmissionResponse = true
+        assertTrue(service.submit(service.confirmation(stopRequest())) { assertTrue(it.isFailure) })
+        serviceScheduler.triggerActions()
+        val confirmRecovery = requireNotNull(service.confirmSubmissionRecovery())
+
+        service.switchAccount(client())
+        service.onPrivateChannelAvailability(true)
+        assertTrue(service.submit(service.confirmation(stopRequest())) { assertTrue(it.isFailure) })
+        serviceScheduler.triggerActions()
+
+        assertFalse(confirmRecovery())
+        assertTrue(service.reconcilingSubmission.value)
     }
 
     @Test
