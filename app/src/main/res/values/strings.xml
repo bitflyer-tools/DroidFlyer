@@ -23,6 +23,8 @@
     <string name="clear_all_positions">Clear all positions?</string>
     <string name="create_limit_order">Create limit order?</string>
 
+    <string name="no_position">No position</string>
+    <string name="offsetting_positions">Long %1$s / Short %2$s ɃFX\nNet 0 ɃFX. Clear all positions is unavailable because the quantities offset.</string>
     <string name="close_positions_multiple_orders">This will submit multiple market orders, checking the remaining position after each order.</string>
     <string name="close_positions_incomplete">Could not confirm that all positions were closed. Check your positions and orders.</string>
     <string name="cleared_all_positions">Cleared all positions</string>
