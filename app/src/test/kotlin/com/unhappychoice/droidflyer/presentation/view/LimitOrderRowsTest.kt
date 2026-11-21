@@ -10,11 +10,10 @@ import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
 import org.junit.Assert.assertFalse
 import org.junit.Test
-import java.util.concurrent.TimeUnit.MILLISECONDS
 
 class LimitOrderRowsTest {
     @Test
-    fun sampledBoardAndGroupingChangesPreserveTheFirstFiftyRowsPerSide() {
+    fun boardAndGroupingChangesAreGroupedOffThreadAndLimitedToFiftyRowsPerSide() {
         val levels = (1L..60L).flatMap { bucket ->
             listOf(Order(bucket * 10, bucket.toDouble()), Order(bucket * 10 + 1, 0.5))
         }
@@ -25,14 +24,11 @@ class LimitOrderRowsTest {
             Observable.just(true), boards, groupingSizes, Observable.just(emptyList()), scheduler, scheduler
         ).map { it.first }.test()
 
-        boards.onNext(Board(0.0, emptyList(), emptyList()))
         boards.onNext(Board(0.0, levels, levels.reversed()))
-        scheduler.advanceTimeBy(299, MILLISECONDS)
-        rows.assertValue(LimitOrderRows(emptyList(), emptyList(), 1L))
+        rows.assertNoValues()
 
-        scheduler.advanceTimeBy(1, MILLISECONDS)
-        rows.assertValueCount(2).assertValueAt(
-            1,
+        scheduler.triggerActions()
+        rows.assertValue(
             LimitOrderRows(
                 asks = levels.take(50),
                 bids = levels.reversed().take(50),
@@ -41,10 +37,10 @@ class LimitOrderRowsTest {
         )
 
         groupingSizes.onNext(10L)
-        rows.assertValueCount(2)
+        rows.assertValueCount(1)
         scheduler.triggerActions()
-        rows.assertValueCount(3).assertValueAt(
-            2,
+        rows.assertValueCount(2).assertValueAt(
+            1,
             LimitOrderRows(
                 asks = listOf(Order(10L, 1.0)) + (2L..50L).map { Order(it * 10, it + 0.5) },
                 bids = (60L downTo 11L).map { Order(it * 10, it + 0.5) },
@@ -66,7 +62,7 @@ class LimitOrderRowsTest {
         assertFalse(boards.hasObservers())
         assertFalse(orders.hasObservers())
         boards.onNext(boardAt(111L))
-        preparation.advanceTimeBy(900, MILLISECONDS)
+        preparation.triggerActions()
         render.triggerActions()
         rows.assertNoValues()
 
@@ -76,7 +72,7 @@ class LimitOrderRowsTest {
         rows.assertValue(LimitOrderRows(listOf(Order(111L, 1.0)), listOf(Order(111L, 1.0)), 1L) to emptyList())
 
         boards.onNext(boardAt(121L))
-        preparation.advanceTimeBy(300, MILLISECONDS)
+        preparation.triggerActions()
         orders.onNext(listOf(activeOrder("BUY", 120L, 0.5)))
         selected.onNext(false)
         assertFalse(boards.hasObservers())
@@ -86,7 +82,7 @@ class LimitOrderRowsTest {
         boards.onNext(boardAt(131L))
         val latestOrders = listOf(activeOrder("BUY", 130L, 0.25))
         orders.onNext(latestOrders)
-        preparation.advanceTimeBy(900, MILLISECONDS)
+        preparation.triggerActions()
         render.triggerActions()
         rows.assertValueCount(1)
 
@@ -98,7 +94,7 @@ class LimitOrderRowsTest {
         )
 
         boards.onNext(boardAt(151L))
-        preparation.advanceTimeBy(300, MILLISECONDS)
+        preparation.triggerActions()
         render.triggerActions()
         rows.assertValueCount(3).assertValueAt(
             2, LimitOrderRows(listOf(Order(160L, 1.0)), listOf(Order(150L, 1.0)), 10L) to latestOrders
