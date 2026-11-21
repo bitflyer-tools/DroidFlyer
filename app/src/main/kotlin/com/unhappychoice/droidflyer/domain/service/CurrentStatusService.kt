@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
@@ -21,7 +22,7 @@ class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<BoardUpdate>,
-    orderEvents: Observable<Unit>,
+    orderEvents: Observable<PrivateEvent<*>>,
     privateClient: APIClientV1? = apiClient
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
@@ -29,8 +30,8 @@ class CurrentStatusService internal constructor(
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
         Observable.merge(
-            realtimeClient.childOrderEvents.map { Unit },
-            realtimeClient.parentOrderEvents.map { Unit }
+            realtimeClient.childOrderEvents,
+            realtimeClient.parentOrderEvents
         ),
         privateClient
     )
@@ -84,6 +85,7 @@ class CurrentStatusService internal constructor(
         orderEvents
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
+            .filter { it.isCurrent() }
             .subscribeNext { updateStatus() }
             .addTo(bag)
 
