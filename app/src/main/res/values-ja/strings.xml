@@ -10,6 +10,7 @@
     <string name="market_order_failed">成行注文を送信できませんでした</string>
     <string name="buy">買い</string>
     <string name="cancel">キャンセル</string>
+    <string name="active_orders_may_be_incomplete">取得件数の上限に達したため、一部の有効な注文が表示されていない可能性があります。</string>
     <string name="order_cancellation_failed">注文 %1$s を取り消せませんでした</string>
     <string name="chart">チャート</string>
     <string name="clear_all_positions">全決済しますか？</string>
