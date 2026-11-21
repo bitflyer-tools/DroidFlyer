@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.rxkotlin.Observables
@@ -17,7 +18,7 @@ internal fun observeTradingTotals(
     collateral: Observable<Double>,
     scheduler: Scheduler = Schedulers.computation()
 ): Observable<TradingTotals> {
-    val entries = positions.map { Entry(it, it.average().toLong()) }
+    val entries = positions.map { Entry(it, it.average().toLong(), it.wholeSize() < 0.0) }
     val account = Observables.combineLatest(entries, collateral, ::Account)
     return Observables.combineLatest(prices.map { it.toLong() }, account, ::Valuation)
         .publish { latest ->
@@ -30,13 +31,15 @@ internal fun observeTradingTotals(
         .map { it.totals() }
 }
 
-private class Entry(val positions: List<Position>, val average: Long)
+private class Entry(val positions: List<Position>, val average: Long, val isShort: Boolean)
 
 private class Account(val entry: Entry, val collateral: Double)
 
 private data class Valuation(val price: Long, val account: Account) {
     fun totals(): TradingTotals {
         val profit = account.entry.positions.profit(price).toLong()
-        return TradingTotals(profit, price - account.entry.average, account.collateral.toLong() + profit)
+        val priceChange = price - account.entry.average
+        val spread = if (account.entry.isShort) -priceChange else priceChange
+        return TradingTotals(profit, spread, account.collateral.toLong() + profit)
     }
 }
