@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer
 
+import android.Manifest
 import android.content.Context
 import android.view.View
 import androidx.viewpager.widget.ViewPager
@@ -27,6 +28,7 @@ import org.kodein.di.instance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
@@ -42,6 +44,7 @@ import org.robolectric.util.ReflectionHelpers
 class MainActivityNavigationTest {
     @Before
     fun pauseBackgroundRequests() {
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.HIDE_OVERLAY_WINDOWS)
         DisconnectedSocket.connections.clear()
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
