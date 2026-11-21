@@ -63,12 +63,15 @@ class PrivateTradingStateTest {
         accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
         initial.assertComplete()
+        assertEquals(listOf(false, false, false), accountA.refreshObservers())
         assertPrivateData(listOf(position), 10.0, listOf(order))
         val previousRow = displayedRows().single()
 
         state.refresh().test()
         scheduler.triggerActions()
+        assertEquals(listOf(true, true, true), accountA.refreshObservers())
         state.switchAccount(accountB.client)
+        assertEquals(listOf(false, false, false), accountA.refreshObservers())
         state.refresh().test()
         assertPrivateData(emptyList(), null, emptyList())
         assertNull(state.cancelOrder(previousRow))
@@ -93,6 +96,21 @@ class PrivateTradingStateTest {
         checkNotNull(state.cancelOrder(displayedRow)).test().assertComplete()
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
         assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", order.childOrderAcceptanceId)), accountB.cancelled)
+    }
+
+    @Test
+    fun disposalCancelsPrivateRefreshesAndPreventsAnotherRefresh() {
+        state.refresh().test()
+        scheduler.triggerActions()
+        assertEquals(listOf(true, true, true), accountA.refreshObservers())
+
+        state.dispose()
+        state.refresh().test()
+        state.switchAccount(accountB.client)
+        scheduler.triggerActions()
+
+        assertEquals(listOf(false, false, false), accountA.refreshObservers())
+        assertEquals(listOf(false, false, false), accountB.refreshObservers())
     }
 
     @Test
@@ -227,6 +245,8 @@ class PrivateTradingStateTest {
                 else -> error("Unexpected API call: ${method.name}")
             }
         } as APIClientV1
+
+        fun refreshObservers() = listOf(positions.hasObservers(), collateral.hasObservers(), orders.hasObservers())
 
         fun publish(position: Position, balance: Double, order: ChildOrder) {
             positions.onNext(listOf(position))
