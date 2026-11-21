@@ -7,9 +7,14 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcce
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
+import java.io.IOException
 import java.lang.reflect.Proxy
 import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -18,11 +23,16 @@ class ClosePositionServiceTest {
     private val orders = mutableListOf<SendChildOrderRequest>()
     private val positions = ArrayDeque<Double>()
     private val orderUpdates = ArrayDeque<Pair<String, Double>>()
+    private val orderReadErrors = ArrayDeque<Throwable>()
+    private val positionReadErrors = ArrayDeque<Throwable>()
+    private var orderReads = 0
     private val api = Proxy.newProxyInstance(
         APIClientV1::class.java.classLoader, arrayOf(APIClientV1::class.java)
     ) { _, method, args ->
         when (method.name) {
-            "getPositions" -> Observable.just(positions.remove().toPositions())
+            "getPositions" -> (if (orders.isEmpty()) null else positionReadErrors.poll())
+                ?.let { Observable.error<List<Position>>(it) }
+                ?: Observable.just(positions.remove().toPositions())
             "sendChildOrder" -> {
                 orders.add(args[0] as SendChildOrderRequest)
                 Observable.just(ChildOrderAcceptance("order-${orders.size}"))
@@ -30,8 +40,11 @@ class ClosePositionServiceTest {
             "getChildOrders" -> {
                 assertEquals(null, args[1])
                 assertEquals("order-${orders.size}", args[2])
-                val (state, filled) = orderUpdates.remove()
-                Observable.just(listOf(childOrder(state, filled)))
+                orderReads++
+                orderReadErrors.poll()?.let { Observable.error<List<ChildOrder>>(it) }
+                    ?: orderUpdates.remove().let { (state, filled) ->
+                        Observable.just(listOf(childOrder(state, filled)))
+                    }
             }
             else -> error("Unexpected API call: ${method.name}")
         }
@@ -140,9 +153,56 @@ class ClosePositionServiceTest {
         val result = service.close(12.0).test()
         scheduler.advanceTimeBy(15, TimeUnit.SECONDS)
 
-        result.assertError(java.util.concurrent.TimeoutException::class.java)
+        result.assertError(TimeoutException::class.java)
         assertOrders("SELL", 10.0)
     }
+
+    @Test
+    fun `retries failed reads before closing the remaining position`() {
+        positions.addAll(listOf(12.0, 2.0, 0.0))
+        orderUpdates.addAll(listOf("COMPLETED" to 10.0, "COMPLETED" to 2.0))
+        orderReadErrors.add(httpError(503))
+        positionReadErrors.add(IOException("Connection lost"))
+
+        val result = service.close(12.0).test()
+        assertEquals(1, orderReads)
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        assertEquals(2, orderReads)
+        assertOrders("SELL", 10.0)
+        result.assertNotComplete().assertNoErrors()
+
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        result.assertResult(Unit)
+        assertOrders("SELL", 10.0, 2.0)
+    }
+
+    @Test
+    fun `times out persistent order read failures without resubmitting`() {
+        positions.add(12.0)
+        orderReadErrors.addAll(List(16) { httpError(503) })
+
+        val result = service.close(12.0).test()
+        scheduler.advanceTimeBy(14, TimeUnit.SECONDS)
+        result.assertNotComplete().assertNoErrors()
+        assertEquals(15, orderReads)
+
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        result.assertError(TimeoutException::class.java)
+        assertOrders("SELL", 10.0)
+    }
+
+    @Test
+    fun `propagates permanent order read errors immediately`() {
+        positions.add(12.0)
+        val error = httpError(403)
+        orderReadErrors.add(error)
+
+        service.close(12.0).test().assertError(error)
+        assertOrders("SELL", 10.0)
+    }
+
+    private fun httpError(status: Int): HttpException =
+        HttpException(Response.error<Any>(status, "".toResponseBody()))
 
     private fun assertOrders(side: String, vararg sizes: Double) {
         assertEquals(sizes.map { SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, it, timeInForce = "IOC") }, orders)

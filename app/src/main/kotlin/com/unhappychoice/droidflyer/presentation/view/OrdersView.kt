@@ -42,6 +42,10 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             .subscribeNext { orderAdapter.updateOrders(it) }
             .addTo(subscriptions)
 
+        presenter.ordersMayBeIncomplete
+            .subscribeNext { binding.orderLimitWarning.isVisible = it }
+            .addTo(subscriptions)
+
         presenter.cancellationFailures
             .subscribeNext(::showCancellationFailure)
             .addTo(subscriptions)
@@ -84,7 +88,7 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     }
 
     private fun showFills(selected: Boolean) {
-        binding.orderList.isVisible = !selected
+        binding.activeOrdersPanel.isVisible = !selected
         binding.fillsPanel.isVisible = selected
         if (selected && !presenter.fillHistory.state.value.loaded) presenter.fillHistory.refresh()
     }

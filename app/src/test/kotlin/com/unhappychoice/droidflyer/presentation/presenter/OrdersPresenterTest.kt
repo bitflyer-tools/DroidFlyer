@@ -82,7 +82,10 @@ class OrdersPresenterTest {
             history.refresh()
             scheduler.triggerActions()
             oldResponses.onNext(listOf(oldFill))
-            state.switchAccount(fillApi(newResponses))
+            state.switchAccount(fillApi(newResponses)) {
+                assertEquals(FillHistory.State(), history.state.value)
+            }
+            accountChanges.assertValue(Unit)
             assertEquals(FillHistory.State(), history.state.value)
 
             history.refresh()

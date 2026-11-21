@@ -1,6 +1,9 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
+import com.google.gson.FieldNamingPolicy
+import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ExecutionPrice
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -15,10 +18,55 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 class APIClientV1Test {
     @Test
+    fun getPositionsRequestsCryptoCfdByDefaultAndDecodesPositionFields() {
+        val api = apiReturning(
+            "/v1/me/getpositions?product_code=FX_BTC_JPY",
+            """
+                [{"product_code":"FX_BTC_JPY","side":"SELL","price":9876543,"size":0.25,
+                  "commission":1.5,"swap_point_accumulate":-2.5,"require_collateral":1500.5,
+                  "leverage":2,"pnl":-100.5}]
+            """.trimIndent()
+        )
+
+        val expected = Position(
+            productCode = "FX_BTC_JPY",
+            side = "SELL",
+            price = 9876543,
+            size = 0.25,
+            commission = 1.5,
+            swapPointAccumulate = -2.5,
+            requireCollateral = 1500.5,
+            leverage = 2,
+            pnl = -100.5
+        )
+        api.getPositions().test().assertResult(listOf(expected))
+    }
+
+    @Test
+    fun getPositionsRejectsANonNumericSize() {
+        val api = apiReturning(
+            "/v1/me/getpositions?product_code=FX_BTC_JPY",
+            """[{"product_code":"FX_BTC_JPY","side":"SELL","price":9876543,"size":"invalid"}]"""
+        )
+
+        api.getPositions().test().assertFailure(NumberFormatException::class.java)
+    }
+
+    @Test
     fun getDepositsUsesVersionedGetEndpoint() {
         val api = apiReturning("/v1/me/getdeposits", "[]")
 
         assertEquals(emptyList<Map<String, Any>>(), api.getDeposits().blockingSingle())
+    }
+
+    @Test
+    fun getChildOrdersSendsExplicitCountForActiveOrders() {
+        val api = apiReturning(
+            "/v1/me/getchildorders?product_code=FX_BTC_JPY&child_order_state=ACTIVE&count=500",
+            "[]"
+        )
+
+        api.getChildOrders("FX_BTC_JPY", count = 500).test().assertResult(emptyList())
     }
 
     @Test
@@ -70,10 +118,11 @@ class APIClientV1Test {
                 .body(body.toResponseBody())
                 .build()
         }.build()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         return Retrofit.Builder()
             .baseUrl("https://api.bitflyer.jp/v1/")
             .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
             .build()
             .create(APIClientV1::class.java)

@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer
 
+import android.Manifest
 import android.content.Context
 import android.view.View
 import androidx.viewpager.widget.ViewPager
@@ -27,6 +28,7 @@ import org.kodein.di.instance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
@@ -42,6 +44,7 @@ import org.robolectric.util.ReflectionHelpers
 class MainActivityNavigationTest {
     @Before
     fun pauseBackgroundRequests() {
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.HIDE_OVERLAY_WINDOWS)
         DisconnectedSocket.connections.clear()
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
@@ -137,17 +140,26 @@ class MainActivityNavigationTest {
 
     @Test
     fun recreationReplacesTheRealtimeClientAndDetachesItsSocketListeners() {
+        RuntimeEnvironment.getApplication().getSharedPreferences("api_token", Context.MODE_PRIVATE).edit()
+            .putString("key", "legacy-key")
+            .putString("secret", "legacy-secret")
+            .apply()
+
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val oldClient = controller.get().module.direct.instance<RealtimeClient>()
-            val oldSocket = DisconnectedSocket.connections.single()
-            assertTrue(oldSocket.hasListeners("child_order_events"))
+            val (oldPublic, oldPrivate) = DisconnectedSocket.connections
+            assertTrue(oldPublic.hasListeners("lightning_board_FX_BTC_JPY"))
+            assertTrue(oldPrivate.hasListeners("child_order_events"))
 
             controller.recreate()
 
             val newClient = controller.get().module.direct.instance<RealtimeClient>()
             assertNotSame(oldClient, newClient)
-            assertFalse(oldSocket.hasListeners("child_order_events"))
-            assertTrue(DisconnectedSocket.connections.last().hasListeners("child_order_events"))
+            assertFalse(oldPublic.hasListeners("lightning_board_FX_BTC_JPY"))
+            assertFalse(oldPrivate.hasListeners("child_order_events"))
+            val (newPublic, newPrivate) = DisconnectedSocket.connections.drop(2)
+            assertTrue(newPublic.hasListeners("lightning_board_FX_BTC_JPY"))
+            assertTrue(newPrivate.hasListeners("child_order_events"))
         }
     }
 
