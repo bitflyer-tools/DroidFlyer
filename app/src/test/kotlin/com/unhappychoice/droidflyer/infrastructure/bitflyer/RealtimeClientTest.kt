@@ -4,9 +4,10 @@ import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
+import com.unhappychoice.droidflyer.domain.service.StopOrderStatus
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
@@ -17,7 +18,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderPar
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
-import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -34,12 +34,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.any
-import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -158,11 +157,10 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun cancelsRestVerifiedStopAfterReconnectAuthenticationFails() {
+    fun blocksCancellationOfUnverifiedStopAfterReconnectAuthenticationFails() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         val api = stopOrderApi()
-        whenever(api.cancelParentOrder(any())).thenReturn(Completable.complete())
 
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
@@ -182,13 +180,13 @@ class RealtimeClientTest {
                 socket.receive(Socket.EVENT_CONNECT)
                 checkNotNull(socket.authAck).call(denied)
 
-                assertTrue(stops.orders.value.single().canCancel)
+                assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
+                assertFalse(stops.orders.value.single().canCancel)
                 assertFalse(stops.loadFailed.value)
-                stops.cancel(confirmation) { fail("Cancellation failed: $it") }
-                val cancellation = argumentCaptor<CancelParentOrderRequest>()
-                verify(api).cancelParentOrder(cancellation.capture())
-                assertEquals("acceptance-1", cancellation.firstValue.parentOrderAcceptanceId)
-                assertEquals("FX_BTC_JPY", cancellation.firstValue.productCode)
+                val failures = mutableListOf<CancellationFailure>()
+                stops.cancel(confirmation) { failures += it }
+                assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+                verify(api, never()).cancelParentOrder(any())
             } finally {
                 service.dispose()
             }

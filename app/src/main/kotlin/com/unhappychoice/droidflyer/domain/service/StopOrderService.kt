@@ -32,9 +32,11 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var pendingRealtimeRefresh: RealtimeRefresh? = null
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
+    private var recoveringChannelGap = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val fallbackReads = StopOrderFallbackReads(io)
+    private val waitingOrUnknown = setOf(StopOrderStatus.WAITING, StopOrderStatus.UNKNOWN)
     private val events = LinkedHashMap<String, ParentOrderEvent>()
     private val childTerminations = LinkedHashMap<String, ChildOrderEvent>()
 
@@ -47,6 +49,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         refreshing = false
         realtimeRefresh = null
         pendingRealtimeRefresh = null
+        recoveringChannelGap = false
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -152,6 +155,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && privateChannelsUnavailable) return
         privateChannelsUnavailable = !ready
+        if (!ready) recoveringChannelGap = true
         if (enabled) refresh(recoverTriggers = true)
     }
 
@@ -195,6 +199,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
+        val channelGap = recoveringChannelGap
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         refreshRequest.set(null)
@@ -213,13 +218,19 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                 val event = knownEvents[row.parentOrderAcceptanceId] ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, reads).concatMap { stop ->
-                    val updated = stop.copy(event = event, childTermination = cached?.childTermination)
+                    // The API can omit a market child that expired without any fills.
+                    val updated = stop.copy(
+                        event = event,
+                        childTermination = cached?.childTermination,
+                        missedTriggerPossible = channelGap || cached?.missedTriggerPossible == true
+                    )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
                             updated.isPartiallyExecuted ||
                             (realtime == RealtimeRefresh.CHILD && updated.childTermination != null) ->
                             reconcileMarketChild(client, updated, reads)
-                        updated.status == StopOrderStatus.WAITING &&
+                        parent.parentOrderState == "ACTIVE" &&
+                            updated.status in waitingOrUnknown &&
                             (cached?.triggerPrice == null || cached.triggerVerified == false || recover) ->
                             reconcileMarketChild(client, updated, reads)
                         else -> Observable.just(updated)
@@ -232,6 +243,7 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
                 val incomplete = rows.any { it.triggerPrice == null || !it.triggerVerified }
+                if (!privateChannelsUnavailable) recoveringChannelGap = false
                 recoverOnRefresh = incomplete
                 scheduleFallbackRefresh(incomplete)
                 orders.value = rows.map(::applyEvent)
@@ -324,7 +336,11 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
             .take(1)
             .concatMap { parent -> reconcileMarketChild(client, order.copy(parent = parent)) }
             .subscribeOn(io).observeOn(main)
-            .map { applyEvent(it).canCancel }
+            .map { verified ->
+                applyEvent(verified).canCancel && orders.value.any {
+                    it.acceptanceId == order.acceptanceId && it.canCancel
+                }
+            }
             .first(false)
             .flatMapCompletable { eligible ->
                 if (eligible) Completable.complete() else Completable.error(IneligibleCancellation())
