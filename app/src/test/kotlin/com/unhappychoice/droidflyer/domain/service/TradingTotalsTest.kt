@@ -19,6 +19,22 @@ class TradingTotalsTest {
     private val position = Position("FX_BTC_JPY", "BUY", 100L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0)
 
     @Test
+    fun firstPriceValuesAnExistingPositionBeforeWindowEnds() {
+        price.value = MarketPrice(null)
+        positions.value = listOf(position)
+        val awaitingPrice = observeTradingTotals(
+            price.asObservable(), positions.asObservable(), collateral.asObservable(), scheduler
+        ).test()
+        awaitingPrice.assertValue(TradingTotals(null, null, 1000L, null))
+
+        price.value = MarketPrice(140.75)
+        awaitingPrice.assertValues(
+            TradingTotals(null, null, 1000L, null),
+            TradingTotals(20L, 40L, 1020L, 140L)
+        )
+    }
+
+    @Test
     fun positionUpdateUsesLatestPriceBeforeWindowEnds() {
         price.value = MarketPrice(140.75)
         positions.value = listOf(position)
@@ -58,6 +74,21 @@ class TradingTotalsTest {
             TradingTotals(5L, 10L, 1005L, 120L),
             TradingTotals(5L, 10L, 1505L, 120L),
             TradingTotals(-5L, -11L, 1495L, 99L)
+        )
+    }
+
+    @Test
+    fun shortPositionSpreadIsPositiveBelowEntryAndNegativeAboveEntry() {
+        positions.value = listOf(position.copy(side = "SELL"))
+        totals.assertValueCount(2)
+
+        price.value = MarketPrice(80.75)
+        scheduler.advanceTimeBy(100, MILLISECONDS)
+
+        totals.assertValues(
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(-10L, -20L, 990L, 120L),
+            TradingTotals(10L, 20L, 1010L, 80L)
         )
     }
 

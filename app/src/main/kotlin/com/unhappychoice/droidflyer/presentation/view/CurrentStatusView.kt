@@ -3,8 +3,8 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import android.view.LayoutInflater
-import android.view.View
 import android.widget.TextView
+import androidx.core.view.isVisible
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -44,17 +44,13 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
 
         currentStatusService.position.asObservable()
             .subscribeNext {
-                when (Math.abs(it.wholeSize())) {
-                    0.0 -> {
-                        binding.position.text = "No position"
-                        binding.profit.visibility = View.GONE
-                        binding.spread.visibility = View.GONE
-                    }
-                    else -> {
-                        binding.position.text = "${it.average().toLong().splitByComma()} JPY / ${it.wholeSize()} ɃFX"
-                        binding.profit.visibility = View.VISIBLE
-                        binding.spread.visibility = View.VISIBLE
-                    }
+                val size = it.wholeSize()
+                binding.profit.isVisible = size != 0.0
+                binding.spread.isVisible = size != 0.0
+                binding.position.text = if (size == 0.0) {
+                    "No position"
+                } else {
+                    "${it.average().toLong().splitByComma()} JPY / $size ɃFX"
                 }
             }.addTo(bag)
     }
