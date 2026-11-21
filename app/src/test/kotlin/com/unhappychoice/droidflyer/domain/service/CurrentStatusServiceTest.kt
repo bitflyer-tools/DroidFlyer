@@ -11,6 +11,8 @@ import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -79,6 +81,25 @@ class CurrentStatusServiceTest {
         scheduler.triggerActions()
 
         assertBook(initialBook, 100)
+    }
+
+    @Test
+    fun completedRefreshesReleaseBoardRequestsAndKeepRealtimeSubscribed() {
+        repeat(10) {
+            assertTrue(responses.hasObservers())
+            responses.onNext(initialBook)
+            scheduler.triggerActions()
+            assertFalse(responses.hasObservers())
+            assertTrue(snapshots.hasObservers())
+
+            service.updateStatus()
+            scheduler.triggerActions()
+        }
+
+        assertTrue(responses.hasObservers())
+        service.dispose()
+        assertFalse(responses.hasObservers())
+        assertFalse(snapshots.hasObservers())
     }
 
     private fun assertBook(expected: Board, bestAsk: Long) {

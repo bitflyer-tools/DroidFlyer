@@ -52,6 +52,7 @@ class RealtimeSessionTest {
         assertEquals(1, old.refreshes)
         old.socket.receiveExecution()
         assertTrue(old.positions.hasObservers())
+        old.status.updateStatus()
         old.lifecycle.close()
         assertFalse(old.positions.hasObservers())
 
@@ -65,11 +66,15 @@ class RealtimeSessionTest {
 
             old.socket.receiveExecution()
             old.status.updateStatus()
+            old.status.pollStatus()
             replacement.socket.receiveExecution()
             time.advanceTimeBy(1, TimeUnit.SECONDS)
 
             assertEquals(1, old.refreshes)
             assertEquals(0, old.notifications)
+            assertEquals(1, replacement.refreshes)
+            replacement.positions.onComplete()
+            time.triggerActions()
             assertEquals(2, replacement.refreshes)
             assertEquals(1, replacement.notifications)
         } finally {
