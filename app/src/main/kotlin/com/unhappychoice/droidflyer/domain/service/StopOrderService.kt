@@ -198,7 +198,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
-        val channelGap = channelGapOpen
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         refreshRequest.set(null)
@@ -217,11 +216,9 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                 val event = knownEvents[row.parentOrderAcceptanceId] ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, reads).concatMap { stop ->
-                    // Keep waiting orders unverified during a channel gap.
                     val updated = stop.copy(
                         event = event,
-                        childTermination = cached?.childTermination,
-                        missedTriggerPossible = channelGap
+                        childTermination = cached?.childTermination
                     )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||

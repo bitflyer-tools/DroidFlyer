@@ -402,7 +402,7 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun initialAuthenticationFailureBlocksCancellationUntilPrivateChannelsRecover() =
+    fun cancelsRestVerifiedStopAfterPrivateChannelAuthenticationFails() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
             realtime.privateChannelAuthenticationFailed.onNext(Unit)
             scheduler.triggerActions()
@@ -410,20 +410,17 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(12, SECONDS)
 
             val order = stops.orders.value.single()
-            assertEquals(StopOrderStatus.UNKNOWN, order.status)
-            val confirmation = stops.cancellationConfirmation(order)
-            assertCancellationBlocked(stops, confirmation)
+            assertEquals(StopOrderStatus.WAITING, order.status)
+            assertTrue(order.canCancel)
+            requests.clear()
 
-            realtime.privateChannelsReady.onNext(Unit)
+            stops.cancel(stops.cancellationConfirmation(order)) { fail("Cancellation failed: $it") }
             scheduler.triggerActions()
-            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
-            assertTrue(stops.orders.value.single().canCancel)
 
-            childOrders = marketChild(0.0, "EXPIRED")
-            stops.refresh(recoverTriggers = true)
-            scheduler.triggerActions()
-            assertEquals(StopOrderStatus.EXPIRED, stops.orders.value.single().status)
-            assertCancellationBlocked(stops, confirmation)
+            assertEquals(listOf("/v1/me/getparentorders", "/v1/me/getchildorders"), stopReadPaths().take(2))
+            val cancellation = requests[2]
+            assertEquals("/v1/me/cancelparentorder", cancellation.url.encodedPath)
+            assertJsonBody(cancellation, """{"parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY"}""")
         }
 
     @Test
@@ -444,8 +441,8 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(29, SECONDS)
             assertTrue(stops.loadFailed.value)
             scheduler.advanceTimeBy(9, SECONDS)
-            assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
-            assertCancellationBlocked(stops, confirmation)
+            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
+            assertTrue(stops.orders.value.single().canCancel)
             assertFalse(stops.loadFailed.value)
 
             childOrderStatus = 500
@@ -520,7 +517,7 @@ class StopOrderServiceTest {
                 stopReadPaths().take(5)
             )
             assertTrue(stops.orders.value.isNotEmpty())
-            assertTrue(stops.orders.value.none { it.canCancel })
+            assertTrue(stops.orders.value.all { it.canCancel })
 
             realtime.privateChannelsReady.onNext(Unit)
             scheduler.triggerActions()
@@ -569,6 +566,26 @@ class StopOrderServiceTest {
 
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
+    fun cancellationRechecksForMissedTriggerWhileRealtimeIsDisconnected() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+            realtime.privateChannelsDisconnected.onNext(Unit)
+            scheduler.advanceTimeBy(8, SECONDS)
+            assertTrue(stops.orders.value.single().canCancel)
+
+            childOrders = marketChild(0.0)
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.triggerActions()
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
         }
 

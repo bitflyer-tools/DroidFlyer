@@ -175,6 +175,8 @@ class RealtimeClientTest {
                 assertTrue(stops.orders.value.single().canCancel)
                 val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
+                whenever(api.getParentChildOrders("parent-1"))
+                    .thenReturn(Observable.error(IllegalStateException("REST lookup failed")))
                 socket.receive(Socket.EVENT_DISCONNECT)
                 socket.authAck = null
                 socket.receive(Socket.EVENT_CONNECT)
@@ -182,7 +184,7 @@ class RealtimeClientTest {
 
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
                 assertFalse(stops.orders.value.single().canCancel)
-                assertFalse(stops.loadFailed.value)
+                assertTrue(stops.loadFailed.value)
                 val failures = mutableListOf<CancellationFailure>()
                 stops.cancel(confirmation) { failures += it }
                 assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
