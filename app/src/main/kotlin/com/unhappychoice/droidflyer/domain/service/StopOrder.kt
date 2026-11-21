@@ -5,7 +5,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
 internal data class StopOrder(
     val parent: ParentOrder,
     val triggerPrice: Long?,
-    val event: String? = null
+    val event: String? = null,
+    val triggerVerified: Boolean = true
 ) {
     val acceptanceId get() = parent.parentOrderAcceptanceId
     val canCancel get() = triggerPrice != null && status == StopOrderStatus.WAITING
@@ -20,7 +21,7 @@ internal data class StopOrder(
             isPartiallyExecuted -> StopOrderStatus.PARTIALLY_EXECUTED
             parent.parentOrderState == "REJECTED" || event == "ORDER_FAILED" -> StopOrderStatus.REJECTED
             parent.parentOrderState == "COMPLETED" || event in triggeredEvents -> StopOrderStatus.TRIGGERED
-            parent.parentOrderState == "ACTIVE" -> StopOrderStatus.WAITING
+            parent.parentOrderState == "ACTIVE" && triggerVerified -> StopOrderStatus.WAITING
             else -> StopOrderStatus.UNKNOWN
         }
 

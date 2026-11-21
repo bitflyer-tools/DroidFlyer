@@ -110,6 +110,11 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     fun refresh(recoverTriggers: Boolean = false) {
         if (requests.isDisposed) return
         enabled = true
+        if (recoverTriggers) {
+            orders.value = orders.value.map { order ->
+                if (order.status == StopOrderStatus.WAITING) order.copy(triggerVerified = false) else order
+            }
+        }
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh
         val current = account
@@ -117,7 +122,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         val request = Observable.defer {
-            Observable.zip(client.getParentOrders(orderState = "ACTIVE"), client.getParentOrders()) { active, recent ->
+            Observable.zip(loadActiveParents(client).toList().toObservable(), client.getParentOrders()) { active, recent ->
                 val history = recent.filter(::isCryptoCfdStop)
                 val byId = history.associateBy { it.parentOrderAcceptanceId }
                 val open = active.filter(::isCryptoCfdStop).map { byId[it.parentOrderAcceptanceId] ?: it }
@@ -135,7 +140,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
                             updated.isPartiallyExecuted -> reconcileChildExecution(client, updated)
-                        event == null && updated.canCancel && (cached?.triggerPrice == null || recover) ->
+                        updated.status == StopOrderStatus.WAITING &&
+                            (cached?.triggerPrice == null || cached.triggerVerified == false || recover) ->
                             reconcileChildExecution(client, updated)
                         else -> Observable.just(updated)
                     }
@@ -147,9 +153,23 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
             if (current === account) {
                 recoverOnRefresh = false
                 orders.value = rows.map(::applyEvent)
-                loadFailed.value = rows.any { it.triggerPrice == null }
+                loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
             }
         }, { if (current === account) loadFailed.value = true }))
+    }
+
+    private fun loadActiveParents(client: APIClientV1, before: Long? = null): Observable<ParentOrder> {
+        val pageSize = 100
+        return client.getParentOrders(orderState = "ACTIVE", count = pageSize, before = before)
+            .concatMap { page ->
+                val rows = Observable.fromIterable(page)
+                if (page.size < pageSize) return@concatMap rows
+                val next = page.minOf { it.id }
+                check(next > 0 && (before == null || next < before)) {
+                    "Active parent order cursor did not advance"
+                }
+                rows.concatWith(Observable.defer { loadActiveParents(client, next) })
+            }
     }
 
     private fun applyEvent(order: StopOrder): StopOrder =
@@ -164,7 +184,9 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
                     event = stop.event ?: "TRIGGER"
                 )
             }
-            .onErrorReturnItem(stop)
+            .onErrorReturnItem(
+                if (stop.status == StopOrderStatus.WAITING) stop.copy(triggerVerified = false) else stop
+            )
 
     private fun loadStop(client: APIClientV1, order: ParentOrder, cachedPrice: Long?): Observable<StopOrder> {
         if (cachedPrice != null) return Observable.just(StopOrder(order, cachedPrice))

@@ -8,7 +8,8 @@ data class ParentOrder(
     val parentOrderState: String,
     val side: String,
     val size: Double,
-    val executedSize: Double
+    val executedSize: Double,
+    val id: Long = 0
 )
 
 data class ParentOrderDetails(

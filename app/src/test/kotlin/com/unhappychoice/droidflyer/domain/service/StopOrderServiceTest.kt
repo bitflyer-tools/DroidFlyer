@@ -37,6 +37,8 @@ class StopOrderServiceTest {
     private var size = 0.01
     private var executedSize = 0.0
     private var childOrders = "[]"
+    private var childOrderStatus = 200
+    private var activeParentPage: ((String?) -> String)? = null
     private var cancelStatus = 200
 
     @Test
@@ -144,6 +146,53 @@ class StopOrderServiceTest {
         val childRequest = requests.first { it.url.encodedPath == "/v1/me/getchildorders" }
         assertEquals("parent-1", childRequest.url.queryParameter("parent_order_id"))
         assertEquals("FX_BTC_JPY", childRequest.url.queryParameter("product_code"))
+    }
+
+    @Test
+    fun failedReconnectLookupDisablesCancellationUntilTriggerIsRecovered() {
+        val service = service()
+        service.refresh()
+        val confirmation = service.cancellationConfirmation(service.orders.value.single())
+
+        childOrderStatus = 500
+        service.refresh(recoverTriggers = true)
+
+        assertEquals(StopOrderStatus.UNKNOWN, service.orders.value.single().status)
+        assertFalse(service.orders.value.single().canCancel)
+        assertTrue(service.loadFailed.value)
+        val failures = mutableListOf<CancellationFailure>()
+        service.cancel(confirmation) { failures += it }
+        assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+        assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+
+        childOrderStatus = 200
+        childOrders = marketChild(0.0)
+        service.refresh()
+
+        assertEquals(StopOrderStatus.TRIGGERED, service.orders.value.single().status)
+        assertFalse(service.loadFailed.value)
+    }
+
+    @Test
+    fun findsWaitingStopOnLaterActiveParentPage() {
+        activeParentPage = { before ->
+            if (before == null) {
+                (200 downTo 101).joinToString(prefix = "[", postfix = "]") {
+                    """{"id":$it,"parent_order_type":"STOP_LIMIT","product_code":"FX_BTC_JPY"}"""
+                }
+            } else {
+                assertEquals("101", before)
+                parentOrders()
+            }
+        }
+        val service = service()
+        service.refresh()
+
+        assertEquals(StopOrderStatus.WAITING, service.orders.value.single().status)
+        assertEquals(5000000L, service.orders.value.single().triggerPrice)
+        val activeRequests = requests.filter { it.url.queryParameter("parent_order_state") == "ACTIVE" }
+        assertEquals(listOf(null, "101"), activeRequests.map { it.url.queryParameter("before") })
+        assertTrue(activeRequests.all { it.url.queryParameter("count") == "100" })
     }
 
     @Test
@@ -347,15 +396,20 @@ class StopOrderServiceTest {
         "/v1/me/sendparentorder" -> 200 to """{"parent_order_acceptance_id":"acceptance-1"}"""
         "/v1/me/getparentorders" -> {
             assertEquals("FX_BTC_JPY", request.url.queryParameter("product_code"))
-            if (request.url.queryParameter("parent_order_state") == "ACTIVE" && parentState != "ACTIVE") 200 to "[]"
-            else 200 to parentOrders()
+            val active = request.url.queryParameter("parent_order_state") == "ACTIVE"
+            val page = activeParentPage
+            when {
+                page != null && active -> 200 to page(request.url.queryParameter("before"))
+                page != null || (active && parentState != "ACTIVE") -> 200 to "[]"
+                else -> 200 to parentOrders()
+            }
         }
         "/v1/me/getparentorder" -> {
             assertEquals("parent-1", request.url.queryParameter("parent_order_id"))
             200 to """{"order_method":"SIMPLE","parameters":[{"product_code":"FX_BTC_JPY",
                     "condition_type":"STOP","trigger_price":5000000}]}"""
         }
-        "/v1/me/getchildorders" -> 200 to
+        "/v1/me/getchildorders" -> childOrderStatus to
             if (request.url.queryParameter("parent_order_id") == "parent-1") childOrders else "[]"
         "/v1/me/cancelparentorder" -> {
             if (cancelStatus == 200) parentState = "CANCELED"
@@ -365,7 +419,7 @@ class StopOrderServiceTest {
     }
 
     private fun parentOrders() = """
-        [{"parent_order_id":"parent-1","parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY",
+        [{"id":100,"parent_order_id":"parent-1","parent_order_acceptance_id":"acceptance-1","product_code":"FX_BTC_JPY",
           "parent_order_type":"STOP","parent_order_state":"$parentState","side":"SELL","size":$size,
           "executed_size":$executedSize},
          {"parent_order_type":"STOP_LIMIT","product_code":"FX_BTC_JPY"},
