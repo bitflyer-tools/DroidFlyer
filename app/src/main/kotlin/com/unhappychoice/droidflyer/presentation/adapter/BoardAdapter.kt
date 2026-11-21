@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.RelativeLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.splitByComma
@@ -20,35 +21,33 @@ import io.reactivex.subjects.PublishSubject
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val clickItems = PublishSubject.create<Order>()
 
-    private var rows = emptyList<Order>()
+    private var rows = emptyList<Row>()
     private var groupingSize = 1L
     private var myOrders = emptyList<ChildOrder>()
     private var outstandingSizes = emptyMap<Long, Double>()
 
-    fun applyRows(rows: List<Order>, groupingSize: Long) {
-        this.rows = rows
-        if (this.groupingSize != groupingSize) {
-            this.groupingSize = groupingSize
+    fun applyRows(orders: List<Order>, groupingSize: Long, myOrders: List<ChildOrder>) {
+        if (this.groupingSize != groupingSize || this.myOrders !== myOrders) {
             outstandingSizes = type.personalOutstandingSizes(myOrders, groupingSize)
+            this.groupingSize = groupingSize
+            this.myOrders = myOrders
         }
-        notifyDataSetChanged()
+        val previous = rows
+        val next = orders.map { order ->
+            Row(order, groupingSize, outstandingSizes[order.price])
+        }
+        if (previous == next) return
+        val diff = DiffUtil.calculateDiff(RowDiff(previous, next))
+        rows = next
+        diff.dispatchUpdatesTo(this)
     }
 
     override fun getItemCount() = rows.size
 
-    fun updateMyOrders(orders: List<ChildOrder>) {
-        val previousSizes = outstandingSizes
-        myOrders = orders
-        outstandingSizes = type.personalOutstandingSizes(orders, groupingSize)
-        rows.forEachIndexed { position, item ->
-            if (previousSizes[item.price] != outstandingSizes[item.price]) notifyItemChanged(position)
-        }
-    }
-
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
         val item = rows[position]
-        holder.bind(item)
-        holder.view.setOnClickListener { clickItems.onNext(item) }
+        holder.bind(item.order, item.outstandingSize)
+        holder.view.setOnClickListener { clickItems.onNext(item.order) }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BoardAdapter.ViewHolder {
@@ -57,7 +56,7 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     }
 
     inner class ViewHolder(val view: View) : RecyclerView.ViewHolder(view) {
-        fun bind(order: Order) {
+        fun bind(order: Order, outstandingSize: Double?) {
             priceTextView.text = order.price.splitByComma()
             sizeTextView.text = "%.3f".format(order.size)
 
@@ -72,7 +71,6 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             backgroundView.setBackgroundColor(type.color())
             backgroundView.alignParent(type.sizeDirection(), width.toInt())
 
-            val outstandingSize = outstandingSizes[order.price]
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
             mineSizeTextView.setTextColor(DefaultStyle.accentColor)
@@ -92,6 +90,19 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
         private val mineSizeTextView = view.findViewById<TextView>(R.id.mineSize)
         private val sizeTextView = view.findViewById<TextView>(R.id.size)
         private val backgroundView = view.findViewById<View>(R.id.backgroundView)
+    }
+
+    private data class Row(val order: Order, val groupingSize: Long, val outstandingSize: Double?)
+
+    private class RowDiff(private val previous: List<Row>, private val next: List<Row>) : DiffUtil.Callback() {
+        override fun getOldListSize() = previous.size
+        override fun getNewListSize() = next.size
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+            previous[oldItemPosition].order.price == next[newItemPosition].order.price
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+            previous[oldItemPosition] == next[newItemPosition]
     }
 }
 

@@ -28,7 +28,7 @@ class SettingsPresenter internal constructor(
         preference: APITokenPreference,
         currentStatusService: CurrentStatusService,
         realtimeClient: RealtimeClient
-    ) : this(api, preference, currentStatusService.privateState::switchAccount, realtimeClient::updateAccount)
+    ) : this(api, preference, currentStatusService::switchAccount, realtimeClient::updateAccount)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")

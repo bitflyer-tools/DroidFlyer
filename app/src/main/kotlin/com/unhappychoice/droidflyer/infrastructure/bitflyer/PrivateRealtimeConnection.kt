@@ -20,12 +20,11 @@ internal class PrivateRealtimeConnection(
     private val lock: Any
 ) {
     private var closed = false
-    private var rejected = false
     private var attempt: Any? = null
     @Volatile private var authenticated: Any? = null
 
     fun canReuse(other: APICredentials): Boolean =
-        !rejected && credentials.key == other.key && credentials.secret == other.secret
+        authenticated != null && credentials.key == other.key && credentials.secret == other.secret
 
     fun connect(
         childOrders: (PrivateEvent<List<ChildOrderEvent>>) -> Unit,
@@ -47,7 +46,6 @@ internal class PrivateRealtimeConnection(
 
     private fun authenticate() {
         if (closed) return
-        rejected = false
         val request = Any()
         authenticated = null
         attempt = request
@@ -62,7 +60,6 @@ internal class PrivateRealtimeConnection(
         attempt = null
         val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
         if (error != null) {
-            rejected = true
             Log.d("Socket", "Authentication failed: $error")
             return
         }
