@@ -27,8 +27,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private val requests = CompositeDisposable()
     private var enabled = false
     private var refreshing = false
-    private var recoveringFromChildUpdates = false
-    private var childRefreshPending = false
+    private var realtimeRefresh: RealtimeRefresh? = null
+    private var pendingRealtimeRefresh: RealtimeRefresh? = null
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
@@ -42,8 +42,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         previous.ended.onComplete()
         refreshRequest.set(null)
         refreshing = false
-        recoveringFromChildUpdates = false
-        childRefreshPending = false
+        realtimeRefresh = null
+        pendingRealtimeRefresh = null
         events.clear()
         orders.value = emptyList()
         loadFailed.value = false
@@ -128,42 +128,49 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && privateChannelsUnavailable) return
         privateChannelsUnavailable = !ready
-        refreshIfEnabled(recoverTriggers = true)
+        if (enabled) refresh(recoverTriggers = true)
     }
 
-    fun refreshIfEnabled(recoverTriggers: Boolean = false) {
-        if (enabled) refresh(recoverTriggers)
-    }
+    fun onParentUpdates() = queueRealtimeRefresh(RealtimeRefresh.PARENT)
 
-    fun onChildUpdates() {
+    fun onChildUpdates() = queueRealtimeRefresh(RealtimeRefresh.CHILD)
+
+    fun refresh(recoverTriggers: Boolean = false) = refresh(recoverTriggers, realtime = null)
+
+    private fun queueRealtimeRefresh(update: RealtimeRefresh) {
         if (!enabled || privateChannelsUnavailable || requests.isDisposed) return
-        childRefreshPending = true
-        refreshPendingChildUpdates()
+        enqueueRealtimeRefresh(update)
+        refreshPendingRealtimeUpdates()
     }
 
-    fun refresh(recoverTriggers: Boolean = false) = refresh(recoverTriggers, pacedChildRefresh = false)
-
-    private fun refreshPendingChildUpdates() {
-        if (!refreshing && childRefreshPending && !privateChannelsUnavailable) {
-            childRefreshPending = false
-            refresh(recoverTriggers = false, pacedChildRefresh = true)
-        }
+    private fun enqueueRealtimeRefresh(update: RealtimeRefresh) {
+        pendingRealtimeRefresh = maxOf(pendingRealtimeRefresh ?: update, update)
     }
 
-    private fun refresh(recoverTriggers: Boolean, pacedChildRefresh: Boolean) {
+    private fun refreshPendingRealtimeUpdates() {
+        if (refreshing || privateChannelsUnavailable || requests.isDisposed) return
+        val update = pendingRealtimeRefresh ?: return
+        pendingRealtimeRefresh = null
+        refresh(recoverTriggers = false, realtime = update)
+    }
+
+    private fun refresh(recoverTriggers: Boolean, realtime: RealtimeRefresh?) {
         if (requests.isDisposed) return
         enabled = true
         refreshing = true
-        childRefreshPending = !privateChannelsUnavailable && !recoverTriggers &&
-            (childRefreshPending || recoveringFromChildUpdates)
-        recoveringFromChildUpdates = pacedChildRefresh
+        if (privateChannelsUnavailable || recoverTriggers) {
+            pendingRealtimeRefresh = null
+        } else {
+            realtimeRefresh?.let(::enqueueRealtimeRefresh)
+        }
+        realtimeRefresh = realtime
         fallbackRefresh.set(null)
         if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
-        val recover = recoverOnRefresh || privateChannelsUnavailable || pacedChildRefresh
+        val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val current = account
         val client = current.client
-        val reads = fallbackReads.takeIf { privateChannelsUnavailable || pacedChildRefresh }
+        val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         refreshRequest.set(null)
@@ -216,8 +223,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
 
     private fun finishRefresh() {
         refreshing = false
-        recoveringFromChildUpdates = false
-        refreshPendingChildUpdates()
+        realtimeRefresh = null
+        refreshPendingRealtimeUpdates()
     }
 
     private fun scheduleFallbackRefresh() {
@@ -279,6 +286,8 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
             .flatMapCompletable { eligible ->
                 if (eligible) Completable.complete() else Completable.error(IneligibleCancellation())
             }
+
+    private enum class RealtimeRefresh { PARENT, CHILD }
 
     private class IneligibleCancellation : RuntimeException()
 

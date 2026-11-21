@@ -29,10 +29,7 @@ class CurrentStatusService internal constructor(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
-        Observable.merge(
-            realtimeClient.childOrderEvents.map { Unit },
-            realtimeClient.parentOrderEvents.map { Unit }
-        ),
+        realtimeClient.childOrderEvents.map { Unit },
         privateClient,
         realtimeClient.parentOrderEvents,
         realtimeClient.privateChannelsReady,
@@ -89,9 +86,9 @@ class CurrentStatusService internal constructor(
         val childUpdates = childEvents.filter { batch ->
             batch.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
         }
-        parentUpdates.debounce(1, TimeUnit.SECONDS)
+        parentUpdates.sample(1, TimeUnit.SECONDS)
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { stopOrders.refreshIfEnabled() }
+            .subscribeNext { stopOrders.onParentUpdates() }
             .addTo(bag)
 
         childUpdates.debounce(1, TimeUnit.SECONDS)

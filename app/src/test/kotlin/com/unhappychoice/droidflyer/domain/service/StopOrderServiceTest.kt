@@ -103,7 +103,7 @@ class StopOrderServiceTest {
             executedSize = 0.0
             childOrders = marketChild(0.005)
             realtime.childOrderEvents.onNext(listOf(execution))
-            scheduler.advanceTimeBy(9, SECONDS)
+            scheduler.advanceTimeBy(20, SECONDS)
             assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
 
             parentState = "COMPLETED"
@@ -186,6 +186,39 @@ class StopOrderServiceTest {
 
             scheduler.advanceTimeBy(30, SECONDS)
             assertEquals(8, stopReadPaths().size)
+        }
+
+    @Test
+    fun parentUpdatesApplyImmediatelyAndCoalesceWhileStopReadsArePaced() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            requests.clear()
+            activeParentPage = {
+                parentOrders().dropLast(1) +
+                    """,{"id":2,"parent_order_id":"parent-2","parent_order_acceptance_id":"acceptance-2",
+                        "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE",
+                        "side":"SELL","size":0.01}]"""
+            }
+
+            realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
+            scheduler.triggerActions()
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            assertTrue(stopReadPaths().isEmpty())
+
+            repeat(16) {
+                realtime.parentOrderEvents.onNext(listOf(triggerEvent()))
+                scheduler.advanceTimeBy(1, SECONDS)
+            }
+            assertEquals(listOf(
+                "/v1/me/getparentorders", "/v1/me/getparentorders",
+                "/v1/me/getchildorders", "/v1/me/getparentorder"
+            ), stopReadPaths())
+
+            scheduler.advanceTimeBy(40, SECONDS)
+            assertEquals(8, stopReadPaths().size)
+            assertEquals(4, stopReadPaths().count { it == "/v1/me/getparentorders" })
+            assertEquals(stopReadPaths().size, requests.size)
         }
 
     @Test
