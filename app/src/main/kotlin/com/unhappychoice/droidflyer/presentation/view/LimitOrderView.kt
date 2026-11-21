@@ -61,18 +61,17 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             observePageSelection(),
             currentStatusService.board.asObservable(),
             presenter.groupingSize.asObservable(),
+            currentStatusService.orders.asObservable(),
             AndroidSchedulers.mainThread()
         )
-            .subscribeNext {
-                askAdapter.applyRows(it.asks, it.groupingSize)
-                bidAdapter.applyRows(it.bids, it.groupingSize)
-                binding.groupingTextView.text = it.groupingSize.toString()
+            .subscribeNext { (rows, orders) ->
+                askAdapter.applyRows(rows.asks, rows.groupingSize, orders)
+                bidAdapter.applyRows(rows.bids, rows.groupingSize, orders)
+                val groupingText = rows.groupingSize.toString()
+                if (binding.groupingTextView.text.toString() != groupingText) {
+                    binding.groupingTextView.text = groupingText
+                }
             }.addTo(bag)
-
-        currentStatusService.orders.asObservable().subscribeNext {
-            askAdapter.updateMyOrders(it)
-            bidAdapter.updateMyOrders(it)
-        }.addTo(bag)
 
         presenter.apply {
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)

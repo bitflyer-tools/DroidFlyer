@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import io.reactivex.Observable
@@ -15,11 +16,16 @@ internal fun observeLimitOrderRows(
     selected: Observable<Boolean>,
     boards: Observable<Board>,
     groupingSizes: Observable<Long>,
+    orders: Observable<List<ChildOrder>>,
     renderScheduler: Scheduler,
     preparationScheduler: Scheduler = Schedulers.computation()
-): Observable<LimitOrderRows> = selected.distinctUntilChanged().switchMap { isSelected ->
-    if (isSelected) prepareLimitOrderRows(boards, groupingSizes, preparationScheduler).observeOn(renderScheduler)
-    else Observable.empty()
+): Observable<Pair<LimitOrderRows, List<ChildOrder>>> = selected.distinctUntilChanged().switchMap { isSelected ->
+    if (!isSelected) return@switchMap Observable.empty()
+    Observables.combineLatest(
+        prepareLimitOrderRows(boards, groupingSizes, preparationScheduler),
+        orders
+    ) { rows, activeOrders -> rows to activeOrders }
+        .observeOn(renderScheduler)
 }
 
 private fun prepareLimitOrderRows(
