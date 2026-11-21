@@ -6,6 +6,9 @@ import com.google.gson.JsonParseException
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
@@ -13,6 +16,7 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.SocketEffect
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import retrofit2.HttpException
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -51,6 +56,36 @@ class APIClientTest {
         listOf(307, 308).forEach { status ->
             assertRedirectBlocked(status, "{}") { it.sendChildOrder(order) }
         }
+    }
+
+    @Test
+    fun orderPostIsNotResentAfterServiceUnavailableWithImmediateRetry() {
+        val response = MockResponse.Builder().code(503).addHeader("Retry-After", "0").build()
+        assertOrderSentOnce(response) { it is HttpException && it.code() == 503 }
+    }
+
+    @Test
+    fun orderPostIsNotResentWhenServerClosesConnectionAfterReadingBody() {
+        val response = MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
+        assertOrderSentOnce(response) { it is IOException }
+    }
+
+    @Test
+    fun stopOrderIsNotResentAfterServiceUnavailableWithImmediateRetry() {
+        val response = MockResponse.Builder().code(503).addHeader("Retry-After", "0").build()
+        assertStopOrderSentOnce(response) { it is HttpException && it.code() == 503 }
+    }
+
+    @Test
+    fun stopOrderIsNotResentWhenServerClosesConnectionAfterReadingBody() {
+        val response = MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
+        assertStopOrderSentOnce(response) { it is IOException }
+    }
+
+    @Test
+    fun orderAcceptanceIsUncertainWhenSuccessResponseHasNoAcceptanceId() {
+        assertOrderSentOnce(MockResponse.Builder().body("{}").build()) { it is JsonParseException }
+        assertOrderSentOnce(MockResponse.Builder().code(204).build()) { it is NullPointerException }
     }
 
     @Test
@@ -113,7 +148,7 @@ class APIClientTest {
                 var accepted = false
 
                 service.close(0.5) { accepted = true }.test().assertError {
-                    it is ClosePositionService.InitialOrderSubmissionException && it.cause is JsonParseException
+                    it is OrderAcceptanceUncertainException && it.cause is JsonParseException
                 }
                 assertFalse(accepted)
                 assertEquals((index + 1) * 2, origin.requestCount)
@@ -143,6 +178,36 @@ class APIClientTest {
                 "date" to "2025-01-15T12:30:45.123"
             )
             assertEquals(listOf(entry), history)
+        }
+    }
+
+    private fun assertOrderSentOnce(response: MockResponse, expectedCause: (Throwable?) -> Boolean) {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(response)
+            origin.enqueue(MockResponse.Builder().body("""{"child_order_acceptance_id":"retry"}""").build())
+
+            client(origin).submitChildOrder(order).test()
+                .assertNoValues()
+                .assertError { it is OrderAcceptanceUncertainException && expectedCause(it.cause) }
+
+            assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+            assertEquals(1, origin.requestCount)
+        }
+    }
+
+    private fun assertStopOrderSentOnce(response: MockResponse, expectedError: (Throwable) -> Boolean) {
+        val stop = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+        val order = SendParentOrderRequest(stop)
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(response)
+            origin.enqueue(MockResponse.Builder().body("""{"parent_order_acceptance_id":"retry"}""").build())
+
+            client(origin).sendParentOrder(order).test().assertNoValues().assertError { expectedError(it) }
+
+            assertSignedRequest(origin, "POST", "/v1/me/sendparentorder", gson.toJson(order))
+            assertEquals(1, origin.requestCount)
         }
     }
 
