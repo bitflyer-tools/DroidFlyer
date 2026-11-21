@@ -17,7 +17,8 @@ internal class RealtimeSession(
     fun notifyExecutions(onExecution: (ChildOrderEvent) -> Unit) {
         client.childOrderEvents
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { events -> events.filter(ChildOrderEvent::isExecution).forEach(onExecution) }
+            .filter { it.isCurrent() }
+            .subscribeNext { batch -> batch.value.filter(ChildOrderEvent::isExecution).forEach(onExecution) }
             .addTo(subscriptions)
     }
 

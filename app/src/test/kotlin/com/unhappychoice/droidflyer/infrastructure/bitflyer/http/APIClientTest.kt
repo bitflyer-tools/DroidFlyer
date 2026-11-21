@@ -7,9 +7,11 @@ import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import io.reactivex.Observable
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -18,6 +20,7 @@ import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -98,6 +101,58 @@ class APIClientTest {
             client(origin).getTradingCommision("FX_BTC_JPY").test().assertComplete().assertNoErrors()
 
             assertSignedRequest(origin, "GET", "/v1/me/gettradingcommission?product_code=FX_BTC_JPY", "")
+        }
+    }
+
+    @Test
+    fun publicMarketDataDoesNotReadOrSendSavedCredentials() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("""{"mid_price":100,"bids":[],"asks":[]}""").build())
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            var credentialReads = 0
+            val cipher = APICredentialCipher { create ->
+                if (!create) credentialReads++
+                testCredentialKey
+            }
+            val preference = APITokenPreference(RuntimeEnvironment.getApplication(), cipher)
+            preference.save(credentials)
+
+            val client = apiClient(origin, preference).client()
+            client.getBoard("FX_BTC_JPY").test().assertComplete().assertNoErrors()
+            client.getExecutionPrices("FX_BTC_JPY", 500).test().assertComplete().assertNoErrors()
+
+            assertUnsignedRequest(origin, "/v1/board?product_code=FX_BTC_JPY")
+            assertUnsignedRequest(origin, "/v1/executions?product_code=FX_BTC_JPY&count=500")
+            assertEquals(0, credentialReads)
+        }
+    }
+
+    @Test
+    fun tradingSessionKeepsItsPinnedCredentialsAfterPreferencesChange() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("""{"child_order_acceptance_id":"JRF-accepted"}""").build())
+            val preference = credentialPreference()
+            val session = apiClient(origin, preference).client(preference.read())
+
+            preference.save(APICredentials("updated-key", "updated-secret"))
+            session.sendChildOrder(order).test().assertResult(ChildOrderAcceptance("JRF-accepted"))
+
+            assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+        }
+    }
+
+    @Test
+    fun settingsValidationSignsWithSubmittedCredentials() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            val submitted = APICredentials("submitted-key", "submitted-secret")
+
+            client(origin).getBalance(submitted).test().assertResult(emptyList())
+
+            assertSignedRequest(origin, "GET", "/v1/me/getbalance", "", submitted)
         }
     }
 
@@ -221,9 +276,21 @@ class APIClientTest {
     private fun credentialPreference() =
         testAPITokenPreference(RuntimeEnvironment.getApplication()).apply { save(credentials) }
 
-    private fun client(origin: MockWebServer, preference: APITokenPreference = credentialPreference()): APIClientV1 {
+    private fun client(origin: MockWebServer, preference: APITokenPreference = credentialPreference()): APIClientV1 =
+        apiClient(origin, preference).client()
+
+    private fun apiClient(origin: MockWebServer, preference: APITokenPreference): APIClient {
         val transport = OkHttpClient.Builder().followRedirects(true).build()
-        return APIClient(gson, preference, transport, origin.url("/v1/").toString()).client()
+        return APIClient(gson, preference, transport, origin.url("/v1/").toString())
+    }
+
+    private fun assertUnsignedRequest(origin: MockWebServer, target: String) {
+        val request = checkNotNull(origin.takeRequest(5, TimeUnit.SECONDS))
+        assertEquals("GET", request.method)
+        assertEquals(target, request.target)
+        listOf("Access-Key", "Access-Timestamp", "Access-Sign").forEach { header ->
+            assertNull(header, request.headers[header])
+        }
     }
 
     private fun assertSignedRequest(
