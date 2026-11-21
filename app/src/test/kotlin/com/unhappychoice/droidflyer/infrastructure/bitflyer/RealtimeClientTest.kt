@@ -1,13 +1,16 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
 import android.app.Application
+import android.os.Looper
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import io.reactivex.Observable
@@ -15,6 +18,7 @@ import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -32,8 +36,8 @@ import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
-import android.os.Looper
 import org.robolectric.annotation.Config
+import java.math.BigDecimal
 import java.util.Date
 
 @RunWith(RobolectricTestRunner::class)
@@ -72,6 +76,31 @@ class RealtimeClientTest {
         shadowOf(Looper.getMainLooper()).idle()
         childOrders.assertValue(emptyList())
         parentOrders.assertValue(emptyList())
+    }
+
+    @Test
+    fun publishesPrivateExecutionBatchWithFractionalAndIntegralPrices() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference) { socket }
+        socket.receive(Socket.EVENT_CONNECT)
+        checkNotNull(socket.authAck).call(JSONObject.NULL)
+        val observer = client.childOrderEvents.test()
+        val payload = JSONArray(
+            """
+                [{"product_code":"ETH_BTC","event_type":"EXECUTION","price":0.02744},
+                 {"product_code":"BTC_JPY","event_type":"EXECUTION","price":10000000}]
+            """.trimIndent()
+        )
+
+        socket.receive("child_order_events", JSONObject("""{"price":102.0}"""))
+        socket.receive("child_order_events", payload)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        observer.assertValue { events ->
+            events.all { it.isExecution() } &&
+                events.map { it.productCode to it.price } ==
+                listOf("ETH_BTC" to BigDecimal("0.02744"), "BTC_JPY" to BigDecimal("10000000"))
+        }
     }
 
     @Test
@@ -137,11 +166,13 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun executionUpdatesTradingPriceAfterEmptyBatch() {
+    fun valuationsWaitForFirstValidExecutionAfterPrivateDataLoads() {
         val client = RealtimeClient(gson, preference) { socket }
         val api = mock<APIClientV1>()
-        whenever(api.getPositions()).thenReturn(Observable.empty())
-        whenever(api.getCollateral()).thenReturn(Observable.empty())
+        val position = Position("FX_BTC_JPY", "BUY", 10_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
+        whenever(api.getPositions()).thenReturn(Observable.just(listOf(position)))
+        val collateral = PublishSubject.create<Map<String, Any>>()
+        whenever(api.getCollateral()).thenReturn(collateral)
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
 
@@ -150,14 +181,34 @@ class RealtimeClientTest {
         try {
             val service = CurrentStatusService(api, client, api)
             socket.receive(Socket.EVENT_CONNECT)
-            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":123456.0}]"""))
-            assertEquals(123456.0, service.currentPrice.value, 0.0)
+            val totals = service.tradingTotals.test()
+            assertEquals(listOf(position), service.position.value)
+            assertNull(service.currentPrice.value.yen)
+            collateral.onNext(mapOf("collateral" to 200_000.0))
+            totals.assertValues(
+                TradingTotals(null, null, 0L),
+                TradingTotals(null, null, 200_000L)
+            )
 
-            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray())
-            assertEquals(123456.0, service.currentPrice.value, 0.0)
+            val channel = "lightning_executions_FX_BTC_JPY"
+            socket.receive(channel, JSONArray())
+            socket.receive(channel, JSONArray("""[{"price":0.0},{"price":-1.0}]"""))
+            assertNull(service.currentPrice.value.yen)
+            totals.assertValueCount(2)
 
-            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":234567.0}]"""))
-            assertEquals(234567.0, service.currentPrice.value, 0.0)
+            socket.receive(channel, JSONArray("""[{"price":0.0},{"price":10100000.0}]"""))
+            assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
+            totals.assertValues(
+                TradingTotals(null, null, 0L),
+                TradingTotals(null, null, 200_000L),
+                TradingTotals(10_000L, 100_000L, 210_000L)
+            ).assertNoErrors()
+
+            socket.receive(channel, JSONArray())
+            assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
+
+            socket.receive(channel, JSONArray("""[{"price":10200000.0}]"""))
+            assertEquals(10_200_000.0, service.currentPrice.value.yen!!, 0.0)
         } finally {
             RxAndroidPlugins.reset()
             RxJavaPlugins.reset()
@@ -180,6 +231,20 @@ class RealtimeClientTest {
         socket.receive("lightning_board_FX_BTC_JPY", payload)
 
         observer.assertValue(Board(100.0, listOf(Order(99, 0.0)), listOf(Order(101, 0.25))))
+    }
+
+    @Test
+    fun publishesExecutionsAfterInvalidPayload() {
+        val client = RealtimeClient(gson, preference) { socket }
+        val observer = client.executions.test()
+        val callback = socket.listeners("lightning_executions_FX_BTC_JPY").single()
+
+        callback.call(JSONArray("""[{"price":101.0}]"""))
+        callback.call(JSONObject("""{"price":102.0}"""))
+        callback.call(JSONArray("""[{"price":103.0}]"""))
+
+        observer.assertValueCount(2).assertNoErrors().assertNotComplete()
+        assertEquals(listOf(101.0, 103.0), observer.values().map { it.single().price })
     }
 
     @Test

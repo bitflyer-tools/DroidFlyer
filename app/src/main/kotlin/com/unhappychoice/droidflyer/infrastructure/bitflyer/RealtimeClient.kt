@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import com.google.gson.reflect.TypeToken
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
@@ -16,6 +17,7 @@ import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.reflect.Type
 import java.util.concurrent.TimeUnit
 
 /** A realtime connection owned by a single activity session. */
@@ -150,15 +152,28 @@ class RealtimeClient internal constructor(
     private fun publish(connection: Socket, channel: String, body: String) {
         when (channel) {
             "lightning_board_FX_BTC_JPY" ->
-                board.onNext(gson.fromJson(body, Board::class.java))
+                decodeAndPublish(body, Board::class.java, board::onNext)
             "lightning_board_snapshot_FX_BTC_JPY" ->
-                boardSnapshot.onNext(gson.fromJson(body, Board::class.java))
+                decodeAndPublish(body, Board::class.java, boardSnapshot::onNext)
             "lightning_executions_FX_BTC_JPY" ->
-                executions.onNext(gson.fromJson(body, object : TypeToken<List<Execution>>() {}.type))
+                decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions::onNext)
             "child_order_events" ->
-                childEvents.onNext(connection to gson.fromJson(body, object : TypeToken<List<ChildOrderEvent>>() {}.type))
+                decodeAndPublish<List<ChildOrderEvent>>(body, object : TypeToken<List<ChildOrderEvent>>() {}.type) {
+                    childEvents.onNext(connection to it)
+                }
             "parent_order_events" ->
-                parentEvents.onNext(connection to gson.fromJson(body, object : TypeToken<List<ParentOrderEvent>>() {}.type))
+                decodeAndPublish<List<ParentOrderEvent>>(body, object : TypeToken<List<ParentOrderEvent>>() {}.type) {
+                    parentEvents.onNext(connection to it)
+                }
         }
+    }
+
+    private fun <T : Any> decodeAndPublish(body: String, type: Type, publish: (T) -> Unit) {
+        val decoded = try {
+            gson.fromJson<T>(body, type)
+        } catch (_: JsonParseException) {
+            return
+        }
+        if (decoded != null) publish(decoded)
     }
 }

@@ -1,18 +1,17 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.ReplaySubject
 
@@ -27,37 +26,36 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = client?.let(::Session)
-    private val requests = CompositeDisposable()
+    private var disposed = false
 
     fun dispose() {
-        requests.dispose()
+        disposed = true
         replaceSession(null)
     }
 
     fun switchAccount(client: APIClientV1) {
-        if (requests.isDisposed) return
+        if (disposed) return
 
         replaceSession(Session(client))
-        refresh()
     }
 
     fun unlink() = replaceSession(null)
 
-    fun refresh() {
-        if (requests.isDisposed) return
+    fun refresh(): Completable = Completable.defer {
+        if (disposed) return@defer Completable.complete()
 
-        val current = session ?: return
-        bind(current, current.client.getPositions(), position)
-        bind(current, current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }, balance)
-        // Unchanged rows keep their order references for cancellation.
-        current.client.getChildOrders("FX_BTC_JPY")
-            .subscribeOn(requestScheduler)
-            .observeOn(stateScheduler)
-            .subscribeNext { if (current === session && orders.value != it) orders.value = it }
-            .addTo(requests)
+        val current = session ?: return@defer Completable.complete()
+        Completable.mergeArray(
+            current.client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
+            current.client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
+                .publishResponse { if (!disposed && current === session) balance.value = it },
+            // Unchanged rows keep their order references for cancellation.
+            current.client.getChildOrders("FX_BTC_JPY")
+                .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+        )
     }
 
-    fun isCurrent(confirmation: CloseConfirmation): Boolean = !requests.isDisposed && confirmation.session === session
+    fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
         val current = session ?: return null
@@ -82,7 +80,7 @@ internal class PrivateTradingState(
         )
     }
 
-    fun submitOrder(request: SendChildOrderRequest): Observable<Map<String, Any>>? {
+    fun submitOrder(request: SendChildOrderRequest): Observable<ChildOrderAcceptance>? {
         val current = session ?: return null
         return withinSession(current, current.client.sendChildOrder(request))
     }
@@ -97,7 +95,6 @@ internal class PrivateTradingState(
     private fun replaceSession(next: Session?) {
         val previous = session
         session = next
-        requests.clear()
         previous?.ended?.onNext(Unit)
         position.value = emptyList()
         balance.value = 0.0
@@ -109,12 +106,8 @@ internal class PrivateTradingState(
             .observeOn(stateScheduler)
             .takeUntil(current.ended)
 
-    private fun <T : Any> bind(current: Session, source: Observable<T>, target: Variable<T>) {
-        source.subscribeOn(requestScheduler)
-            .observeOn(stateScheduler)
-            .subscribeNext { if (current === session) target.value = it }
-            .addTo(requests)
-    }
+    private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
+        subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
 
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1) {

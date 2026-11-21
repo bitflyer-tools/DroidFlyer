@@ -4,6 +4,7 @@ import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
@@ -13,7 +14,7 @@ import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
 class LimitOrderPresenter(
-    private val submit: (SendChildOrderRequest) -> Observable<Map<String, Any>>?
+    private val submit: (SendChildOrderRequest) -> Observable<ChildOrderAcceptance>?
 ) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
     override val isLoading = Variable(false)
     override val amount = Variable(0.0)

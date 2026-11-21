@@ -16,7 +16,7 @@ internal class RealtimeSession(
     init {
         client.preference.accountUnlinked
             .subscribeNext {
-                status.privateState.unlink()
+                status.unlinkAccount()
                 client.restartConnection()
             }
             .addTo(subscriptions)

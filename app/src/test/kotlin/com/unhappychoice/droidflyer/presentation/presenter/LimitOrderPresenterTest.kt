@@ -3,9 +3,11 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import android.app.Application
 import android.view.ContextThemeWrapper
 import android.widget.FrameLayout
+import com.google.gson.JsonParseException
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -32,7 +34,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28], application = Application::class)
 class LimitOrderPresenterTest {
     private val apiClient = mock<APIClientV1>()
-    private val pending = PublishSubject.create<Map<String, Any>>()
+    private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private val presenter = LimitOrderPresenter(apiClient::sendChildOrder)
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -66,7 +68,7 @@ class LimitOrderPresenterTest {
         submit(LimitOrderSide.SELL, 200)
 
         verifyPendingOrder("BUY", 100)
-        pending.onNext(mapOf("child_order_acceptance_id" to "test"))
+        pending.onNext(ChildOrderAcceptance("test"))
         assertFalse(presenter.canSubmitOrder)
         pending.onComplete()
 
@@ -82,7 +84,7 @@ class LimitOrderPresenterTest {
         submit(LimitOrderSide.BUY, 100)
 
         verifyPendingOrder("SELL", 200)
-        pending.onError(IllegalStateException("Order failed"))
+        pending.onError(JsonParseException("Invalid acceptance ID"))
 
         assertTrue(presenter.canSubmitOrder)
         submit(LimitOrderSide.SELL, 201)
