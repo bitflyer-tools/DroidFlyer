@@ -27,7 +27,7 @@ class CurrentStatusService internal constructor(
     privateChannelsReady: Observable<Unit> = Observable.empty(),
     childEvents: Observable<List<ChildOrderEvent>> = Observable.empty(),
     privateChannelsDisconnected: Observable<Unit> = Observable.empty(),
-    privateChannelAuthenticationFailed: Observable<Unit> = Observable.empty()
+    privateChannelsUnavailable: Observable<Unit> = Observable.empty()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
@@ -39,7 +39,7 @@ class CurrentStatusService internal constructor(
         realtimeClient.privateChannelsReady,
         realtimeClient.childOrderEvents,
         realtimeClient.privateChannelsDisconnected,
-        realtimeClient.privateChannelAuthenticationFailed
+        realtimeClient.privateChannelsUnavailable
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -117,7 +117,7 @@ class CurrentStatusService internal constructor(
         Observable.merge(
             privateChannelsReady.map { true },
             privateChannelsDisconnected.map { false },
-            privateChannelAuthenticationFailed.map { false }
+            privateChannelsUnavailable.map { false }
         ).observeOn(AndroidSchedulers.mainThread())
             .subscribeNext(stopOrders::onPrivateChannelAvailability)
             .addTo(bag)

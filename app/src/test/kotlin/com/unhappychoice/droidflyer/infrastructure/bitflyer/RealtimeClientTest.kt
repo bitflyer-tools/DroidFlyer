@@ -37,6 +37,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.any
+import org.mockito.Mockito.clearInvocations
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -87,7 +88,7 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun signalsPrivateChannelReadinessAfterEachAuthenticatedConnection() {
+    fun signalsPrivateChannelReadinessOnlyAfterBothSubscriptionsAreAcknowledged() {
         preference.save(APICredentials("key", "secret"))
         val client = RealtimeClient(gson, preference, socket)
         val ready = client.privateChannelsReady.test()
@@ -96,6 +97,10 @@ class RealtimeClientTest {
         socket.receive(Socket.EVENT_CONNECT)
         ready.assertNoValues()
         socket.authAck!!.call(JSONObject.NULL)
+        ready.assertNoValues()
+        socket.subscriptionAcks.getValue("parent_order_events").call()
+        ready.assertNoValues()
+        socket.subscriptionAcks.getValue("child_order_events").call(JSONObject.NULL)
         ready.assertValueCount(1)
         disconnected.assertNoValues()
 
@@ -104,7 +109,65 @@ class RealtimeClientTest {
         socket.receive(Socket.EVENT_CONNECT)
         ready.assertValueCount(1)
         socket.authAck!!.call(JSONObject.NULL)
+        socket.acknowledgePrivateSubscriptions()
         ready.assertValues(Unit, Unit)
+    }
+
+    @Test
+    fun rejectsPartialSubscriptionAndIgnoresAcknowledgementsFromAnEarlierConnection() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        val ready = client.privateChannelsReady.test()
+        val unavailable = client.privateChannelsUnavailable.test()
+
+        socket.receive(Socket.EVENT_CONNECT)
+        socket.authAck!!.call()
+        val firstChildAck = socket.subscriptionAcks.getValue("child_order_events")
+        val firstParentAck = socket.subscriptionAcks.getValue("parent_order_events")
+        firstParentAck.call(JSONObject().put("message", "Permission denied"))
+        ready.assertNoValues()
+        unavailable.assertValue(Unit)
+
+        socket.receive(Socket.EVENT_DISCONNECT)
+        socket.receive(Socket.EVENT_CONNECT)
+        socket.authAck!!.call()
+        firstChildAck.call()
+        socket.subscriptionAcks.getValue("parent_order_events").call()
+        ready.assertNoValues()
+        socket.subscriptionAcks.getValue("child_order_events").call()
+        ready.assertValue(Unit)
+    }
+
+    @Test
+    fun continuesPollingStopOrdersAfterPrivateSubscriptionFails() {
+        preference.save(APICredentials("key", "secret"))
+        val client = RealtimeClient(gson, preference, socket)
+        val api = stopOrderApi()
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                socket.receive(Socket.EVENT_CONNECT)
+                socket.authAck!!.call()
+                socket.subscriptionAcks.getValue("child_order_events").call()
+                socket.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
+                service.privateState.stopOrders.refresh()
+                scheduler.advanceTimeBy(12, SECONDS)
+                verify(api).getParentOrders(orderState = "ACTIVE", count = 100)
+
+                clearInvocations(api)
+                scheduler.advanceTimeBy(38, SECONDS)
+                verify(api).getParentOrders(orderState = "ACTIVE", count = 100)
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
     }
 
     @Test
@@ -130,6 +193,7 @@ class RealtimeClientTest {
             try {
                 socket.receive(Socket.EVENT_CONNECT)
                 checkNotNull(socket.authAck).call(JSONObject.NULL)
+                socket.acknowledgePrivateSubscriptions()
                 val channel = "parent_order_events"
                 val event = """
                     [{"product_code":"FX_BTC_JPY","event_type":"CANCEL","parent_order_id":"parent-1",
@@ -171,6 +235,7 @@ class RealtimeClientTest {
                 val denied = JSONObject("""{"message":"Permission denied"}""")
                 socket.receive(Socket.EVENT_CONNECT)
                 checkNotNull(socket.authAck).call(JSONObject.NULL)
+                socket.acknowledgePrivateSubscriptions()
                 val stops = service.privateState.stopOrders
                 stops.refresh()
                 scheduler.advanceTimeBy(12, SECONDS)
@@ -365,6 +430,7 @@ class RealtimeClientTest {
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {
         val subscriptions = mutableListOf<String>()
+        val subscriptionAcks = mutableMapOf<String, Ack>()
         var authAck: Ack? = null
 
         override fun connect(): Socket = this
@@ -373,10 +439,18 @@ class RealtimeClientTest {
 
         override fun emit(event: String, vararg args: Any): Emitter {
             when (event) {
-                "subscribe" -> subscriptions.add(args.single() as String)
+                "subscribe" -> {
+                    val channel = args.first() as String
+                    subscriptions.add(channel)
+                    (args.last() as? Ack)?.let { subscriptionAcks[channel] = it }
+                }
                 "auth" -> authAck = args.last() as Ack
             }
             return this
+        }
+
+        fun acknowledgePrivateSubscriptions() {
+            subscriptionAcks.values.forEach { it.call() }
         }
 
         fun receive(event: String, vararg args: Any) {

@@ -448,7 +448,7 @@ class StopOrderServiceTest {
     @Test
     fun blocksCancellationAfterPrivateChannelAuthenticationFailsAtStartup() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
-            realtime.privateChannelAuthenticationFailed.onNext(Unit)
+            realtime.privateChannelsUnavailable.onNext(Unit)
             scheduler.triggerActions()
             stops.refresh()
             scheduler.advanceTimeBy(12, SECONDS)

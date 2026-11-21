@@ -40,7 +40,7 @@ class RealtimeClient internal constructor(
 
     val privateChannelsReady = PublishSubject.create<Unit>()
     internal val privateChannelsDisconnected = PublishSubject.create<Unit>()
-    internal val privateChannelAuthenticationFailed = PublishSubject.create<Unit>()
+    internal val privateChannelsUnavailable = PublishSubject.create<Unit>()
 
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
@@ -52,7 +52,9 @@ class RealtimeClient internal constructor(
         "parent_order_events"
     )
 
+    private var authenticationAttempt = 0L
     @Volatile private var disconnected = false
+    private var privateSubscriptionsReady = false
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -65,21 +67,27 @@ class RealtimeClient internal constructor(
         }
 
         socket.on(Socket.EVENT_DISCONNECT) {
-            privateChannelsDisconnected.onNext(Unit)
-            Log.d("Socket", "Disconnected")
+            onSocketDisconnected()
         }
 
         socket.connect()
     }
 
+    @Synchronized
     fun authenticate() {
         if (disconnected) return
+        val attempt = ++authenticationAttempt
+        if (privateSubscriptionsReady) {
+            privateSubscriptionsReady = false
+            privateChannelsUnavailable.onNext(Unit)
+        }
         val credentials = preference.read()
         if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
         val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
-        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(it) })
+        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { onAuthenticated(attempt, it) })
     }
 
+    @Synchronized
     fun disconnect() {
         if (disconnected) return
         disconnected = true
@@ -87,20 +95,56 @@ class RealtimeClient internal constructor(
         socket.disconnect()
     }
 
-    private fun onAuthenticated(args: Array<out Any?>) {
-        if (disconnected) return
-        val error = args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
+    @Synchronized
+    private fun onSocketDisconnected() {
+        authenticationAttempt++
+        privateSubscriptionsReady = false
+        privateChannelsDisconnected.onNext(Unit)
+        Log.d("Socket", "Disconnected")
+    }
+
+    @Synchronized
+    private fun onAuthenticated(attempt: Long, args: Array<out Any?>) {
+        if (!isCurrentAttempt(attempt)) return
+        val error = acknowledgementError(args)
         if (error == null) {
-            subscribePrivateChannels()
-            privateChannelsReady.onNext(Unit)
+            subscribePrivateChannels(attempt)
         } else {
-            privateChannelAuthenticationFailed.onNext(Unit)
+            privateChannelsUnavailable.onNext(Unit)
             Log.d("Socket", "Authentication failed: $error")
         }
     }
 
-    private fun subscribePrivateChannels() =
-        privateChannels.forEach { channel -> socket.emit("subscribe", channel) }
+    private fun subscribePrivateChannels(attempt: Long) {
+        val pendingChannels = privateChannels.toMutableSet()
+        privateChannels.forEach { channel ->
+            socket.emit("subscribe", channel, Ack { args ->
+                onPrivateSubscriptionAcknowledged(attempt, channel, pendingChannels, args)
+            })
+        }
+    }
+
+    @Synchronized
+    private fun onPrivateSubscriptionAcknowledged(
+        attempt: Long, channel: String, pendingChannels: MutableSet<String>, args: Array<out Any?>
+    ) {
+        if (!isCurrentAttempt(attempt)) return
+        val error = acknowledgementError(args)
+        if (error != null) {
+            authenticationAttempt++
+            privateChannelsUnavailable.onNext(Unit)
+            Log.d("Socket", "Subscription failed for $channel: $error")
+        } else if (pendingChannels.remove(channel) && pendingChannels.isEmpty()) {
+            privateSubscriptionsReady = true
+            privateChannelsReady.onNext(Unit)
+        }
+    }
+
+    private fun isCurrentAttempt(attempt: Long) =
+        !disconnected && authenticationAttempt == attempt
+
+    private fun acknowledgementError(args: Array<out Any?>) =
+        args.firstOrNull()?.takeUnless { it == JSONObject.NULL }
 
     private fun publishEvent(channel: String, event: Any?) {
         if (disconnected) return
