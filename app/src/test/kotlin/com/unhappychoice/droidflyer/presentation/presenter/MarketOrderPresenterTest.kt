@@ -1,10 +1,13 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import com.google.gson.JsonParseException
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
@@ -15,6 +18,8 @@ import io.reactivex.subjects.PublishSubject
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
@@ -25,7 +30,7 @@ class MarketOrderPresenterTest {
     private val scheduler = TestScheduler()
     private val apiClient = Mockito.mock(APIClientV1::class.java)
     private val closePositionResponse = PublishSubject.create<List<Position>>()
-    private val acceptedResponse = mapOf<String, Any>("child_order_acceptance_id" to "JRF-accepted")
+    private val acceptedResponse = ChildOrderAcceptance("JRF-accepted")
     private val messages = mutableListOf<Int>()
     private lateinit var status: CurrentStatusService
     private lateinit var presenter: MarketOrderPresenter
@@ -73,17 +78,22 @@ class MarketOrderPresenterTest {
     }
 
     @Test
-    fun rejectedBuyReportsFailureAndRestoresControls() {
+    fun invalidBuyAcceptancePromptsOrderCheckAndRestoresControls() {
         presenter.amount.value = 0.5
 
-        assertRejected("BUY", submit = presenter::buy)
+        assertSubmissionFailure(
+            "BUY",
+            error = JsonParseException("Invalid acceptance ID"),
+            message = R.string.order_acceptance_uncertain,
+            submit = presenter::buy
+        )
     }
 
     @Test
     fun rejectedSellReportsFailureAndRestoresControls() {
         presenter.amount.value = 0.5
 
-        assertRejected("SELL", submit = presenter::sell)
+        assertSubmissionFailure("SELL", submit = presenter::sell)
     }
 
     @Test
@@ -93,7 +103,25 @@ class MarketOrderPresenterTest {
         Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
             .thenReturn(Observable.just(status.position.value))
 
-        assertRejected("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+        assertSubmissionFailure("SELL", timeInForce = "IOC", submit = ::confirmPositionClose)
+    }
+
+    @Test
+    fun uncertainMarketOrderPromptsOrderCheck() {
+        presenter.amount.value = 0.5
+
+        assertSubmissionFailure("BUY", error = orderHttpError(503), message = R.string.order_acceptance_uncertain,
+            submit = presenter::buy)
+    }
+
+    @Test
+    fun uncertainCloseOrderPromptsOrderCheck() {
+        status.position.value = listOf(openPosition("BUY", 0.5))
+        Mockito.`when`(apiClient.getPositions("FX_BTC_JPY"))
+            .thenReturn(Observable.just(status.position.value))
+
+        assertSubmissionFailure("SELL", timeInForce = "IOC", error = orderHttpError(503),
+            message = R.string.order_acceptance_uncertain, submit = ::confirmPositionClose)
     }
 
     @Test
@@ -101,7 +129,7 @@ class MarketOrderPresenterTest {
         stubClose("SELL", "BUY", positionSize = 12.0)
         val nextOrder = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 2.0, timeInForce = "IOC")
         Mockito.`when`(apiClient.sendChildOrder(nextOrder)).thenReturn(
-            Observable.error(HttpException(Response.error<Any>(400, "".toResponseBody())))
+            Observable.error(orderHttpError(400))
         )
 
         confirmPositionClose()
@@ -163,13 +191,24 @@ class MarketOrderPresenterTest {
     @Test
     fun switchingAccountsStopsThePreviousCloseSequence() {
         stubClose("SELL", "BUY", positionSize = 12.0)
+        val oldBoard = PublishSubject.create<Board>()
+        Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(oldBoard, Observable.empty())
         confirmPositionClose()
+        status.updateStatus()
+        scheduler.triggerActions()
+        assertTrue(oldBoard.hasObservers())
+        assertTrue(closePositionResponse.hasObservers())
 
         val newAccount = Mockito.mock(APIClientV1::class.java)
         Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
         Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
         Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
-        status.privateState.switchAccount(newAccount)
+        status.switchAccount(newAccount)
+        scheduler.triggerActions()
+        assertFalse(oldBoard.hasObservers())
+        assertFalse(closePositionResponse.hasObservers())
+        Mockito.verify(newAccount).getPositions()
+        assertEquals(emptyList<Position>(), status.position.value)
         closePositionResponse.onNext(listOf(openPosition("BUY", 2.0)))
         Mockito.verify(apiClient, Mockito.never()).sendChildOrder(
             SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 2.0, timeInForce = "IOC")
@@ -179,8 +218,14 @@ class MarketOrderPresenterTest {
         assertEquals(listOf(R.string.market_order_accepted), messages)
     }
 
-    private fun assertRejected(side: String, timeInForce: String = "GTC", submit: () -> Unit) {
-        val response = PublishSubject.create<Map<String, Any>>()
+    private fun assertSubmissionFailure(
+        side: String,
+        timeInForce: String = "GTC",
+        error: Throwable = orderHttpError(400),
+        message: Int = R.string.market_order_failed,
+        submit: () -> Unit
+    ) {
+        val response = PublishSubject.create<ChildOrderAcceptance>()
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, 0.5, timeInForce = timeInForce)
         Mockito.`when`(apiClient.sendChildOrder(request)).thenReturn(response)
         val loading = presenter.isLoading.asObservable().test()
@@ -190,11 +235,14 @@ class MarketOrderPresenterTest {
         loading.assertValues(false, true)
         assertEquals(emptyList<Int>(), messages)
 
-        response.onError(HttpException(Response.error<Any>(400, "".toResponseBody())))
+        response.onError(error)
 
         loading.assertValues(false, true, false)
-        assertEquals(listOf(R.string.market_order_failed), messages)
+        assertEquals(listOf(message), messages)
     }
+
+    private fun orderHttpError(statusCode: Int) =
+        HttpException(Response.error<Any>(statusCode, "".toResponseBody()))
 
     private fun confirmPositionClose() {
         presenter.clearPosition(requireNotNull(presenter.positionCloseOrder())) {

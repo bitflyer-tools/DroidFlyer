@@ -6,10 +6,14 @@ import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
+import io.reactivex.schedulers.Schedulers
+import io.reactivex.subjects.CompletableSubject
+import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -17,11 +21,11 @@ import java.util.concurrent.atomic.AtomicReference
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
-    boardUpdates: Observable<(Board) -> Board>,
+    boardUpdates: Observable<BoardUpdate>,
     orderEvents: Observable<Unit>,
-    privateClient: APIClientV1 = apiClient
+    privateClient: APIClientV1? = apiClient
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
@@ -34,7 +38,7 @@ class CurrentStatusService internal constructor(
 
     internal val privateState = PrivateTradingState(privateClient)
 
-    val currentPrice = Variable(0.0)
+    internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = privateState.position
@@ -45,7 +49,10 @@ class CurrentStatusService internal constructor(
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
 
+    private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
+    private var accountChanged = CompletableSubject.create()
+    private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val realtimeBoardRevision = AtomicLong()
     private val fundingStatus = AtomicReference(FundingStatus())
 
@@ -53,18 +60,27 @@ class CurrentStatusService internal constructor(
         executions
             .filter { it.isNotEmpty() }
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { currentPrice.value = it.first().price }
+            .subscribeNext { batch ->
+                batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }?.let {
+                    currentPrice.value = MarketPrice(it.price)
+                }
+            }
             .addTo(bag)
 
-        boardUpdates
-            .doOnNext { realtimeBoardRevision.incrementAndGet() }
+        val realtimeBoards = boardUpdates.doOnNext { realtimeBoardRevision.incrementAndGet() }
+        observeOrderBook(Observable.merge(realtimeBoards, restBoards), Schedulers.single()) { update ->
+            update.requestRevision?.let { it == realtimeBoardRevision.get() } ?: true
+        }
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { update -> board.value = update(board.value) }
-            .addTo(bag)
-
-        board.asObservable()
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { it.updateMarketQuotes(buyPrice, sellPrice) }
+            .subscribeNext { event ->
+                when (event) {
+                    is OrderBookEvent.View -> board.value = event.board
+                    is OrderBookEvent.Quotes -> {
+                        if (buyPrice.value != event.bestAsk) buyPrice.value = event.bestAsk
+                        if (sellPrice.value != event.bestBid) sellPrice.value = event.bestBid
+                    }
+                }
+            }
             .addTo(bag)
 
         orderEvents
@@ -78,15 +94,23 @@ class CurrentStatusService internal constructor(
 
     fun dispose() {
         bag.dispose()
+        statusRefresh.dispose()
         privateState.dispose()
     }
 
-    fun updateStatus() {
+    fun updateStatus() = statusRefresh.request(followUp = true)
+
+    fun pollStatus() = statusRefresh.request(followUp = false)
+
+    internal fun switchAccount(client: APIClientV1?) {
         if (bag.isDisposed) return
 
-        privateState.refresh()
-
-        refreshBoard()
+        val previous = accountChanged
+        accountChanged = CompletableSubject.create()
+        privateState.switchAccount(client)
+        // Queue the new account before ending an in-flight refresh.
+        updateStatus()
+        previous.onComplete()
     }
 
     internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
@@ -115,28 +139,17 @@ class CurrentStatusService internal constructor(
             .subscribeOnIoObserveOnUI()
             .repeatWhen { it.delay(1, TimeUnit.MINUTES) }
 
-    private fun refreshBoard() {
+    private fun refreshStatus(): Completable = Completable.ambArray(
+        accountChanged,
+        Completable.mergeArray(privateState.refresh(), refreshBoard())
+    )
+
+    private fun refreshBoard(): Completable {
         val requestRevision = realtimeBoardRevision.get()
-        apiClient.getBoard("FX_BTC_JPY")
+        return apiClient.getBoard("FX_BTC_JPY")
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { snapshot ->
-                if (realtimeBoardRevision.get() == requestRevision) board.value = snapshot
+            .publishStatus { snapshot ->
+                restBoards.onNext(BoardUpdate(snapshot, BoardSource.REST, requestRevision))
             }
-            .addTo(bag)
     }
 }
-
-internal fun Board.updateMarketQuotes(buyPrice: Variable<Long>, sellPrice: Variable<Long>) {
-    val bestAsk = asks.minOfOrNull(Order::price) ?: 0L
-    val bestBid = bids.maxOfOrNull(Order::price) ?: 0L
-    if (buyPrice.value != bestAsk) buyPrice.value = bestAsk
-    if (sellPrice.value != bestBid) sellPrice.value = bestBid
-}
-
-internal fun boardUpdates(
-    snapshots: Observable<Board>,
-    deltas: Observable<Board>
-): Observable<(Board) -> Board> = Observable.merge(
-    snapshots.map<(Board) -> Board> { snapshot -> { snapshot } },
-    deltas.map<(Board) -> Board> { delta -> { book -> book.merge(delta) } }
-)

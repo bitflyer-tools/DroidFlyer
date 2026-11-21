@@ -2,7 +2,9 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.round
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Observable
 import io.reactivex.Scheduler
@@ -41,15 +43,17 @@ internal class ClosePositionService(
         val request = SendChildOrderRequest(
             PRODUCT_CODE, "MARKET", side, null, nextOrderSize(quantity), timeInForce = "IOC"
         )
-        return apiClient.sendChildOrder(request).singleOrError()
+        return apiClient.submitChildOrder(request).singleOrError()
             .onErrorResumeNext { error ->
-                Single.error(if (onFirstAccepted != null) InitialOrderSubmissionException(error) else error)
+                Single.error(
+                    if (onFirstAccepted != null && error !is OrderAcceptanceUncertainException) {
+                        InitialOrderSubmissionException(error)
+                    } else error
+                )
             }
-            .flatMap { response ->
-                val acceptanceId = response["child_order_acceptance_id"] as? String
-                check(!acceptanceId.isNullOrBlank()) { "Missing close order acceptance ID" }
+            .flatMap { acceptance ->
                 onFirstAccepted?.invoke()
-                executedSize(acceptanceId)
+                executedSize(acceptance.acceptanceId)
             }
             .flatMap { filled ->
                 check(filled > 0.0 && filled <= request.size) { "Invalid close order fill size" }
