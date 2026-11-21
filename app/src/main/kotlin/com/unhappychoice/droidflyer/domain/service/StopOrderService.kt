@@ -33,7 +33,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
-    private val gapAffectedOrders = mutableSetOf<String>()
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val fallbackReads = StopOrderFallbackReads(io)
@@ -50,7 +49,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         refreshing = false
         realtimeRefresh = null
         pendingRealtimeRefresh = null
-        gapAffectedOrders.clear()
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -157,9 +155,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         if (!ready && channelGapOpen) return
         privateChannelsUnavailable = !ready
         channelGapOpen = !ready
-        if (channelGapOpen) {
-            orders.value.filter { it.status in waitingOrUnknown }.mapTo(gapAffectedOrders) { it.acceptanceId }
-        }
         if (enabled) refresh(recoverTriggers = true)
     }
 
@@ -204,7 +199,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val reads = fallbackReads.takeIf { privateChannelsUnavailable || realtime != null }
         val channelGap = channelGapOpen
-        val affectedOrders = gapAffectedOrders.toSet()
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         refreshRequest.set(null)
@@ -223,11 +217,11 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
                 val event = knownEvents[row.parentOrderAcceptanceId] ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, reads).concatMap { stop ->
-                    // The API can omit a market child that expired without any fills.
+                    // Keep waiting orders unverified during a channel gap.
                     val updated = stop.copy(
                         event = event,
                         childTermination = cached?.childTermination,
-                        missedTriggerPossible = channelGap || stop.acceptanceId in affectedOrders
+                        missedTriggerPossible = channelGap
                     )
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
@@ -284,7 +278,6 @@ internal class StopOrderService(client: APIClientV1?, private val io: Scheduler,
     }
 
     private fun publishPacedRow(row: StopOrder) {
-        if (row.missedTriggerPossible) gapAffectedOrders.add(row.acceptanceId)
         val updated = applyEvent(row)
         val existing = orders.value
         orders.value = if (existing.any { it.acceptanceId == row.acceptanceId }) {
