@@ -89,12 +89,14 @@ class CurrentStatusService internal constructor(
         val childUpdates = childEvents.filter { batch ->
             batch.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
         }
-        Observable.merge(
-            parentUpdates.debounce(1, TimeUnit.SECONDS).map { false },
-            childUpdates.debounce(1, TimeUnit.SECONDS).map { true }
-        )
+        parentUpdates.debounce(1, TimeUnit.SECONDS)
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { recoverTriggers -> stopOrders.refreshIfEnabled(recoverTriggers) }
+            .subscribeNext { stopOrders.refreshIfEnabled() }
+            .addTo(bag)
+
+        childUpdates.debounce(1, TimeUnit.SECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext { stopOrders.onChildUpdates() }
             .addTo(bag)
 
         Observable.merge(

@@ -18,7 +18,8 @@ data class ChildOrderEvent(
 ) {
     fun isExecution(): Boolean = eventType == "EXECUTION"
 
-    internal fun affectsStopOrderStatus(): Boolean = eventType in stopOrderStatusEvents
+    internal fun affectsStopOrderStatus(): Boolean =
+        (childOrderType == null || childOrderType == "MARKET") && eventType in stopOrderStatusEvents
 
     private companion object {
         val stopOrderStatusEvents = setOf("EXECUTION", "ORDER_FAILED", "CANCEL", "EXPIRE")

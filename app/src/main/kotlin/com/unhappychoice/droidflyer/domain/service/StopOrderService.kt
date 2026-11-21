@@ -26,6 +26,9 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
     private var account = Account(client)
     private val requests = CompositeDisposable()
     private var enabled = false
+    private var refreshing = false
+    private var recoveringFromChildUpdates = false
+    private var childRefreshPending = false
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
@@ -38,6 +41,9 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         account = Account(client)
         previous.ended.onComplete()
         refreshRequest.set(null)
+        refreshing = false
+        recoveringFromChildUpdates = false
+        childRefreshPending = false
         events.clear()
         orders.value = emptyList()
         loadFailed.value = false
@@ -129,17 +135,35 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         if (enabled) refresh(recoverTriggers)
     }
 
-    fun refresh(recoverTriggers: Boolean = false) {
+    fun onChildUpdates() {
+        if (!enabled || privateChannelsUnavailable || requests.isDisposed) return
+        childRefreshPending = true
+        refreshPendingChildUpdates()
+    }
+
+    fun refresh(recoverTriggers: Boolean = false) = refresh(recoverTriggers, pacedChildRefresh = false)
+
+    private fun refreshPendingChildUpdates() {
+        if (!refreshing && childRefreshPending && !privateChannelsUnavailable) {
+            childRefreshPending = false
+            refresh(recoverTriggers = false, pacedChildRefresh = true)
+        }
+    }
+
+    private fun refresh(recoverTriggers: Boolean, pacedChildRefresh: Boolean) {
         if (requests.isDisposed) return
         enabled = true
+        refreshing = true
+        childRefreshPending = !privateChannelsUnavailable && !recoverTriggers &&
+            (childRefreshPending || recoveringFromChildUpdates)
+        recoveringFromChildUpdates = pacedChildRefresh
         fallbackRefresh.set(null)
         if (recoverTriggers) invalidateWaitingOrders()
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
-        val recover = recoverOnRefresh || privateChannelsUnavailable
+        val recover = recoverOnRefresh || privateChannelsUnavailable || pacedChildRefresh
         val current = account
         val client = current.client
-        val fallback = privateChannelsUnavailable
-        val reads = fallbackReads.takeIf { fallback }
+        val reads = fallbackReads.takeIf { privateChannelsUnavailable || pacedChildRefresh }
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         refreshRequest.set(null)
@@ -170,22 +194,30 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
                 }
             }
         }.subscribeOn(io).observeOn(main)
-            .doOnNext { row -> if (fallback && current === account) publishFallbackRow(row) }
+            .doOnNext { row -> if (reads != null && current === account) publishPacedRow(row) }
             .toList()
-        refreshRequest.set(request.subscribe({ rows ->
+        request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
                 recoverOnRefresh = false
                 scheduleFallbackRefresh()
                 orders.value = rows.map(::applyEvent)
                 loadFailed.value = rows.any { it.triggerPrice == null || !it.triggerVerified }
+                finishRefresh()
             }
         }, {
             if (current === account) {
                 scheduleFallbackRefresh()
                 invalidateWaitingOrders()
                 loadFailed.value = true
+                finishRefresh()
             }
-        }))
+        })
+    }
+
+    private fun finishRefresh() {
+        refreshing = false
+        recoveringFromChildUpdates = false
+        refreshPendingChildUpdates()
     }
 
     private fun scheduleFallbackRefresh() {
@@ -198,7 +230,7 @@ internal class StopOrderService(client: APIClientV1, private val io: Scheduler, 
         }
     }
 
-    private fun publishFallbackRow(row: StopOrder) {
+    private fun publishPacedRow(row: StopOrder) {
         val updated = applyEvent(row)
         val existing = orders.value
         orders.value = if (existing.any { it.acceptanceId == row.acceptanceId }) {

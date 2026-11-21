@@ -103,13 +103,13 @@ class StopOrderServiceTest {
             executedSize = 0.0
             childOrders = marketChild(0.005)
             realtime.childOrderEvents.onNext(listOf(execution))
-            scheduler.advanceTimeBy(1, SECONDS)
+            scheduler.advanceTimeBy(9, SECONDS)
             assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
 
             parentState = "COMPLETED"
             childOrders = marketChild(0.01)
             realtime.childOrderEvents.onNext(listOf(execution.copy(execId = 2)))
-            scheduler.advanceTimeBy(1, SECONDS)
+            scheduler.advanceTimeBy(12, SECONDS)
             assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
         }
 
@@ -124,7 +124,7 @@ class StopOrderServiceTest {
 
             childOrders = marketChild(0.005)
             realtime.childOrderEvents.onNext(listOf(childExecution()))
-            scheduler.advanceTimeBy(1, SECONDS)
+            scheduler.advanceTimeBy(9, SECONDS)
 
             val order = stops.orders.value.single()
             assertEquals("ACTIVE", order.parent.parentOrderState)
@@ -134,6 +134,58 @@ class StopOrderServiceTest {
                 it.url.encodedPath == "/v1/me/getchildorders" &&
                     it.url.queryParameter("parent_order_id") == "parent-1"
             })
+        }
+
+    @Test
+    fun limitExecutionDoesNotRefreshWaitingStops() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.triggerActions()
+            requests.clear()
+
+            realtime.childOrderEvents.onNext(listOf(childExecution().copy(childOrderType = "LIMIT")))
+            scheduler.advanceTimeBy(30, SECONDS)
+
+            assertTrue(stopReadPaths().isEmpty())
+            assertTrue(stops.orders.value.single().canCancel)
+        }
+
+    @Test
+    fun childUpdatesPaceReadsAndCoalesceDuringAnActiveRefresh() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            activeParentPage = {
+                (1..2).joinToString(prefix = "[", postfix = "]") {
+                    """{"id":$it,"parent_order_id":"parent-$it","parent_order_acceptance_id":"acceptance-$it",
+                       "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE",
+                       "side":"SELL","size":0.01}"""
+                }
+            }
+            stops.refresh()
+            scheduler.triggerActions()
+            assertEquals(2, stops.orders.value.count { it.canCancel })
+            requests.clear()
+            val execution = childExecution()
+
+            realtime.childOrderEvents.onNext(listOf(execution))
+            scheduler.advanceTimeBy(1, SECONDS)
+            assertEquals(listOf("/v1/me/getparentorders"), stopReadPaths())
+
+            repeat(3) {
+                realtime.childOrderEvents.onNext(listOf(execution))
+                scheduler.advanceTimeBy(2, SECONDS)
+            }
+            assertEquals(2, stopReadPaths().size)
+
+            scheduler.advanceTimeBy(2, SECONDS)
+            assertEquals("/v1/me/getchildorders", stopReadPaths().last())
+            assertEquals(3, stopReadPaths().size)
+
+            scheduler.advanceTimeBy(4, SECONDS)
+            assertEquals("/v1/me/getchildorders", stopReadPaths().last())
+            assertEquals(4, stopReadPaths().size)
+
+            scheduler.advanceTimeBy(30, SECONDS)
+            assertEquals(8, stopReadPaths().size)
         }
 
     @Test
@@ -545,7 +597,7 @@ class StopOrderServiceTest {
 
             childOrders = marketChild(filled, state)
             realtime.childOrderEvents.onNext(listOf(childExecution().copy(eventType = event)))
-            scheduler.advanceTimeBy(1, SECONDS)
+            scheduler.advanceTimeBy(9, SECONDS)
 
             val order = stops.orders.value.single()
             assertEquals(status, order.status)
