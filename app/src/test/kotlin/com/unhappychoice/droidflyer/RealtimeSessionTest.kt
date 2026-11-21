@@ -7,7 +7,8 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
@@ -15,9 +16,12 @@ import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
+import io.socket.emitter.Emitter
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -51,7 +55,7 @@ class RealtimeSessionTest {
     fun replacementSessionAloneRefreshesStatusAndDeliversExecutions() {
         val old = Session()
         assertEquals(1, old.refreshes)
-        old.socket.receiveExecution()
+        old.accountSockets.single().receiveExecution()
         assertTrue(old.positions.hasObservers())
         old.status.updateStatus()
         old.lifecycle.close()
@@ -60,15 +64,14 @@ class RealtimeSessionTest {
         val replacement = Session()
         try {
             assertFalse(old.socket.connected())
-            assertFalse(old.socket.hasListeners("child_order_events"))
-            assertFalse(old.client.childOrderEvents.hasObservers())
-            assertFalse(old.client.parentOrderEvents.hasObservers())
+            assertFalse(old.accountSockets.single().connected())
+            assertFalse(old.accountSockets.single().hasListeners("child_order_events"))
             assertTrue(replacement.socket.connected())
 
-            old.socket.receiveExecution()
+            old.accountSockets.single().receiveExecution()
             old.status.updateStatus()
             old.status.pollStatus()
-            replacement.socket.receiveExecution()
+            replacement.accountSockets.single().receiveExecution()
             time.advanceTimeBy(1, TimeUnit.SECONDS)
 
             assertEquals(1, old.refreshes)
@@ -80,6 +83,29 @@ class RealtimeSessionTest {
             assertEquals(1, replacement.notifications)
         } finally {
             replacement.lifecycle.close()
+        }
+    }
+
+    @Test
+    fun queuedExecutionFromPreviousAccountIsDroppedBeforeNotification() {
+        val session = Session()
+        try {
+            session.accountSockets.single().receiveExecution()
+            session.client.updateAccount {
+                session.preference.save(APICredentials("replacement", "secret"))
+            }
+            val replacement = session.accountSockets.last()
+            replacement.receiveExecution()
+            time.advanceTimeBy(1, TimeUnit.SECONDS)
+            assertEquals(0, session.notifications)
+            assertEquals(1, session.refreshes)
+
+            replacement.authenticate()
+            replacement.receiveExecution()
+            time.triggerActions()
+            assertEquals(1, session.notifications)
+        } finally {
+            session.lifecycle.close()
         }
     }
 
@@ -101,7 +127,13 @@ class RealtimeSessionTest {
             }
         } as APIClientV1
         private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
-        val client = RealtimeClient(gson, APITokenPreference(RuntimeEnvironment.getApplication()), socket)
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
+            save(APICredentials("initial", "secret"))
+        }
+        val accountSockets = mutableListOf<TestSocket>()
+        val client = RealtimeClient(gson, preference, socket) {
+            TestSocket().also(accountSockets::add)
+        }.also { accountSockets.single().authenticate() }
         val status = CurrentStatusService(api, client, api)
         val lifecycle = RealtimeSession(client, status).apply { notifyExecutions { notifications++ } }
     }
@@ -109,7 +141,19 @@ class RealtimeSessionTest {
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
         private var open = false
 
-        override fun connect(): Socket = apply { open = true }
+        private var ack: Ack? = null
+
+        override fun connect(): Socket = apply {
+            open = true
+            listeners(EVENT_CONNECT).forEach { it.call() }
+        }
+
+        override fun emit(event: String, vararg args: Any): Emitter {
+            if (event == "auth") ack = args.last() as Ack
+            return this
+        }
+
+        fun authenticate() = checkNotNull(ack).call(JSONObject.NULL)
 
         override fun disconnect(): Socket = apply { open = false }
 
