@@ -206,7 +206,7 @@ class SettingsPresenterTest {
             val privateRequests = requests.drop(4).filter { it.url.encodedPath.startsWith("/v1/me/") }
             privateRequests.forEach { assertSignedWith(it, "submitted-key", "submitted-secret") }
             assertEquals("ACTIVE", privateRequests.last().url.queryParameter("child_order_state"))
-            assertEquals(250.0, status.balance.value, 0.0)
+            assertEquals(250L, status.tradingTotals.blockingFirst().balance)
         } finally {
             status.dispose()
             scope.destroy()
