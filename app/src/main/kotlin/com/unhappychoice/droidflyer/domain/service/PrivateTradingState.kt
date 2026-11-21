@@ -26,6 +26,12 @@ internal class PrivateTradingState(
     private var session = Session(client)
     private var disposed = false
 
+    fun orderRows(): Observable<List<OrderRow>> =
+        orders.asObservable().map { currentOrders ->
+            val current = session
+            currentOrders.map { OrderRow(current, it) }
+        }
+
     fun dispose() {
         disposed = true
         session.ended.onComplete()
@@ -36,10 +42,10 @@ internal class PrivateTradingState(
 
         val previous = session
         session = Session(client)
+        orders.value = emptyList()
         previous.ended.onComplete()
         position.value = emptyList()
         balance.value = 0.0
-        orders.value = emptyList()
     }
 
     fun refresh(): Completable = Completable.defer {
@@ -51,7 +57,6 @@ internal class PrivateTradingState(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
             client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
                 .publishResponse { if (!disposed && current === session) balance.value = it },
-            // Unchanged rows keep their order references for cancellation.
             client.getChildOrders("FX_BTC_JPY")
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
         )
@@ -85,15 +90,20 @@ internal class PrivateTradingState(
         )
     }
 
-    fun cancelOrder(order: ChildOrder): Completable? {
-        if (orders.value.none { it === order }) return null
-        val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
-        return session.client?.cancelChildOrder(request)
+    fun cancelOrder(row: OrderRow): Completable? {
+        val current = session
+        if (disposed || row.session !== current) return null
+        val order = orders.value.firstOrNull {
+            it.productCode == row.order.productCode &&
+                it.childOrderAcceptanceId == row.order.childOrderAcceptanceId
+        } ?: return null
+        return current.client?.cancelChildOrder(CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId))
     }
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
 
+    data class OrderRow(internal val session: Session, val order: ChildOrder)
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1?) {
         val ended = CompletableSubject.create()
