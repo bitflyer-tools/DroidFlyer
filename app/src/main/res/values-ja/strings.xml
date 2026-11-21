@@ -15,6 +15,8 @@
     <string name="chart">チャート</string>
     <string name="clear_all_positions">全決済しますか？</string>
     <string name="clear_position">全決済</string>
+    <string name="no_position">建玉なし</string>
+    <string name="offsetting_positions">ロング %1$s / ショート %2$s ɃFX\nネット建玉 0 ɃFX。数量が相殺されているため、全決済は利用できません。</string>
     <string name="close_positions_multiple_orders">複数の成行注文を出し、注文ごとに残りの建玉を確認します。</string>
     <string name="close_positions_incomplete">全決済を確認できませんでした。建玉と注文を確認してください。</string>
     <string name="cleared_all_positions">全決済を行いました</string>
