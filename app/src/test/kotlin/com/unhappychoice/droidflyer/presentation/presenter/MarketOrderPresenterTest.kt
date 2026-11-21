@@ -44,7 +44,7 @@ class MarketOrderPresenterTest {
 
         Mockito.`when`(apiClient.getCollateral()).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.empty())
         status = CurrentStatusService(apiClient, Observable.empty(), Observable.empty(), Observable.empty())
         presenter = MarketOrderPresenter(apiClient, status) { messages.add(it) }
@@ -216,7 +216,7 @@ class MarketOrderPresenterTest {
         val newAccount = Mockito.mock(APIClientV1::class.java)
         Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.just(emptyList()))
         Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
-        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         status.switchAccount(newAccount)
         scheduler.triggerActions()
         assertFalse(oldBoard.hasObservers())

@@ -41,7 +41,7 @@ class CurrentStatusServiceTest {
             .thenReturn(responses.take(1).doOnSubscribe { boardRequests++ })
         `when`(api.getPositions()).thenReturn(Observable.empty())
         `when`(api.getCollateral()).thenReturn(Observable.empty())
-        `when`(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         service = CurrentStatusService(api, Observable.empty(), boardUpdates(snapshots, deltas), Observable.empty())
         scheduler.triggerActions()
     }

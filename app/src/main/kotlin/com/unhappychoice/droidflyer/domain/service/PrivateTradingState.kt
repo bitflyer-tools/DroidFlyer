@@ -26,6 +26,10 @@ internal class PrivateTradingState(
     private var session = Session(client)
     private var disposed = false
 
+    val ordersMayBeIncomplete = orders.asObservable()
+        .map { it.size >= ACTIVE_ORDER_LIMIT }
+        .distinctUntilChanged()
+
     fun orderRows(): Observable<List<OrderRow>> =
         orders.asObservable().map { currentOrders ->
             val current = session
@@ -61,7 +65,7 @@ internal class PrivateTradingState(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
             client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
                 .publishResponse { if (!disposed && current === session) balance.value = it },
-            client.getChildOrders("FX_BTC_JPY")
+            client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
         ).takeUntil(current.ended)
     }
@@ -106,6 +110,10 @@ internal class PrivateTradingState(
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
+
+    companion object {
+        private const val ACTIVE_ORDER_LIMIT = 500
+    }
 
     data class OrderRow(internal val session: Session, val order: ChildOrder)
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)

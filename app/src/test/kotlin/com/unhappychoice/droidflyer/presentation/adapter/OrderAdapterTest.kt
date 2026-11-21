@@ -41,7 +41,11 @@ class OrderAdapterTest {
     ) { _, method, args ->
         when (method.name) {
             "getPositions", "getCollateral" -> Observable.empty<Any>()
-            "getChildOrders" -> Observable.just(response)
+            "getChildOrders" -> {
+                assertEquals("FX_BTC_JPY", args[0])
+                assertEquals("ACTIVE", args[1])
+                Observable.just(response.take(args[3] as Int? ?: 100))
+            }
             "cancelChildOrder" -> Completable.fromAction { requests.add(args[0] as CancelChildOrderRequest) }
             else -> error("Unexpected API call: ${method.name}")
         }
@@ -102,6 +106,39 @@ class OrderAdapterTest {
         assertEquals(1, adapter.itemCount)
         cancel.performClick()
         assertEquals(expected, requests)
+    }
+
+    @Test
+    fun all101ActiveOrdersAreDisplayedAndTheLastCanBeCanceled() {
+        val state = PrivateTradingState(client)
+        val presenter = OrdersPresenter(state) {}
+        presenter.orders.subscribe(adapter::updateOrders)
+        adapter.clickCancel.subscribe(presenter::cancelOrder)
+        val warning = presenter.ordersMayBeIncomplete.test()
+        response = (1..101).map(::order)
+
+        state.refresh().test().assertComplete()
+
+        assertEquals(101, adapter.itemCount)
+        warning.assertValues(false)
+        val row = createRow()
+        adapter.onBindViewHolder(adapter.ViewHolder(row), 100)
+        row.findViewById<View>(R.id.cancel).performClick()
+        assertEquals(listOf(CancelChildOrderRequest("FX_BTC_JPY", "acceptance-101")), requests)
+    }
+
+    @Test
+    fun orderLimitWarningClearsWhenTheNextResponseIsBelowTheLimit() {
+        val state = PrivateTradingState(client)
+        val warning = OrdersPresenter(state) {}.ordersMayBeIncomplete.test()
+        response = (1..500).map(::order)
+
+        state.refresh().test().assertComplete()
+        warning.assertValues(false, true)
+
+        response = response.dropLast(1)
+        state.refresh().test().assertComplete()
+        warning.assertValues(false, true, false)
     }
 
     @Test

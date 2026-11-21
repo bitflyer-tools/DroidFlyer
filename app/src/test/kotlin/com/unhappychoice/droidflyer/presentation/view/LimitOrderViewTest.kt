@@ -54,7 +54,7 @@ class LimitOrderViewTest {
         val statusClient = mock<APIClientV1>()
         whenever(statusClient.getPositions()).thenReturn(Observable.empty())
         whenever(statusClient.getCollateral()).thenReturn(Observable.empty())
-        whenever(statusClient.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(statusClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(statusClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         status = CurrentStatusService(statusClient, Observable.never(), Observable.never(), Observable.never())
     }

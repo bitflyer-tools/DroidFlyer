@@ -221,7 +221,7 @@ class RealtimeClientTest {
         val collateral = PublishSubject.create<Map<String, Any>>()
         whenever(api.getCollateral()).thenReturn(collateral)
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        whenever(api.getChildOrders("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
 
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }

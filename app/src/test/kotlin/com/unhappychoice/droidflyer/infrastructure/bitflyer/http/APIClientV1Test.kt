@@ -59,6 +59,16 @@ class APIClientV1Test {
     }
 
     @Test
+    fun getChildOrdersSendsExplicitCountForActiveOrders() {
+        val api = apiReturning(
+            "/v1/me/getchildorders?product_code=FX_BTC_JPY&child_order_state=ACTIVE&count=500",
+            "[]"
+        )
+
+        api.getChildOrders("FX_BTC_JPY", count = 500).test().assertResult(emptyList())
+    }
+
+    @Test
     fun getExecutionPricesRequestsTheProductAndCountAndParsesPrices() {
         val api = apiReturning(
             "/v1/executions?product_code=FX_BTC_JPY&count=500",
