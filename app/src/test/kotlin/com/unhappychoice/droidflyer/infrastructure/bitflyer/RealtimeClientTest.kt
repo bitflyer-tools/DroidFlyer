@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.widget.TextView
 import androidx.core.view.isVisible
 import com.google.gson.FieldNamingPolicy
@@ -31,10 +32,12 @@ import io.socket.client.Socket
 import io.socket.emitter.Emitter
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
@@ -57,9 +60,22 @@ class RealtimeClientTest {
     private val accountSockets = mutableListOf<RecordingSocket>()
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
 
+    private val authentication = TestScheduler()
+
+    @Before
+    fun pauseAuthentication() {
+        RxJavaPlugins.setIoSchedulerHandler { authentication }
+    }
+
+    @After
+    fun resetSchedulers() {
+        RxJavaPlugins.reset()
+    }
+
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
-        preference.save(APICredentials("key", "secret"))
+        val stored = RuntimeEnvironment.getApplication().getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        stored.edit().putString("key", "key").putString("secret", "secret").commit()
         val client = createClient()
         socket.receive(Socket.EVENT_CONNECT)
         assertEquals(
@@ -68,6 +84,10 @@ class RealtimeClientTest {
         )
         assertFalse(socket.hasListeners("lightning_ticker_FX_BTC_JPY"))
 
+        assertEquals(emptyList<RecordingSocket>(), accountSockets)
+        assertEquals("key", stored.getString("key", null))
+        authentication.triggerActions()
+        assertFalse(stored.contains("key"))
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
         account.authAck!!.call(JSONObject.NULL)
@@ -93,6 +113,7 @@ class RealtimeClientTest {
     fun publishesPrivateExecutionBatchWithFractionalAndIntegralPrices() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
         account.authAck!!.call(JSONObject.NULL)
@@ -114,9 +135,38 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun disconnectCancelsPendingCredentialLoad() {
+        val stored = RuntimeEnvironment.getApplication().getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        stored.edit().putString("key", "key").putString("secret", "secret").commit()
+        val client = createClient()
+
+        client.disconnect()
+        authentication.triggerActions()
+
+        assertEquals("key", stored.getString("key", null))
+        assertEquals(emptyList<RecordingSocket>(), accountSockets)
+    }
+
+    @Test
+    fun pendingStartupLoadKeepsTheAccountAlreadyApplied() {
+        val client = createClient()
+        client.updateAccount { preference.save(APICredentials("replacement", "secret")) }
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        val acknowledge = checkNotNull(account.authAck)
+
+        authentication.triggerActions()
+        acknowledge.call(JSONObject.NULL)
+
+        assertEquals(listOf(account), accountSockets)
+        assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
+    }
+
+    @Test
     fun ignoresAuthenticationAcknowledgementAfterDisconnect() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         socket.receive(Socket.EVENT_CONNECT)
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
@@ -132,6 +182,7 @@ class RealtimeClientTest {
     fun accountSwitchRejectsStalePrivateCallbacksAndKeepsPublicData() {
         preference.save(APICredentials("first", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         socket.receive(Socket.EVENT_CONNECT)
         val old = accountSockets.single()
         old.receive(Socket.EVENT_CONNECT)
@@ -179,6 +230,7 @@ class RealtimeClientTest {
     fun failedAuthenticationKeepsPrivateEventsDisabledUntilSuccessfulRetry() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val account = accountSockets.single()
         val orders = client.childOrderEvents.test()
 
@@ -201,6 +253,7 @@ class RealtimeClientTest {
     fun resavingCredentialsRetriesPendingAuthenticationAndIgnoresLateAcknowledgement() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val original = accountSockets.single()
         val orders = client.childOrderEvents.test()
 
@@ -249,7 +302,7 @@ class RealtimeClientTest {
             collateral.onNext(mapOf("collateral" to 200_000.0))
             clock.triggerActions()
             totals.assertValues(
-                TradingTotals(null, null, 0L, null),
+                TradingTotals(null, null, null, null),
                 TradingTotals(null, null, 200_000L, null)
             )
 
@@ -264,7 +317,7 @@ class RealtimeClientTest {
             clock.triggerActions()
             assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
             totals.assertValues(
-                TradingTotals(null, null, 0L, null),
+                TradingTotals(null, null, null, null),
                 TradingTotals(null, null, 200_000L, null),
                 TradingTotals(10_000L, 100_000L, 210_000L, 10_100_000L)
             ).assertNoErrors()
@@ -315,6 +368,7 @@ class RealtimeClientTest {
     fun disconnectExpiresHeaderValuationsUntilAFreshExecution() {
         val client = createClient()
         val api = mock<APIClientV1>()
+        whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.empty())
         val position = Position("FX_BTC_JPY", "BUY", 11_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
         whenever(api.getPositions()).thenReturn(Observable.just(emptyList()), Observable.just(listOf(position)))
         whenever(api.getCollateral()).thenReturn(

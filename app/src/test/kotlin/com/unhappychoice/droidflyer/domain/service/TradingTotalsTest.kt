@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import io.reactivex.schedulers.TestScheduler
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import org.junit.Assert.assertEquals
@@ -10,7 +11,7 @@ import org.junit.Test
 class TradingTotalsTest {
     private val price = Variable(MarketPrice(120.75))
     private val positions = Variable<List<Position>>(emptyList())
-    private val collateral = Variable(1000.75)
+    private val collateral = Variable(Collateral(1000.75))
     private val scheduler = TestScheduler()
     private val totals = observeTradingTotals(
         price.asObservable(), positions.asObservable(), collateral.asObservable(), scheduler
@@ -51,7 +52,7 @@ class TradingTotalsTest {
     fun collateralUpdateUsesLatestPriceBeforeWindowEnds() {
         positions.value = listOf(position)
         price.value = MarketPrice(140.75)
-        collateral.value = 1500.75
+        collateral.value = Collateral(1500.75)
         totals.assertValueCount(3)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
@@ -63,9 +64,37 @@ class TradingTotalsTest {
     }
 
     @Test
+    fun unavailableCollateralKeepsBalanceUnknownWithOpenPositions() {
+        collateral.value = Collateral(null)
+        positions.value = listOf(position)
+        price.value = MarketPrice(140.75)
+        scheduler.advanceTimeBy(100, MILLISECONDS)
+
+        totals.assertValues(
+            TradingTotals(0L, 120L, 1000L, 120L),
+            TradingTotals(0L, 120L, null, 120L),
+            TradingTotals(10L, 20L, null, 120L),
+            TradingTotals(20L, 40L, null, 140L)
+        )
+    }
+
+    @Test
+    fun disconnectLeavesUnknownCollateralUnavailableBeforeTheNextPriceWindow() {
+        positions.value = listOf(position)
+        collateral.value = Collateral(null)
+        price.value = MarketPrice(140.75)
+
+        price.value = MarketPrice(null)
+
+        totals.assertValueAt(3, TradingTotals(null, null, null, null)).assertValueCount(4)
+        scheduler.advanceTimeBy(100, MILLISECONDS)
+        totals.assertValueCount(4).assertNoErrors()
+    }
+
+    @Test
     fun priceUpdateUsesLatestPositionAndCollateral() {
         positions.value = listOf(position.copy(price = 110L))
-        collateral.value = 1500.75
+        collateral.value = Collateral(1500.75)
         price.value = MarketPrice(99.75)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
@@ -90,6 +119,25 @@ class TradingTotalsTest {
             TradingTotals(-10L, -20L, 990L, 120L),
             TradingTotals(10L, 20L, 1010L, 80L)
         )
+    }
+
+    @Test
+    fun partiallyOffsetNetLongUsesSharedEntryPrice() {
+        assertSharedEntryPrice("BUY", "SELL")
+    }
+
+    @Test
+    fun partiallyOffsetNetShortUsesSharedEntryPrice() {
+        assertSharedEntryPrice("SELL", "BUY")
+    }
+
+    @Test
+    fun differentEntryPricesUseSignedNotionalForNetExposure() {
+        price.value = MarketPrice(100.0)
+        positions.value = listOf(position, position.copy(side = "SELL", price = 80L, size = 0.25))
+
+        assertEquals(120.0, positions.value.average(), 0.0)
+        totals.assertValueAt(1, TradingTotals(-5L, -20L, 995L, 100L))
     }
 
     @Test
@@ -120,5 +168,17 @@ class TradingTotalsTest {
             TradingTotals(20L, 40L, 1020L, 140L)
         )
         assertEquals(initialTraversals + 1, trackedPositions.traversals)
+    }
+
+    private fun assertSharedEntryPrice(netSide: String, offsettingSide: String) {
+        val entryPrice = 10_000_000L
+        price.value = MarketPrice(entryPrice.toDouble())
+        positions.value = listOf(
+            position.copy(side = netSide, price = entryPrice),
+            position.copy(side = offsettingSide, price = entryPrice, size = 0.25)
+        )
+
+        assertEquals(entryPrice.toDouble(), positions.value.average(), 0.0)
+        totals.assertValueAt(1, TradingTotals(0L, 0L, 1000L, entryPrice))
     }
 }

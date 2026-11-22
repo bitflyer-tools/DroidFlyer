@@ -26,7 +26,7 @@
 
     <string name="no_position">No position</string>
     <string name="offsetting_positions">Long %1$s / Short %2$s ɃFX\nNet 0 ɃFX. Clear all positions is unavailable because the quantities offset.</string>
-    <string name="close_positions_multiple_orders">This will submit multiple market orders, checking the remaining position after each order.</string>
+    <string name="close_positions_multiple_orders">The app checks the remaining position after each market order and may submit additional market orders if an order is partially filled or the position exceeds the order size limit.</string>
     <string name="close_positions_incomplete">Could not confirm that all positions were closed. Check your positions and orders.</string>
     <string name="cleared_all_positions">Cleared all positions</string>
     <string name="minimum_order_size">Minimum order quantity is %1$s BTC-CFD</string>
@@ -46,4 +46,7 @@
     <string name="chart_price_range">%1$s–%2$s JPY</string>
     <string name="chart_execution_order">Recent trades (oldest to newest)</string>
     <string name="status_collateral">Collateral: %1$s</string>
+    <string name="funding_unavailable">Next funding rate unavailable</string>
+    <string name="funding_details">Next funding %1$s · %2$s</string>
+    <string name="funding_stale">%1$s (stale)</string>
 </resources>

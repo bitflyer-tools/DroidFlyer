@@ -29,9 +29,12 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         setupStyle()
 
-        presenter.loadCredentials()
-        binding.apiTokenTextView.setText(presenter.key.value)
-        binding.apiSecretTextView.setText(presenter.secret.value)
+        setCredentialInputsEnabled(false)
+        presenter.loadCredentials {
+            binding.apiTokenTextView.setText(presenter.key.value)
+            binding.apiSecretTextView.setText(presenter.secret.value)
+            setCredentialInputsEnabled(true)
+        }.addTo(bag)
 
         binding.apiTokenTextView.textChanges()
             .subscribeNext {
@@ -46,13 +49,19 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
             }.addTo(bag)
 
         binding.saveButton.clicks()
-            .subscribeNext { presenter.save() }
+            .subscribeNext { if (binding.saveButton.isEnabled) presenter.save() }
             .addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun setCredentialInputsEnabled(enabled: Boolean) {
+        binding.apiTokenTextView.isEnabled = enabled
+        binding.apiSecretTextView.isEnabled = enabled
+        binding.saveButton.isEnabled = enabled
     }
 
     private fun setupStyle() {

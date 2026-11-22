@@ -7,7 +7,9 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -45,6 +47,8 @@ class RealtimeClient internal constructor(
         "lightning_board_snapshot_FX_BTC_JPY",
         "lightning_executions_FX_BTC_JPY"
     )
+    private val authenticationWorker = Schedulers.io().createWorker()
+    private val credentialLock = Any()
     private val accountLock = Any()
     private var account: PrivateRealtimeConnection? = null
     @Volatile private var disconnected = false
@@ -62,10 +66,15 @@ class RealtimeClient internal constructor(
             }
         }
         socket.connect()
-        updateAccount {}
+        authenticationWorker.schedule {
+            synchronized(credentialLock) {
+                val needsAccount = synchronized(accountLock) { !disconnected && account == null }
+                if (needsAccount) connectSavedAccount()
+            }
+        }
     }
 
-    internal fun updateAccount(save: () -> Unit) = synchronized(accountLock) {
+    internal fun updateAccount(save: () -> Unit) = synchronized(credentialLock) {
         save()
         if (!disconnected) connectSavedAccount()
     }
@@ -73,6 +82,7 @@ class RealtimeClient internal constructor(
     fun disconnect(): Unit = synchronized(accountLock) {
         if (disconnected) return@synchronized
         disconnected = true
+        authenticationWorker.dispose()
         executionDisconnects.onNext(Unit)
         closeAccount()
         socket.off()
@@ -81,10 +91,16 @@ class RealtimeClient internal constructor(
 
     private fun connectSavedAccount() {
         val credentials = preference.read()
+        synchronized(accountLock) {
+            if (!disconnected) connectAccount(credentials)
+        }
+    }
+
+    private fun connectAccount(credentials: APICredentials) {
         if (account?.canReuse(credentials) == true) return
 
         closeAccount()
-        if (credentials.key.isEmpty() || credentials.secret.isEmpty()) return
+        if (!credentials.isConfigured) return
         // Private channel messages carry no account identity, so each account needs its own socket.
         val connection = PrivateRealtimeConnection(gson, credentials, createPrivateSocket(), accountLock)
         account = connection

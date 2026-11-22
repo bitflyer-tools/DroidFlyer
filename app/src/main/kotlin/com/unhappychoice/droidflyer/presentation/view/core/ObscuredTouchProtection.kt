@@ -12,10 +12,11 @@ internal fun Window.protectTradingTouches() {
     }
 }
 
-internal fun AlertDialog.Builder.showTradingConfirmation() {
+internal fun AlertDialog.Builder.showTradingConfirmation(): AlertDialog {
     val dialog = create()
     requireNotNull(dialog.window).protectTradingTouches()
     dialog.show()
+    return dialog
 }
 
 private class ObscuredTouchCallback(private val original: Window.Callback) : Window.Callback by original {
