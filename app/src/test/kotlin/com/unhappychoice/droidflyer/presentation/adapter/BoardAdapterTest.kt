@@ -49,9 +49,11 @@ class BoardAdapterTest {
         val bids = BoardAdapter(context, BoardType.Bid)
         val boards = PublishSubject.create<Board>()
         val scheduler = TestScheduler()
-        observeLimitOrderRows(boards, Observable.just(1L), scheduler).subscribe { rows ->
-            asks.applyRows(rows.asks, rows.groupingSize, emptyList())
-            bids.applyRows(rows.bids, rows.groupingSize, emptyList())
+        observeLimitOrderRows(
+            Observable.just(true), boards, Observable.just(1L), Observable.just(emptyList()), scheduler, scheduler
+        ).subscribe { (rows, orders) ->
+            asks.applyRows(rows.asks, rows.groupingSize, orders)
+            bids.applyRows(rows.bids, rows.groupingSize, orders)
         }
         val board = Board(0.0, bids = (100L downTo 50L).map { Order(it, 1.0) }, asks = listOf(Order(200, 1.0)))
         boards.onNext(board)

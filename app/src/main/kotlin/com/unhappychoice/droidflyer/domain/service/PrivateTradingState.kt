@@ -8,13 +8,16 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrde
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Completable
 import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Scheduler
+import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.subjects.PublishSubject
 import io.reactivex.subjects.ReplaySubject
 
 // Access the session and its cached data on the UI thread.
@@ -27,7 +30,10 @@ internal class PrivateTradingState(
     val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
 
+    val accountChanges: Observable<Unit> get() = accountSwitches.hide()
+
     private var session = client?.let(::Session)
+    private val accountSwitches = PublishSubject.create<Unit>()
     private var disposed = false
 
     val ordersMayBeIncomplete = orders.asObservable()
@@ -48,7 +54,10 @@ internal class PrivateTradingState(
     fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
         if (disposed) return
 
-        replaceSession(client?.let(::Session), onSwitched)
+        replaceSession(client?.let(::Session)) {
+            accountSwitches.onNext(Unit)
+            onSwitched()
+        }
     }
 
     fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched)
@@ -69,6 +78,12 @@ internal class PrivateTradingState(
             client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
         ).takeUntil(current.ended.firstElement().ignoreElement())
+    }
+
+    fun getMyExecutions(count: Int, before: Long?): Single<List<PrivateExecution>> {
+        val current = session ?: return Single.error(IllegalStateException("API credentials are unavailable"))
+        return withinSession(current, Observable.defer { current.client.getMyExecutions(count, before) })
+            .singleOrError()
     }
 
     fun prepareOrder(request: SendChildOrderRequest): NewOrder? =

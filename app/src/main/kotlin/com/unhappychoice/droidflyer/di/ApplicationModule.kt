@@ -7,6 +7,7 @@ import com.unhappychoice.droidflyer.DroidFlyerApplication
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.style.Style
 import org.kodein.di.DI
@@ -16,6 +17,7 @@ import org.kodein.di.instance
 
 fun applicationModule(application: DroidFlyerApplication) = DI.Module("application") {
     bindSingleton<Gson> { createGson() }
+    bindSingleton<CryptoCfdAccountPreference> { CryptoCfdAccountPreference(application) }
     bindSingleton<APITokenPreference> { application.tokenPreference }
     bindSingleton<APIClient> { APIClient(instance(), instance()) }
     bindSingleton<APIClientV1> { instance<APIClient>().client() }

@@ -1,11 +1,17 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.widget.TextView
+import androidx.core.view.isVisible
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.MarketPrice
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
+import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
@@ -13,6 +19,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.presentation.view.CurrentStatusView
 import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -29,16 +36,21 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.kodein.di.DI
+import org.kodein.di.bindInstance
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.math.BigDecimal
 import java.util.Date
+import java.util.concurrent.TimeUnit.MILLISECONDS
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -309,39 +321,149 @@ class RealtimeClientTest {
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
 
+        val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
         try {
             val service = CurrentStatusService(api, client, api)
             socket.receive(Socket.EVENT_CONNECT)
+            clock.triggerActions()
             val totals = service.tradingTotals.test()
             assertEquals(listOf(position), service.position.value)
             assertNull(service.currentPrice.value.yen)
             collateral.onNext(mapOf("collateral" to 200_000.0))
+            clock.triggerActions()
             totals.assertValues(
-                TradingTotals(null, null, null),
-                TradingTotals(null, null, 200_000L)
+                TradingTotals(null, null, null, null),
+                TradingTotals(null, null, 200_000L, null)
             )
 
             val channel = "lightning_executions_FX_BTC_JPY"
             socket.receive(channel, JSONArray())
             socket.receive(channel, JSONArray("""[{"price":0.0},{"price":-1.0}]"""))
+            clock.triggerActions()
             assertNull(service.currentPrice.value.yen)
             totals.assertValueCount(2)
 
             socket.receive(channel, JSONArray("""[{"price":0.0},{"price":10100000.0}]"""))
+            clock.triggerActions()
             assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
             totals.assertValues(
-                TradingTotals(null, null, null),
-                TradingTotals(null, null, 200_000L),
-                TradingTotals(10_000L, 100_000L, 210_000L)
+                TradingTotals(null, null, null, null),
+                TradingTotals(null, null, 200_000L, null),
+                TradingTotals(10_000L, 100_000L, 210_000L, 10_100_000L)
             ).assertNoErrors()
 
             socket.receive(channel, JSONArray())
+            clock.triggerActions()
             assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
 
             socket.receive(channel, JSONArray("""[{"price":10200000.0}]"""))
+            clock.triggerActions()
             assertEquals(10_200_000.0, service.currentPrice.value.yen!!, 0.0)
+            totals.dispose()
+            service.dispose()
+            client.disconnect()
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
+    fun disconnectClearsMarketPriceWithoutPrivateCredentials() {
+        val client = createClient()
+        val api = mock<APIClientV1>()
+        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        val clock = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        val service = CurrentStatusService(api, client, null)
+        try {
+            socket.receive(Socket.EVENT_CONNECT)
+            socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":10000000.0}]"""))
+            clock.triggerActions()
+            assertEquals(MarketPrice(10_000_000.0), service.currentPrice.value)
+
+            socket.receive(Socket.EVENT_DISCONNECT)
+            clock.triggerActions()
+            assertEquals(MarketPrice(null), service.currentPrice.value)
+        } finally {
+            service.dispose()
+            client.disconnect()
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
+    fun disconnectExpiresHeaderValuationsUntilAFreshExecution() {
+        val client = createClient()
+        val api = mock<APIClientV1>()
+        whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.empty())
+        val position = Position("FX_BTC_JPY", "BUY", 11_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
+        whenever(api.getPositions()).thenReturn(Observable.just(emptyList()), Observable.just(listOf(position)))
+        whenever(api.getCollateral()).thenReturn(
+            Observable.just(mapOf("collateral" to 500_000.0)),
+            Observable.just(mapOf("collateral" to 600_000.0))
+        )
+        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+
+        val clock = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            clock.triggerActions()
+            Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+                val host = controller.get()
+                val header = CurrentStatusView(host, null)
+                header.inject(DI { bindInstance { service } })
+                host.setContentView(header)
+                val totals = service.tradingTotals.test()
+
+                socket.receive(Socket.EVENT_CONNECT)
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":10000000.0}]"""))
+                clock.triggerActions()
+                assertEquals("${10_000_000L.splitByComma()} JPY", header.text(R.id.currentPrice))
+                assertFalse(header.findViewById<TextView>(R.id.profit).isVisible)
+                assertFalse(header.findViewById<TextView>(R.id.spread).isVisible)
+
+                socket.receive(Socket.EVENT_DISCONNECT)
+                clock.triggerActions()
+                assertEquals("—", header.text(R.id.currentPrice))
+                service.updateStatus()
+                clock.triggerActions()
+                socket.receive(Socket.EVENT_CONNECT)
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray())
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":0.0}]"""))
+                clock.advanceTimeBy(100, MILLISECONDS)
+                totals.assertValues(
+                    TradingTotals(null, null, 500_000L, null),
+                    TradingTotals(0L, 10_000_000L, 500_000L, 10_000_000L),
+                    TradingTotals(null, null, 500_000L, null),
+                    TradingTotals(null, null, 600_000L, null)
+                )
+                assertEquals("—", header.text(R.id.currentPrice))
+                assertTrue(header.findViewById<TextView>(R.id.profit).isVisible)
+                assertTrue(header.findViewById<TextView>(R.id.spread).isVisible)
+                assertEquals("—", header.text(R.id.profit))
+                assertEquals("—", header.text(R.id.spread))
+                assertEquals("Collateral: ${600_000L.splitByComma()} JPY", header.text(R.id.balance))
+                assertEquals("${11_000_000L.splitByComma()} JPY / 0.1 ɃFX", header.text(R.id.position))
+
+                socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":12000000.0}]"""))
+                clock.triggerActions()
+                totals.assertValueAt(4, TradingTotals(100_000L, 1_000_000L, 700_000L, 12_000_000L))
+                assertEquals("${12_000_000L.splitByComma()} JPY", header.text(R.id.currentPrice))
+                assertEquals(100_000L.splitByComma(), header.text(R.id.profit))
+                assertEquals(1_000_000L.splitByComma(), header.text(R.id.spread))
+                assertEquals("${700_000L.splitByComma()} JPY", header.text(R.id.balance))
+                totals.dispose()
+            }
+            service.dispose()
+            client.disconnect()
         } finally {
             RxAndroidPlugins.reset()
             RxJavaPlugins.reset()
@@ -407,6 +529,8 @@ class RealtimeClientTest {
             )
         )
     }
+
+    private fun CurrentStatusView.text(id: Int): String = findViewById<TextView>(id).text.toString()
 
     private fun createClient() = RealtimeClient(gson, preference, socket) {
         RecordingSocket().also(accountSockets::add)

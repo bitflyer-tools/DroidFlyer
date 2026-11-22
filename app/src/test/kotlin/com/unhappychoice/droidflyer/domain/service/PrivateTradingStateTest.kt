@@ -6,6 +6,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChi
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
 import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
@@ -32,7 +33,7 @@ class PrivateTradingStateTest {
     fun rejectedCollateralStaysUnavailableUntilZeroIsLoaded() {
         accountA.client.getBalance().test().assertValue(emptyList()).assertComplete()
         val totals = observeTradingTotals(
-            Observable.just(MarketPrice(120.0)), state.position.asObservable(), state.collateral.asObservable()
+            Observable.just(MarketPrice(120.0)), state.position.asObservable(), state.collateral.asObservable(), scheduler
         ).test()
 
         val rejected = state.refresh().test()
@@ -42,8 +43,8 @@ class PrivateTradingStateTest {
         accountA.collateral.onError(SecurityException("Missing collateral permission"))
         scheduler.triggerActions()
         rejected.assertComplete()
-        val unavailable = TradingTotals(0L, 120L, null)
-        totals.assertValues(unavailable, unavailable)
+        val unavailable = TradingTotals(0L, 120L, null, 120L)
+        totals.assertValue(unavailable)
 
         accountA.collateral = PublishSubject.create()
         val loaded = state.refresh().test()
@@ -53,7 +54,7 @@ class PrivateTradingStateTest {
         accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
         loaded.assertComplete()
-        totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L)).assertNoErrors()
+        totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L, 120L)).assertNoErrors()
     }
 
     @Test
@@ -246,6 +247,25 @@ class PrivateTradingStateTest {
         assertPrivateData(listOf(position), 20.0, listOf(order))
     }
 
+    @Test
+    fun unlinkNotifiesFillHistoryAndStopsPreviousAccountRequests() {
+        val changes = state.accountChanges.test()
+        val request = state.getMyExecutions(50, null)
+        val pending = request.test()
+        scheduler.triggerActions()
+        accountA.executions.onNext(emptyList())
+
+        state.unlink()
+        val stale = request.test()
+        scheduler.triggerActions()
+
+        changes.assertValue(Unit)
+        pending.assertNoValues().assertError(NoSuchElementException::class.java)
+        stale.assertNoValues().assertError(NoSuchElementException::class.java)
+        state.getMyExecutions(50, null).test().assertError(IllegalStateException::class.java)
+        assertFalse(accountA.executions.hasObservers())
+    }
+
     private fun displayedRows() = state.orderRows().blockingFirst()
 
     private fun publishOrders(vararg orders: ChildOrder) {
@@ -265,6 +285,7 @@ class PrivateTradingStateTest {
         val positions = PublishSubject.create<List<Position>>()
         var collateral = PublishSubject.create<Map<String, Any>>()
         val orders = PublishSubject.create<List<ChildOrder>>()
+        val executions = PublishSubject.create<List<PrivateExecution>>()
         val sent = mutableListOf<SendChildOrderRequest>()
         val cancelled = mutableListOf<CancelChildOrderRequest>()
         val client = Proxy.newProxyInstance(
@@ -273,6 +294,7 @@ class PrivateTradingStateTest {
         ) { _, method, args ->
             when (method.name) {
                 "getPositions" -> positions.take(1)
+                "getMyExecutions" -> executions.take(1)
                 "getBalance" -> Observable.just(emptyList<Map<String, Any>>())
                 "getCollateral" -> collateral.take(1)
                 "getChildOrders" -> if (args[2] == null) orders.take(1) else Observable.just(listOf(

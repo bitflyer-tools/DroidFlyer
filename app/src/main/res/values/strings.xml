@@ -29,6 +29,8 @@
     <string name="close_positions_multiple_orders">The app checks the remaining position after each market order and may submit additional market orders if an order is partially filled or the position exceeds the order size limit.</string>
     <string name="close_positions_incomplete">Could not confirm that all positions were closed. Check your positions and orders.</string>
     <string name="cleared_all_positions">Cleared all positions</string>
+    <string name="maximum_order_size">Maximum order quantity is %1$d BTC-CFD</string>
+    <string name="crypto_cfd_corporate_account">Use corporate Crypto CFD account limits</string>
     <string name="minimum_order_size">Minimum order quantity is %1$s BTC-CFD</string>
     <string name="market_order_accepted">Market order accepted</string>
     <string name="order_acceptance_uncertain">Order acceptance could not be confirmed. Check your orders before submitting again.</string>
@@ -39,6 +41,15 @@
     <string name="api_key_not_saved">API key is incorrect</string>
     <string name="api_key_saved">Saved API key</string>
     <string name="order_executed">Executed %1$s / %2$s / %3$f / %4$s</string>
+    <string name="active_orders">Active</string>
+    <string name="fills">Fills</string>
+    <string name="refresh_fills">Refresh</string>
+    <string name="load_older_fills">Load older fills</string>
+    <string name="loading_fills">Loading fills…</string>
+    <string name="fill_access_denied">Check your API key and enable permission to list executions.</string>
+    <string name="fill_request_failed">Could not load fills. Try again.</string>
+    <string name="no_fills">No Crypto CFD fills.</string>
+    <string name="fill_details">%1$s · %2$s JPY · %3$s ɃFX</string>
     <string name="chart_market" translatable="false">BTC-CFD/JPY</string>
     <string name="chart_loading">Loading chart</string>
     <string name="chart_load_error">Could not load the chart.</string>
@@ -48,6 +59,7 @@
     <string name="unlink_account">Unlink account</string>
     <string name="account_unlinked">bitFlyer account unlinked</string>
     <string name="account_unlink_failed">Could not remove saved credentials. Try unlinking again.</string>
+    <string name="status_collateral">Collateral: %1$s</string>
     <string name="funding_unavailable">Next funding rate unavailable</string>
     <string name="funding_details">Next funding %1$s · %2$s</string>
     <string name="funding_stale">%1$s (stale)</string>

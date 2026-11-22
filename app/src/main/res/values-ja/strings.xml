@@ -4,6 +4,8 @@
     <string name="api_key">APIキー</string>
     <string name="api_secret">APIシークレット</string>
     <string name="apply">適用</string>
+    <string name="maximum_order_size">最大注文数量は %1$d BTC-CFD です</string>
+    <string name="crypto_cfd_corporate_account">暗号資産CFDの法人口座の上限を適用する</string>
     <string name="minimum_order_size">最小注文数量は %1$s BTC-CFD です</string>
     <string name="market_order_accepted">成行注文を受け付けました</string>
     <string name="order_acceptance_uncertain">注文が受け付けられたか確認できませんでした。再送信する前に注文を確認してください。</string>
@@ -36,6 +38,15 @@
     <string name="api_key_not_saved">APIキーが間違っています</string>
     <string name="api_key_saved">APIキーを保存しました</string>
     <string name="order_executed">約定しました %1$s / %2$s / %3$f / %4$s</string>
+    <string name="active_orders">有効な注文</string>
+    <string name="fills">約定履歴</string>
+    <string name="refresh_fills">更新</string>
+    <string name="load_older_fills">過去の約定を読み込む</string>
+    <string name="loading_fills">約定履歴を読み込み中…</string>
+    <string name="fill_access_denied">APIキーを確認し、約定の一覧を取得する権限を有効にしてください。</string>
+    <string name="fill_request_failed">約定履歴を取得できませんでした。もう一度お試しください。</string>
+    <string name="no_fills">暗号資産CFDの約定はありません。</string>
+    <string name="fill_details">%1$s · %2$s JPY · %3$s ɃFX</string>
     <string name="chart_loading">チャートを読み込み中</string>
     <string name="chart_load_error">チャートを読み込めませんでした。</string>
     <string name="chart_retry">再試行</string>
