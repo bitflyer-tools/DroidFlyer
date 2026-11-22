@@ -18,7 +18,7 @@
     <string name="clear_position">全決済</string>
     <string name="no_position">建玉なし</string>
     <string name="offsetting_positions">ロング %1$s / ショート %2$s ɃFX\nネット建玉 0 ɃFX。数量が相殺されているため、全決済は利用できません。</string>
-    <string name="close_positions_multiple_orders">複数の成行注文を出し、注文ごとに残りの建玉を確認します。</string>
+    <string name="close_positions_multiple_orders">成行注文のたびに残りの建玉を確認します。注文が一部だけ約定した場合や、建玉の数量が1回の注文上限を超える場合は、追加の成行注文を出すことがあります。</string>
     <string name="close_positions_incomplete">全決済を確認できませんでした。建玉と注文を確認してください。</string>
     <string name="cleared_all_positions">全決済を行いました</string>
     <string name="create_limit_order">指値注文を行いますか？</string>
@@ -45,4 +45,7 @@
     <string name="chart_partial_history">最も古い足の約定が一部欠けている可能性があります</string>
     <string name="chart_candle">%1$s – %2$s\n始値 %3$s · 高値 %4$s\n安値 %5$s · 終値 %6$s 円</string>
     <string name="chart_partial_candle">一部取得: %1$s – %2$s\n始値 %3$s · 高値 %4$s\n安値 %5$s · 終値 %6$s 円</string>
+    <string name="funding_unavailable">次回のファンディングレートを取得できません</string>
+    <string name="funding_details">次回ファンディング %1$s · %2$s</string>
+    <string name="funding_stale">%1$s（更新できませんでした）</string>
 </resources>

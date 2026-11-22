@@ -73,26 +73,32 @@ class AmountSelectorViewTest {
     }
 
     @Test
-    fun localizedDecimalTextUpdatesAmount() {
-        field.setText("0,015")
-        assertEquals(0.015, selector.amount.value, 0.0)
+    fun pastingGroupingSeparatorPreservesExistingQuantityInUsEnglish() {
+        pasteAmount("0.015")
+        pasteAmount("1,000")
 
-        field.setText("\u0660\u066B\u0660\u0662\u0665")
-        assertEquals(0.025, selector.amount.value, 0.0)
+        assertEquals("0.015", field.text.toString())
+        assertEquals(0.015, selector.amount.value, 0.0)
     }
 
     @Test
-    @Config(sdk = [24, 25], qualifiers = "de-rDE")
-    fun pastingLocalizedFractionsPreservesTheirSeparatorsOnLegacyAndroid() {
-        val clipboard = requireNotNull(field.context.getSystemService(ClipboardManager::class.java))
-        listOf("0,015" to 0.015, "0.025" to 0.025, "\u0660\u066B\u0660\u0663\u0665" to 0.035)
-            .forEach { (text, amount) ->
-                clipboard.setPrimaryClip(ClipData.newPlainText("Amount", text))
-                field.selectAll()
-                assertTrue(field.onTextContextMenuItem(android.R.id.paste))
-                assertEquals(text, field.text.toString())
-                assertEquals(amount, selector.amount.value, 0.0)
-            }
+    @Config(sdk = [24, 25, 28], qualifiers = "de-rDE")
+    fun pastingLocalizedFractionAndRejectingGroupingInGerman() {
+        pasteAmount("0,015")
+        pasteAmount("1.000")
+
+        assertEquals("0,015", field.text.toString())
+        assertEquals(0.015, selector.amount.value, 0.0)
+    }
+
+    @Test
+    @Config(qualifiers = "ar-rEG")
+    fun pastingArabicFractionPreservesLocalizedDigitsAndSeparator() {
+        val fraction = "\u0660\u066B\u0660\u0662\u0665"
+        pasteAmount(fraction)
+
+        assertEquals(fraction, field.text.toString())
+        assertEquals(0.025, selector.amount.value, 0.0)
     }
 
     @Test
@@ -150,6 +156,13 @@ class AmountSelectorViewTest {
 
         assertEquals(0.025, selector.amount.value, 0.0)
         incrementEvents.assertValue(Unit).dispose()
+    }
+
+    private fun pasteAmount(text: String) {
+        val clipboard = requireNotNull(field.context.getSystemService(ClipboardManager::class.java))
+        clipboard.setPrimaryClip(ClipData.newPlainText("Amount", text))
+        field.selectAll()
+        assertTrue(field.onTextContextMenuItem(android.R.id.paste))
     }
 
     private fun connectAmountButtons() {

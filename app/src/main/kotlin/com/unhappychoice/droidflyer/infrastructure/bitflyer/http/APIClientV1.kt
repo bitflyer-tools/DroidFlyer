@@ -40,6 +40,9 @@ interface APIClientV1 {
         @Query("before") before: Long? = null
     ): Observable<List<ExecutionPrice>>
 
+    @GET("getfundingrate")
+    fun getFundingRate(@Query("product_code") productCode: String): Observable<FundingRate>
+
     @GET("gethealth")
     fun getHealth(): Observable<Map<String, Any>>
 
@@ -119,5 +122,5 @@ interface APIClientV1 {
     fun getCollateralHistory(): Observable<List<Map<String, Any>>>
 
     @GET("me/gettradingcommission")
-    fun getTradingCommision(): Observable<Map<String, Any>>
+    fun getTradingCommision(@Query("product_code") productCode: String): Observable<Map<String, Any>>
 }
