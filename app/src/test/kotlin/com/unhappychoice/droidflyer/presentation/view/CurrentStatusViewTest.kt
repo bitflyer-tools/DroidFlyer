@@ -15,6 +15,7 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,6 +35,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class, qualifiers = "en")
 class CurrentStatusViewTest {
     private val scheduler = TestScheduler()
+    private val executionFeedDisconnects = PublishSubject.create<Unit>()
     private lateinit var service: CurrentStatusService
 
     @Before
@@ -46,7 +48,9 @@ class CurrentStatusViewTest {
         val api = mock<APIClientV1>()
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.empty())
-        service = CurrentStatusService(api, Observable.empty(), Observable.empty(), Observable.empty(), null)
+        service = CurrentStatusService(
+            api, Observable.empty(), Observable.empty(), Observable.empty(), null, executionFeedDisconnects
+        )
         service.currentPrice.value = MarketPrice(150.0)
     }
 
@@ -119,6 +123,16 @@ class CurrentStatusViewTest {
             assertEquals("25", profit.text.toString().trim())
             assertEquals("Balance unavailable", view.findViewById<TextView>(R.id.balance).text.toString())
             assertFalse(spread.isVisible)
+
+            service.privateState.collateral.value = Collateral(100.0)
+            executionFeedDisconnects.onNext(Unit)
+            scheduler.triggerActions()
+
+            assertEquals("—", view.findViewById<TextView>(R.id.currentPrice).text.toString())
+            assertTrue(profit.isVisible)
+            assertEquals("—", profit.text.toString().trim())
+            assertFalse(spread.isVisible)
+            assertEquals("Collateral: 100 JPY", view.findViewById<TextView>(R.id.balance).text.toString())
 
             service.position.value = emptyList()
             scheduler.triggerActions()

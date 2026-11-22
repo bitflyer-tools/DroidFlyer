@@ -7,16 +7,11 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.rxkotlin.Observables
-import io.reactivex.schedulers.Schedulers
 import java.util.concurrent.TimeUnit
 
-data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long?)
+data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long?, val price: Long?)
 
-internal data class TradingHeaderState(val positions: List<Position>, val totals: TradingTotals) {
-    val profit: Long? get() = totals.profit.takeIf { positions.isNotEmpty() }
-    val spread: Long? get() = totals.spread.takeIf { positions.wholeSize() != 0.0 }
-    val balance: Long? get() = totals.balance
-}
+internal data class TradingHeaderState(val positions: List<Position>, val totals: TradingTotals)
 
 internal data class MarketPrice(val yen: Double?)
 
@@ -26,15 +21,15 @@ internal fun observeTradingTotals(
     prices: Observable<MarketPrice>,
     positions: Observable<List<Position>>,
     collateral: Observable<Collateral>,
-    scheduler: Scheduler = Schedulers.computation()
+    scheduler: Scheduler
 ): Observable<TradingTotals> =
-    observeTradingHeader(prices, positions, collateral, scheduler).map { it.totals }
+    observeTradingHeader(prices, positions, collateral, scheduler).map { it.totals }.distinctUntilChanged()
 
 internal fun observeTradingHeader(
     prices: Observable<MarketPrice>,
     positions: Observable<List<Position>>,
     collateral: Observable<Collateral>,
-    scheduler: Scheduler = Schedulers.computation()
+    scheduler: Scheduler
 ): Observable<TradingHeaderState> {
     val entries = positions.map { Entry(it, it.average().toLong(), it.wholeSize() < 0.0) }
     val account = Observables.combineLatest(entries, collateral, ::Account)
@@ -49,6 +44,7 @@ internal fun observeTradingHeader(
         }
         .distinctUntilChanged()
         .map { TradingHeaderState(it.account.entry.positions, it.totals()) }
+        .distinctUntilChanged()
 }
 
 private class Entry(val positions: List<Position>, val average: Long, val isShort: Boolean)
@@ -58,10 +54,10 @@ private class Account(val entry: Entry, val collateral: Collateral)
 private data class Valuation(val price: Long?, val account: Account) {
     fun totals(): TradingTotals {
         val balance = account.collateral.amount?.toLong()
-        if (price == null) return TradingTotals(null, null, balance)
+        if (price == null) return TradingTotals(null, null, balance, null)
         val profit = account.entry.positions.profit(price).toLong()
         val priceChange = price - account.entry.average
         val spread = if (account.entry.isShort) -priceChange else priceChange
-        return TradingTotals(profit, spread, balance?.plus(profit))
+        return TradingTotals(profit, spread, balance?.plus(profit), price)
     }
 }

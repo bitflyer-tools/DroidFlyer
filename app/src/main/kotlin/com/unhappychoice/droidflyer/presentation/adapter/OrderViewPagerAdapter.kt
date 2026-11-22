@@ -17,7 +17,7 @@ class OrderViewPagerAdapter(val context: Context, val di: DI) : PagerAdapter() {
     override fun instantiateItem(container: ViewGroup, position: Int): Any {
         return when (position) {
             0 -> createMarketOrderView(container)
-            1 -> createLimitOrderView(container)
+            LIMIT_POSITION -> createLimitOrderView(container)
             else -> createOrdersView(container)
         }
     }
@@ -45,5 +45,9 @@ class OrderViewPagerAdapter(val context: Context, val di: DI) : PagerAdapter() {
         view.inject(di)
         container?.addView(view)
         return view
+    }
+
+    companion object {
+        internal const val LIMIT_POSITION = 1
     }
 }
