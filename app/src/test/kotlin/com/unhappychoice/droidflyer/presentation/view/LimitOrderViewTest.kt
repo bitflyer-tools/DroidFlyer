@@ -36,6 +36,7 @@ import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
@@ -44,7 +45,7 @@ import org.robolectric.shadows.ShadowDialog
 @Config(sdk = [28], application = Application::class)
 class LimitOrderViewTest {
     private val orderClient = mock<APIClientV1>()
-    private val presenter = LimitOrderPresenter(orderClient)
+    private val presenter = LimitOrderPresenter(orderClient, RuntimeEnvironment.getApplication().resources) { _, _ -> }
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private lateinit var status: CurrentStatusService
 

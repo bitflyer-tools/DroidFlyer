@@ -1,20 +1,14 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import android.app.Application
-import android.view.ContextThemeWrapper
-import android.widget.FrameLayout
 import com.google.gson.JsonParseException
-import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
-import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
-import mortar.MortarScope
-import mortar.bundler.BundleServiceRunner
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,10 +30,7 @@ import org.robolectric.annotation.Config
 class LimitOrderPresenterTest {
     private val apiClient = mock<APIClientV1>()
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
-    private val presenter = LimitOrderPresenter(apiClient)
-    private val scope = MortarScope.buildRootScope()
-        .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
-        .build("limit_order_test")
+    private val presenter = LimitOrderPresenter(apiClient, RuntimeEnvironment.getApplication().resources) { _, _ -> }
 
     @Before
     fun setUp() {
@@ -47,17 +38,11 @@ class LimitOrderPresenterTest {
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         whenever(apiClient.sendChildOrder(any())).thenReturn(pending, PublishSubject.create())
 
-        val themedContext = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.AppTheme)
-        val context = scope.createContext(themedContext)
-        val view = LimitOrderView(context, null)
-        FrameLayout(context).addView(view)
-        presenter.takeView(view)
         presenter.amount.value = 0.001
     }
 
     @After
     fun tearDown() {
-        scope.destroy()
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
     }

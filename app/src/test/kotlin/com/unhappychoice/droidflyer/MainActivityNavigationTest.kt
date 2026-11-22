@@ -2,19 +2,32 @@ package com.unhappychoice.droidflyer
 
 import android.Manifest
 import android.content.Context
+import android.os.Looper
 import android.view.View
+import android.widget.TextView
+import androidx.core.view.children
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderTerms
 import com.unhappychoice.droidflyer.presentation.view.ChartView
+import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import flow.Flow
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import io.socket.client.Socket
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +38,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -34,6 +52,8 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.RealObject
 import org.robolectric.util.ReflectionHelpers
+import retrofit2.HttpException
+import retrofit2.Response
 
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -160,6 +180,64 @@ class MainActivityNavigationTest {
             val (newPublic, newPrivate) = DisconnectedSocket.connections.drop(2)
             assertTrue(newPublic.hasListeners("lightning_board_FX_BTC_JPY"))
             assertTrue(newPrivate.hasListeners("child_order_events"))
+        }
+    }
+
+    @Test
+    fun delayedLimitOrderAcceptanceShowsOnChart() {
+        assertLimitOrderFeedbackAfterNavigation(R.id.chartIcon, { getString(R.string.ordered_buy, 0.001, 100L) }) {
+            onNext(ChildOrderAcceptance("test"))
+            onComplete()
+        }
+    }
+
+    @Test
+    fun delayedLimitOrderRejectionShowsOnSettings() {
+        assertLimitOrderFeedbackAfterNavigation(R.id.settingsIcon, { getString(R.string.limit_order_failed) }) {
+            onError(HttpException(Response.error<ChildOrderAcceptance>(400, "Order rejected".toResponseBody())))
+        }
+    }
+
+    private fun assertLimitOrderFeedbackAfterNavigation(
+        destination: Int,
+        expectedMessage: MainActivity.() -> String,
+        completeOrder: PublishSubject<ChildOrderAcceptance>.() -> Unit
+    ) {
+        val apiClient = mock<APIClientV1>()
+        val pending = PublishSubject.create<ChildOrderAcceptance>()
+        whenever(apiClient.sendChildOrder(any())).thenReturn(pending)
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.tapTab(R.id.orderIcon)
+            val order = OrderViewBinding.bind(activity.binding.containerView.getChildAt(0))
+            val pager = order.viewPager
+            val page = pager.children.filterIsInstance<LimitOrderView>().firstOrNull()
+                ?: pager.adapter!!.instantiateItem(pager, 1) as LimitOrderView
+
+            val presenter = LimitOrderPresenter(apiClient, activity.resources, activity::showSnackbar)
+            presenter.takeView(page)
+            val backgroundScheduler = Schedulers.io()
+            RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+            try {
+                presenter.submitOrder(LimitOrderTerms(LimitOrderSide.BUY, 100, 0.001))
+            } finally {
+                RxJavaPlugins.setIoSchedulerHandler { backgroundScheduler }
+            }
+
+            assertTrue(presenter.isLoading.value)
+            assertTrue(page.isAttachedToWindow)
+            activity.tapTab(destination)
+            assertFalse(page.isAttachedToWindow)
+            presenter.dropView(page)
+            assertTrue(presenter.isLoading.value)
+
+            pending.completeOrder()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse(presenter.isLoading.value)
+            val message = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            assertEquals(activity.expectedMessage(), message?.text?.toString())
+            verify(apiClient).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "BUY", 100, 0.001))
+            verifyNoMoreInteractions(apiClient)
         }
     }
 
