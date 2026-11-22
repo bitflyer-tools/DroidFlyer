@@ -30,6 +30,6 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
     bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance()) }
+    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance(), instance()) }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

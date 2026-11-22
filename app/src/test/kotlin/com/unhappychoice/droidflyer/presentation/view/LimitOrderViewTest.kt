@@ -44,7 +44,7 @@ import org.robolectric.shadows.ShadowDialog
 @Config(sdk = [28], application = Application::class)
 class LimitOrderViewTest {
     private val orderClient = mock<APIClientV1>()
-    private val presenter = LimitOrderPresenter(orderClient)
+    private lateinit var presenter: LimitOrderPresenter
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private lateinit var status: CurrentStatusService
 
@@ -58,6 +58,7 @@ class LimitOrderViewTest {
         whenever(statusClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(statusClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         status = CurrentStatusService(statusClient, Observable.never(), Observable.never(), Observable.never())
+        presenter = LimitOrderPresenter(orderClient, status)
     }
 
     @After
