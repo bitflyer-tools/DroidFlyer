@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import io.reactivex.schedulers.TestScheduler
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import org.junit.Assert.assertEquals
@@ -93,6 +94,25 @@ class TradingTotalsTest {
     }
 
     @Test
+    fun partiallyOffsetNetLongUsesSharedEntryPrice() {
+        assertSharedEntryPrice("BUY", "SELL")
+    }
+
+    @Test
+    fun partiallyOffsetNetShortUsesSharedEntryPrice() {
+        assertSharedEntryPrice("SELL", "BUY")
+    }
+
+    @Test
+    fun differentEntryPricesUseSignedNotionalForNetExposure() {
+        price.value = MarketPrice(100.0)
+        positions.value = listOf(position, position.copy(side = "SELL", price = 80L, size = 0.25))
+
+        assertEquals(120.0, positions.value.average(), 0.0)
+        totals.assertValueAt(1, TradingTotals(-5L, -20L, 995L))
+    }
+
+    @Test
     fun priceBurstCalculatesProfitOnceAndReusesAverage() {
         val trackedPositions = object : AbstractList<Position>() {
             var traversals = 0
@@ -120,5 +140,17 @@ class TradingTotalsTest {
             TradingTotals(20L, 40L, 1020L)
         )
         assertEquals(initialTraversals + 1, trackedPositions.traversals)
+    }
+
+    private fun assertSharedEntryPrice(netSide: String, offsettingSide: String) {
+        val entryPrice = 10_000_000L
+        price.value = MarketPrice(entryPrice.toDouble())
+        positions.value = listOf(
+            position.copy(side = netSide, price = entryPrice),
+            position.copy(side = offsettingSide, price = entryPrice, size = 0.25)
+        )
+
+        assertEquals(entryPrice.toDouble(), positions.value.average(), 0.0)
+        totals.assertValueAt(1, TradingTotals(0L, 0L, 1000L))
     }
 }
