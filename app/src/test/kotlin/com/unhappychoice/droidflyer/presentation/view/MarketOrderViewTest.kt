@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.Manifest
 import android.content.DialogInterface
 import android.view.View
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.MainActivityNavigationTest
@@ -18,6 +19,7 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
@@ -87,6 +89,37 @@ class MarketOrderViewTest {
             window.tap(button)
             verify(client).sendChildOrder(request("SELL", "IOC"))
             verify(client).sendChildOrder(any())
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en")
+    fun closeWithinOrderLimitDisclosesFollowUpOrdersInEnglish() {
+        assertCloseConfirmation(
+            "Sell / 5.0",
+            "The app checks the remaining position after each market order and may submit additional market orders " +
+                "if an order is partially filled or the position exceeds the order size limit."
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "ja")
+    fun closeWithinOrderLimitDisclosesFollowUpOrdersInJapanese() {
+        assertCloseConfirmation(
+            "売り / 5.0",
+            "成行注文のたびに残りの建玉を確認します。" +
+                "注文が一部だけ約定した場合や、建玉の数量が1回の注文上限を超える場合は、追加の成行注文を出すことがあります。"
+        )
+    }
+
+    private fun assertCloseConfirmation(summary: String, disclosure: String) {
+        withMarketView { activity, view, _, status ->
+            status.position.value = listOf(Position("FX_BTC_JPY", "BUY", 100, 5.0, 0.0, 0.0, 0.0, 1, 0.0))
+            activity.window.tap(view.findViewById(R.id.clearButton))
+
+            val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+            val message = dialog.findViewById<TextView>(android.R.id.message)
+            assertEquals("$summary\n\n$disclosure", message?.text.toString())
         }
     }
 
