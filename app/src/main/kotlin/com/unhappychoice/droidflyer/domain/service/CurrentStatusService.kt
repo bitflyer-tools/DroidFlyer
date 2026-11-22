@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Completable
+import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
@@ -102,6 +103,17 @@ class CurrentStatusService internal constructor(
     fun updateStatus() = statusRefresh.request(followUp = true)
 
     fun pollStatus() = statusRefresh.request(followUp = false)
+
+    internal fun initializeAccount(loadClient: () -> APIClientV1?) {
+        val initialAccount = accountChanged
+        Maybe.fromCallable<APIClientV1> { loadClient() }
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { client ->
+                if (accountChanged === initialAccount) switchAccount(client)
+            }
+            .addTo(bag)
+    }
 
     internal fun switchAccount(client: APIClientV1?) {
         if (bag.isDisposed) return
