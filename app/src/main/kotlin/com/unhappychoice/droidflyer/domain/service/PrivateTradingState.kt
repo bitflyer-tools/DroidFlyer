@@ -3,7 +3,10 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Completable
@@ -75,6 +78,23 @@ internal class PrivateTradingState(
         ).takeUntil(current.ended)
     }
 
+    fun prepareOrder(request: SendChildOrderRequest): NewOrder? =
+        if (disposed || session.client == null) null else NewOrder(session, request)
+
+    fun submitOrder(order: NewOrder): Observable<ChildOrderAcceptance>? {
+        val current = order.session
+        val client = current.client ?: return null
+        if (disposed || current !== session) return null
+
+        return Observable.defer {
+            if (current.ended.hasComplete()) Observable.empty()
+            else client.submitChildOrder(order.request)
+        }
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .takeUntil(order.sessionEnded.toObservable<Unit>())
+    }
+
     fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session
 
     fun closeConfirmation(): CloseConfirmation? {
@@ -115,6 +135,10 @@ internal class PrivateTradingState(
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
+
+    class NewOrder internal constructor(internal val session: Session, val request: SendChildOrderRequest) {
+        val sessionEnded: Completable get() = session.ended
+    }
 
     companion object {
         private const val ACTIVE_ORDER_LIMIT = 500
