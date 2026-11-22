@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
     private var parentOrderStatus = 200
+    private var historyStatus = 200
     private var parentId = 100L
     private var submissionStatus = 200
     private var loseSubmissionResponse = false
@@ -64,7 +65,7 @@ class StopOrderServiceTest {
         val service = service()
         val received = mutableListOf<String>()
         assertTrue(service.submit(service.confirmation(stopRequest())) { received += it.getOrThrow() })
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(listOf("acceptance-1"), received)
         val request = requests.single { it.method == "POST" }
         assertEquals("POST", request.method)
@@ -113,7 +114,7 @@ class StopOrderServiceTest {
 
         assertTrue(service.submit(confirmation) { results += it })
         assertFalse(service.submit(confirmation) { fail("Submitted while sending") })
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertTrue(results.single().isFailure)
         assertTrue(service.reconcilingSubmission.value)
@@ -123,7 +124,7 @@ class StopOrderServiceTest {
 
         parentId = 101
         service.onParentUpdates()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         val matchingOrder = service.orders.value.single()
         assertEquals(101L, matchingOrder.parent.id)
@@ -190,7 +191,7 @@ class StopOrderServiceTest {
     fun continuousChildExecutionsRefreshTriggeredStopThroughPartialAndFullExecution() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
 
             realtime.parent(listOf(triggerEvent().copy(productCode = "BTC_JPY")))
@@ -201,7 +202,7 @@ class StopOrderServiceTest {
             scheduler.triggerActions()
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
             assertFalse(stops.orders.value.single().canCancel)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             executedSize = 0.005
             val execution = childExecution()
@@ -233,14 +234,14 @@ class StopOrderServiceTest {
     fun childExecutionRecoversMissedTriggerWhileParentIsStillActive() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
             assertTrue(stops.orders.value.single().canCancel)
             requests.clear()
 
             childOrders = marketChild(0.005)
             realtime.child(listOf(childExecution()))
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             val order = stops.orders.value.single()
             assertEquals("ACTIVE", order.parent.parentOrderState)
@@ -256,7 +257,7 @@ class StopOrderServiceTest {
     fun retriesFailedParentListAfterChildExecutionWithoutAnotherEvent() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             parentOrderStatus = 503
             childOrders = marketChild(0.005)
             realtime.child(listOf(childExecution()))
@@ -265,7 +266,7 @@ class StopOrderServiceTest {
             assertFalse(stops.orders.value.single().canCancel)
 
             parentOrderStatus = 200
-            scheduler.advanceTimeBy(38, SECONDS)
+            scheduler.advanceTimeBy(58, SECONDS)
             assertFalse(stops.loadFailed.value)
             assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, stops.orders.value.single().status)
         }
@@ -274,16 +275,16 @@ class StopOrderServiceTest {
     fun retriesFailedMarketChildReadAfterTriggerWithoutAnotherEvent() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             childOrderStatus = 503
             realtime.parent(listOf(triggerEvent()))
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertTrue(stops.loadFailed.value)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
 
             childOrderStatus = 200
             childOrders = marketChild(0.01)
-            scheduler.advanceTimeBy(38, SECONDS)
+            scheduler.advanceTimeBy(58, SECONDS)
             assertFalse(stops.loadFailed.value)
             assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
             requests.clear()
@@ -295,7 +296,7 @@ class StopOrderServiceTest {
     fun limitExecutionDoesNotRefreshWaitingStops() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             requests.clear()
 
             realtime.child(listOf(childExecution().copy(childOrderType = "LIMIT")))
@@ -306,22 +307,44 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun connectedInitialRefreshPacesDetailsAndChildLookups() =
+    fun activeStopCanBeCanceledWhenHistoryRequestsFail() =
         withRealtimeStops { stops, _, scheduler ->
+            historyStatus = 503
             stops.refresh()
             scheduler.advanceTimeBy(8, SECONDS)
+            val order = stops.orders.value.single()
+            assertTrue(order.canCancel)
 
+            scheduler.advanceTimeBy(16, SECONDS)
             assertEquals(
-                listOf("/v1/me/getparentorders", "/v1/me/getparentorders", "/v1/me/getparentorder"),
-                stopReadPaths()
+                listOf("ACTIVE", "COMPLETED", "CANCELED", "EXPIRED", "REJECTED"),
+                requests.filter { it.url.encodedPath == "/v1/me/getparentorders" }
+                    .map { it.url.queryParameter("parent_order_state") }
             )
+            assertTrue(stops.loadFailed.value)
+            assertTrue(stops.orders.value.single().canCancel)
+            stops.cancel(stops.cancellationConfirmation(order)) { fail("Cancellation failed: $it") }
+            scheduler.triggerActions()
+            assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
+    fun connectedInitialRefreshPacesActiveReadsBeforeHistory() =
+        withRealtimeStops { stops, _, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(4, SECONDS)
+
+            assertEquals(listOf("/v1/me/getparentorders", "/v1/me/getparentorder"), stopReadPaths())
             assertTrue(stops.orders.value.isEmpty())
 
             scheduler.advanceTimeBy(4, SECONDS)
 
             assertEquals("/v1/me/getchildorders", stopReadPaths().last())
-            assertEquals(4, stopReadPaths().size)
+            assertEquals(3, stopReadPaths().size)
             assertTrue(stops.orders.value.single().canCancel)
+
+            scheduler.advanceTimeBy(16, SECONDS)
+            assertEquals(7, stopReadPaths().size)
         }
 
     @Test
@@ -329,10 +352,10 @@ class StopOrderServiceTest {
         withRealtimeStops { stops, _, scheduler ->
             outstandingSize = 0.0
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             val order = stops.orders.value.single()
-            assertEquals("/v1/me/getchildorders", stopReadPaths().last())
+            assertTrue("/v1/me/getchildorders" in stopReadPaths())
             assertEquals("ACTIVE", order.parent.parentOrderState)
             assertEquals(StopOrderStatus.UNKNOWN, order.status)
             assertCancellationBlocked(stops, stops.cancellationConfirmation(order))
@@ -350,7 +373,7 @@ class StopOrderServiceTest {
                 }
             }
             stops.refresh()
-            scheduler.advanceTimeBy(24, SECONDS)
+            scheduler.advanceTimeBy(36, SECONDS)
             assertEquals(2, stops.orders.value.count { it.canCancel })
             requests.clear()
             val execution = childExecution()
@@ -363,25 +386,21 @@ class StopOrderServiceTest {
                 realtime.child(listOf(execution))
                 scheduler.advanceTimeBy(2, SECONDS)
             }
-            assertEquals(2, stopReadPaths().size)
+            assertEquals(listOf("/v1/me/getparentorders", "/v1/me/getchildorders"), stopReadPaths())
 
             scheduler.advanceTimeBy(2, SECONDS)
             assertEquals("/v1/me/getchildorders", stopReadPaths().last())
             assertEquals(3, stopReadPaths().size)
 
-            scheduler.advanceTimeBy(4, SECONDS)
-            assertEquals("/v1/me/getchildorders", stopReadPaths().last())
-            assertEquals(4, stopReadPaths().size)
-
-            scheduler.advanceTimeBy(30, SECONDS)
-            assertEquals(8, stopReadPaths().size)
+            scheduler.advanceTimeBy(52, SECONDS)
+            assertEquals(14, stopReadPaths().size)
         }
 
     @Test
     fun parentUpdatesApplyImmediatelyAndCoalesceWhileStopReadsArePaced() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             requests.clear()
             activeParentPage = {
                 parentOrders().dropLast(1) +
@@ -399,14 +418,15 @@ class StopOrderServiceTest {
                 realtime.parent(listOf(triggerEvent()))
                 scheduler.advanceTimeBy(1, SECONDS)
             }
-            assertEquals(listOf(
-                "/v1/me/getparentorders", "/v1/me/getparentorders",
-                "/v1/me/getchildorders", "/v1/me/getparentorder"
-            ), stopReadPaths())
+            assertEquals(
+                listOf("/v1/me/getparentorders", "/v1/me/getchildorders", "/v1/me/getparentorder",
+                    "/v1/me/getchildorders"),
+                stopReadPaths()
+            )
 
-            scheduler.advanceTimeBy(40, SECONDS)
-            assertEquals(8, stopReadPaths().size)
-            assertEquals(4, stopReadPaths().count { it == "/v1/me/getparentorders" })
+            scheduler.advanceTimeBy(60, SECONDS)
+            assertEquals(14, stopReadPaths().size)
+            assertEquals(10, stopReadPaths().count { it == "/v1/me/getparentorders" })
         }
 
     @Test
@@ -425,7 +445,7 @@ class StopOrderServiceTest {
     fun expiryBeforeTriggerRemainsVisibleWhenRestOmitsTheUnfilledChild() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
             val expiry = childExecution().copy(eventType = "EXPIRE")
 
@@ -440,7 +460,7 @@ class StopOrderServiceTest {
             assertEquals(StopOrderStatus.EXPIRED, stops.orders.value.single().status)
             assertCancellationBlocked(stops, confirmation)
 
-            scheduler.advanceTimeBy(20, SECONDS)
+            scheduler.advanceTimeBy(32, SECONDS)
             val order = stops.orders.value.single()
             assertEquals(StopOrderStatus.EXPIRED, order.status)
             assertEquals(0.0, order.parent.executedSize, 0.0)
@@ -451,7 +471,7 @@ class StopOrderServiceTest {
     fun matchingExpiryShowsImmediatelyAndRestRecoversEarlierPartialFill() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val expiry = childExecution().copy(eventType = "EXPIRE")
             realtime.parent(
                 listOf(triggerEvent().copy(childOrderAcceptanceId = expiry.childOrderAcceptanceId))
@@ -464,7 +484,7 @@ class StopOrderServiceTest {
             scheduler.triggerActions()
             assertEquals(StopOrderStatus.EXPIRED, stops.orders.value.single().status)
 
-            scheduler.advanceTimeBy(20, SECONDS)
+            scheduler.advanceTimeBy(32, SECONDS)
             val order = stops.orders.value.single()
             assertEquals(StopOrderStatus.EXPIRED, order.status)
             assertEquals(0.005, order.parent.executedSize, 0.0)
@@ -475,12 +495,12 @@ class StopOrderServiceTest {
         childOrders = marketChild(0.005, "CANCELED")
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(StopOrderStatus.CANCELED, service.orders.value.single().status)
 
         childOrders = "[]"
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         val order = service.orders.value.single()
         assertEquals(StopOrderStatus.CANCELED, order.status)
@@ -494,7 +514,7 @@ class StopOrderServiceTest {
         val service = service()
 
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(StopOrderStatus.TRIGGERED, service.orders.value.single().status)
         val childRequest = requests.first { it.url.encodedPath == "/v1/me/getchildorders" }
@@ -506,26 +526,26 @@ class StopOrderServiceTest {
     fun failedReconnectLookupDisablesCancellationUntilTriggerIsRecovered() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val confirmation = service.cancellationConfirmation(service.orders.value.single())
 
         childOrderStatus = 500
         service.refresh(recoverTriggers = true)
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(StopOrderStatus.UNKNOWN, service.orders.value.single().status)
         assertFalse(service.orders.value.single().canCancel)
         assertTrue(service.loadFailed.value)
         val failures = mutableListOf<CancellationFailure>()
         service.cancel(confirmation) { failures += it }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
         assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
 
         childOrderStatus = 200
         childOrders = marketChild(0.0)
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(StopOrderStatus.TRIGGERED, service.orders.value.single().status)
         assertFalse(service.loadFailed.value)
@@ -535,19 +555,19 @@ class StopOrderServiceTest {
     fun pollsStopOrdersWhenRealtimeNeverConnectsAtStartup() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
             childOrders = marketChild(0.0)
-            scheduler.advanceTimeBy(38, SECONDS)
+            scheduler.advanceTimeBy(58, SECONDS)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
 
             childOrders = marketChild(0.01)
-            scheduler.advanceTimeBy(38, SECONDS)
+            scheduler.advanceTimeBy(58, SECONDS)
             assertEquals(StopOrderStatus.EXECUTED, stops.orders.value.single().status)
 
             realtime.available(true)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val requestCount = stopReadPaths().size
             scheduler.advanceTimeBy(60, SECONDS)
             assertEquals(requestCount, stopReadPaths().size)
@@ -559,7 +579,7 @@ class StopOrderServiceTest {
             realtime.available(false)
             scheduler.triggerActions()
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             val order = stops.orders.value.single()
             assertEquals(StopOrderStatus.UNKNOWN, order.status)
@@ -570,7 +590,7 @@ class StopOrderServiceTest {
     fun reconnectKeepsStopUnknownAfterDisconnectedRefreshFails() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
@@ -584,21 +604,22 @@ class StopOrderServiceTest {
             parentOrderStatus = 200
             scheduler.advanceTimeBy(29, SECONDS)
             assertTrue(stops.loadFailed.value)
-            scheduler.advanceTimeBy(9, SECONDS)
+            scheduler.advanceTimeBy(29, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
             assertCancellationBlocked(stops, confirmation)
             assertFalse(stops.loadFailed.value)
 
             childOrderStatus = 500
+            requests.clear()
             realtime.available(true)
-            scheduler.advanceTimeBy(12, SECONDS)
-            assertEquals("/v1/me/getchildorders", stopReadPaths().last())
+            scheduler.advanceTimeBy(28, SECONDS)
+            assertTrue("/v1/me/getchildorders" in stopReadPaths())
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
             assertCancellationBlocked(stops, confirmation)
 
             childOrderStatus = 200
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
             assertCancellationBlocked(stops, confirmation)
             val requestCount = requests.size
@@ -610,14 +631,14 @@ class StopOrderServiceTest {
     fun cancellationRechecksRestWaitingEvidenceBeforePosting() =
         withRealtimeStops { stops, _, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val order = stops.orders.value.single()
             assertTrue(order.canCancel)
 
             outstandingSize = 0.0
             val failures = mutableListOf<CancellationFailure>()
             stops.cancel(stops.cancellationConfirmation(order)) { failures += it }
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
@@ -628,15 +649,15 @@ class StopOrderServiceTest {
     fun reconnectRestoresCancellationForFullyOutstandingActiveStop() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
             realtime.available(false)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertCancellationBlocked(stops, confirmation)
 
             realtime.available(true)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
             assertTrue(stops.orders.value.single().canCancel)
 
@@ -650,7 +671,7 @@ class StopOrderServiceTest {
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             realtime.parent(listOf(triggerEvent().copy(eventType = "ORDER")))
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val order = stops.orders.value.single()
             assertTrue(order.canCancel)
             val confirmation = stops.cancellationConfirmation(order)
@@ -658,11 +679,11 @@ class StopOrderServiceTest {
             realtime.available(false)
             scheduler.triggerActions()
             // The stop triggers and its unfilled market child expires during the gap.
-            // Recent history still reports the full quantity, but the parent is no longer listed as open.
+            // The previously observed parent is no longer listed as open.
             omitStopFromActiveParents = true
             requests.clear()
             realtime.available(true)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             val reconnected = stops.orders.value.single()
             assertTrue(stopReadPaths().contains("/v1/me/getchildorders"))
@@ -673,7 +694,7 @@ class StopOrderServiceTest {
             assertFalse(stops.loadFailed.value)
 
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
             assertCancellationBlocked(stops, confirmation)
         }
@@ -683,11 +704,11 @@ class StopOrderServiceTest {
         withRealtimeStops { stops, realtime, scheduler ->
             outstandingSize = null
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             realtime.available(false)
             scheduler.triggerActions()
             realtime.available(true)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
             activeParentPage = {
@@ -699,7 +720,7 @@ class StopOrderServiceTest {
             realtime.parent(listOf(triggerEvent().copy(
                 eventType = "ORDER", parentOrderId = "parent-2", parentOrderAcceptanceId = "acceptance-2"
             )))
-            scheduler.advanceTimeBy(20, SECONDS)
+            scheduler.advanceTimeBy(32, SECONDS)
 
             val orders = stops.orders.value.associateBy { it.acceptanceId }
             assertEquals(StopOrderStatus.UNKNOWN, orders.getValue("acceptance-1").status)
@@ -731,8 +752,8 @@ class StopOrderServiceTest {
 
             assertEquals(74, stopReadPaths().size - initialRequests)
             assertEquals(
-                listOf("/v1/me/getparentorders", "/v1/me/getparentorders", "/v1/me/getparentorders",
-                    "/v1/me/getparentorder", "/v1/me/getchildorders"),
+                listOf("/v1/me/getparentorders", "/v1/me/getparentorders", "/v1/me/getparentorder",
+                    "/v1/me/getchildorders", "/v1/me/getparentorder"),
                 stopReadPaths().take(5)
             )
             assertTrue(stops.orders.value.isNotEmpty())
@@ -756,11 +777,11 @@ class StopOrderServiceTest {
         withRealtimeStops { stops, realtime, scheduler ->
             outstandingSize = 0.0
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             realtime.available(false)
             scheduler.triggerActions()
             realtime.available(true)
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
             val expiry = childExecution().copy(eventType = "EXPIRE")
@@ -778,7 +799,7 @@ class StopOrderServiceTest {
     fun cancellationRechecksForTriggerWhileRealtimeIsConnected() =
         withRealtimeStops { stops, _, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val waiting = stops.orders.value.single()
             assertTrue(waiting.canCancel)
             val confirmation = stops.cancellationConfirmation(waiting)
@@ -786,7 +807,7 @@ class StopOrderServiceTest {
             childOrders = marketChild(0.0)
             val failures = mutableListOf<CancellationFailure>()
             stops.cancel(confirmation) { failures += it }
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
@@ -797,7 +818,7 @@ class StopOrderServiceTest {
     fun cancellationIsBlockedWhileRealtimeIsDisconnectedAfterAConnectionGap() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
             realtime.available(false)
@@ -809,14 +830,14 @@ class StopOrderServiceTest {
     fun cancellationSkipsPostWhenChildStatusCannotBeVerified() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
             childOrderStatus = 500
             val failures = mutableListOf<CancellationFailure>()
             stops.cancel(confirmation) { failures += it }
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertFalse(stops.orders.value.single().canCancel)
@@ -828,20 +849,20 @@ class StopOrderServiceTest {
     fun parentListFailureBlocksOpenConfirmationAndRetryChecksForMissedTrigger() {
         val stops = service()
         stops.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertTrue(stops.orders.value.single().canCancel)
         val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
 
         parentOrderStatus = 500
         stops.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertTrue(stops.loadFailed.value)
         assertCancellationBlocked(stops, confirmation)
 
         parentOrderStatus = 200
         childOrders = marketChild(0.0)
         stops.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertFalse(stops.loadFailed.value)
         assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
         assertCancellationBlocked(stops, confirmation)
@@ -861,7 +882,7 @@ class StopOrderServiceTest {
         }
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(StopOrderStatus.WAITING, service.orders.value.single().status)
         assertEquals(5000000L, service.orders.value.single().triggerPrice)
@@ -874,22 +895,22 @@ class StopOrderServiceTest {
     fun normalRefreshPreservesAndUpdatesExecutionRecoveredOnReconnect() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         childOrders = marketChild(0.005)
         service.refresh(recoverTriggers = true)
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, service.orders.value.single().status)
 
         childOrders = "[]"
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(0.005, service.orders.value.single().parent.executedSize, 0.0)
         assertEquals(StopOrderStatus.PARTIALLY_EXECUTED, service.orders.value.single().status)
 
         childOrders = marketChild(0.01)
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(StopOrderStatus.EXECUTED, service.orders.value.single().status)
     }
 
@@ -898,13 +919,13 @@ class StopOrderServiceTest {
         val service = service()
         executedSize = 0.003
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         parentState = "CANCELED"
         executedSize = 0.0
         childOrders = marketChild(0.005)
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         val order = service.orders.value.single()
         assertEquals(StopOrderStatus.CANCELED, order.status)
@@ -917,7 +938,7 @@ class StopOrderServiceTest {
         val service = service()
         executedSize = 0.005
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         service.onEvents(listOf(triggerEvent().copy(eventType = "EXPIRE")))
 
@@ -931,18 +952,18 @@ class StopOrderServiceTest {
     fun cancelsByParentAcceptanceIdAndAllowsRetryAfterFailure() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val confirmation = service.cancellationConfirmation(service.orders.value.single())
         val failures = mutableListOf<CancellationFailure>()
         cancelStatus = 400
         service.cancel(confirmation) { failures += it }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(listOf(CancellationFailure.REQUEST_FAILED), failures)
         assertTrue(service.orders.value.single().canCancel)
 
         cancelStatus = 200
         service.cancel(confirmation) { fail("Cancellation failed: $it") }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val cancellations = requests.filter { it.url.encodedPath == "/v1/me/cancelparentorder" }
         assertEquals(2, cancellations.size)
         cancellations.forEach {
@@ -956,17 +977,17 @@ class StopOrderServiceTest {
     fun cancellationUsesLatestEligibleOrderWithTheSameAcceptanceId() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val order = service.orders.value.single()
         val confirmation = service.cancellationConfirmation(order)
         size = 0.02
         outstandingSize = size
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertNotEquals(order, service.orders.value.single())
 
         service.cancel(confirmation) { fail("Cancellation failed: $it") }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
     }
@@ -975,15 +996,15 @@ class StopOrderServiceTest {
     fun cancellationReportsWhenOrderPartiallyExecutesWhileDialogIsOpen() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val confirmation = service.cancellationConfirmation(service.orders.value.single())
         executedSize = 0.005
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val failures = mutableListOf<CancellationFailure>()
 
         service.cancel(confirmation) { failures += it }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
         assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
@@ -993,13 +1014,13 @@ class StopOrderServiceTest {
     fun cancellationReportsWhenOrderDisappearsWhileDialogIsOpen() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val confirmation = service.cancellationConfirmation(service.orders.value.single())
         service.orders.value = emptyList()
         val failures = mutableListOf<CancellationFailure>()
 
         service.cancel(confirmation) { failures += it }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(listOf(CancellationFailure.UNAVAILABLE), failures)
         assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
@@ -1009,15 +1030,15 @@ class StopOrderServiceTest {
     fun cancellationRejectsOldConfirmationEvenWhenNewAccountHasTheSameOrder() {
         val service = service()
         service.refresh()
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         val confirmation = service.cancellationConfirmation(service.orders.value.single())
         service.switchAccount(client())
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
         assertEquals(confirmation.acceptanceId, service.orders.value.single().acceptanceId)
         val failures = mutableListOf<CancellationFailure>()
 
         service.cancel(confirmation) { failures += it }
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertEquals(listOf(CancellationFailure.ACCOUNT_CHANGED), failures)
         assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
@@ -1028,7 +1049,7 @@ class StopOrderServiceTest {
         val service = service()
         val confirmation = service.confirmation(stopRequest())
         service.switchAccount(client())
-        serviceScheduler.advanceTimeBy(20, SECONDS)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertFalse(service.orderEventsReady)
         assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Stop submitted before authentication") })
@@ -1042,13 +1063,13 @@ class StopOrderServiceTest {
         val service = service()
         try {
             service.refresh()
-            serviceScheduler.advanceTimeBy(20, SECONDS)
+            serviceScheduler.advanceTimeBy(32, SECONDS)
             assertTrue(service.orders.value.single().canCancel)
             requests.clear()
             service.switchAccount(null)
 
             service.refresh()
-            serviceScheduler.advanceTimeBy(20, SECONDS)
+            serviceScheduler.advanceTimeBy(32, SECONDS)
             assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Stop submitted without credentials") })
             assertTrue(service.orders.value.isEmpty())
             assertTrue(requests.isEmpty())
@@ -1061,7 +1082,7 @@ class StopOrderServiceTest {
         withRealtimeStops { stops, realtime, scheduler ->
             childOrders = marketChild(filled)
             stops.refresh()
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(
                 if (filled == 0.0) StopOrderStatus.TRIGGERED else StopOrderStatus.PARTIALLY_EXECUTED,
                 stops.orders.value.single().status
@@ -1069,7 +1090,7 @@ class StopOrderServiceTest {
 
             childOrders = marketChild(filled, state)
             realtime.child(listOf(childExecution().copy(eventType = event)))
-            scheduler.advanceTimeBy(12, SECONDS)
+            scheduler.advanceTimeBy(28, SECONDS)
 
             val order = stops.orders.value.single()
             assertEquals(status, order.status)
@@ -1172,12 +1193,15 @@ class StopOrderServiceTest {
         }
         "/v1/me/getparentorders" -> {
             assertEquals("FX_BTC_JPY", request.url.queryParameter("product_code"))
-            val active = request.url.queryParameter("parent_order_state") == "ACTIVE"
+            val state = requireNotNull(request.url.queryParameter("parent_order_state"))
+            assertTrue(state in listOf("ACTIVE", "COMPLETED", "CANCELED", "EXPIRED", "REJECTED"))
+            val active = state == "ACTIVE"
             val page = activeParentPage
             when {
                 parentOrderStatus != 200 -> parentOrderStatus to ""
+                !active && historyStatus != 200 -> historyStatus to ""
                 page != null && active -> 200 to page(request.url.queryParameter("before"))
-                page != null || (active && (parentState != "ACTIVE" || omitStopFromActiveParents)) -> 200 to "[]"
+                state != parentState || (active && omitStopFromActiveParents) -> 200 to "[]"
                 else -> 200 to parentOrders()
             }
         }

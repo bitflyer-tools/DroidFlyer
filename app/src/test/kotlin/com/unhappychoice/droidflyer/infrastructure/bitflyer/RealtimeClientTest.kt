@@ -265,7 +265,7 @@ class RealtimeClientTest {
                 account.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
                 val stops = service.privateState.stopOrders
                 stops.refresh()
-                scheduler.advanceTimeBy(12, SECONDS)
+                scheduler.advanceTimeBy(28, SECONDS)
                 assertFalse(stops.orderEventsReady)
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
                 assertFalse(stops.orders.value.single().canCancel)
@@ -359,7 +359,7 @@ class RealtimeClientTest {
                 account.acknowledgePrivateSubscriptions()
                 val stops = service.privateState.stopOrders
                 stops.refresh()
-                scheduler.advanceTimeBy(12, SECONDS)
+                scheduler.advanceTimeBy(28, SECONDS)
                 assertTrue(stops.orders.value.single().canCancel)
                 val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
                 val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
@@ -372,7 +372,7 @@ class RealtimeClientTest {
                 account.authAck = null
                 account.receive(Socket.EVENT_CONNECT)
                 checkNotNull(account.authAck).call(denied)
-                scheduler.advanceTimeBy(12, SECONDS)
+                scheduler.advanceTimeBy(28, SECONDS)
 
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
                 assertFalse(stops.orders.value.single().canCancel)
@@ -684,7 +684,9 @@ class RealtimeClientTest {
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(Observable.just(listOf(parent)))
-        whenever(api.getParentOrders()).thenReturn(Observable.just(listOf(parent)))
+        listOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED").forEach { state ->
+            whenever(api.getParentOrders(orderState = state)).thenReturn(Observable.just(emptyList()))
+        }
         whenever(api.getParentOrder("parent-1")).thenReturn(Observable.just(details))
         whenever(api.getParentChildOrders("parent-1")).thenReturn(Observable.just(emptyList()))
         return api

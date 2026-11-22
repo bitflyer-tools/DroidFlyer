@@ -252,23 +252,22 @@ internal class StopOrderService(
         val knownEvents = events.mapValues { it.value.eventType }
         val channelsReady = orderEventsReady
         refreshRequest.set(null)
-        val request = loadActiveParents(client, reads = refreshReads).toList().toObservable().concatMap { active ->
-            refreshReads.read { client.getParentOrders() }.map { recent ->
-                val history = recent.filter(::isCryptoCfdStop)
-                val byId = history.associateBy { it.parentOrderAcceptanceId }
-                val activeStops = active.filter(::isCryptoCfdStop)
-                // Recent history can still show ACTIVE after an unfilled child disappears.
-                val fullyOutstandingIds = activeStops.filter { it.isFullyOutstanding() }
-                    .map { it.parentOrderAcceptanceId }.toSet()
-                val open = activeStops.map { byId[it.parentOrderAcceptanceId] ?: it }
-                val pending = (open + history.filter { it.parentOrderState == "ACTIVE" })
-                (pending + history.filter { it.parentOrderState != "ACTIVE" }.take(10))
-                    .distinctBy { it.parentOrderAcceptanceId }
-                    .map { it to (it.parentOrderAcceptanceId in fullyOutstandingIds) }
+        var historyFailed = false
+        val parents = loadActiveParents(client, reads = refreshReads).filter(::isCryptoCfdStop).toList()
+            .flatMapObservable { active ->
+                val activeIds = active.map { it.parentOrderAcceptanceId }.toSet()
+                val missing = previous.values.filter {
+                    it.parent.parentOrderState == "ACTIVE" && it.acceptanceId !in activeIds &&
+                        (recover || it.status != StopOrderStatus.WAITING)
+                }
+                Observable.fromIterable(active.map { it to it.isFullyOutstanding() } +
+                    missing.map { it.parent to false })
             }
-        }.flatMap { rows ->
-            Observable.fromIterable(rows).concatMap { (row, activeAndOutstanding) ->
-                val cached = previous[row.parentOrderAcceptanceId]
+        val history = loadRecentParents(client) { historyFailed = true }.map { it to false }
+        val refreshed = LinkedHashMap<String, StopOrder>()
+        val request = Observable.just(parents, history).concatMap { source ->
+            source.concatMap { (row, activeAndOutstanding) ->
+                val cached = refreshed[row.parentOrderAcceptanceId] ?: previous[row.parentOrderAcceptanceId]
                 val realtimeEvent = knownEvents[row.parentOrderAcceptanceId]
                 val event = realtimeEvent?.takeUnless { it == "ORDER" } ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
@@ -294,16 +293,18 @@ internal class StopOrderService(
                     }
                 }
             }
-        }.subscribeOn(io).observeOn(main)
+        }.doOnNext { refreshed[it.acceptanceId] = it }
+            .subscribeOn(io).observeOn(main)
             .doOnNext { row -> if (current === account) publishPacedRow(row) }
             .toList()
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
-                val incomplete = rows.any { it.triggerPrice == null || !it.triggerVerified }
+                val latest = rows.associateBy { it.acceptanceId }.values
+                val incomplete = latest.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
-                orders.value = rows.map(::applyEvent)
-                scheduleFallbackRefresh(incomplete)
-                loadFailed.value = incomplete
+                orders.value = latest.map(::applyEvent)
+                scheduleFallbackRefresh(incomplete || historyFailed)
+                loadFailed.value = incomplete || historyFailed
                 finishRefresh()
             }
         }, {
@@ -372,6 +373,20 @@ internal class StopOrderService(
                 rows.concatWith(Observable.defer { loadActiveParents(client, next, reads) })
             }
     }
+
+    private fun loadRecentParents(client: APIClientV1, onFailure: () -> Unit): Observable<ParentOrder> =
+        Observable.fromIterable(listOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED"))
+            .concatMap { state ->
+                refreshReads.read { client.getParentOrders(orderState = state) }
+                    .onErrorReturn {
+                        onFailure()
+                        emptyList()
+                    }
+            }
+            .flatMapIterable { it }
+            .filter(::isCryptoCfdStop)
+            .toList()
+            .flatMapObservable { rows -> Observable.fromIterable(rows.sortedByDescending { it.id }.take(10)) }
 
     private fun applyEvent(order: StopOrder): StopOrder {
         val event = events[order.acceptanceId]
