@@ -32,7 +32,7 @@ class LimitOrderRowsTest {
             Observable.just(true), boards, groupingSizes, Observable.just(emptyList()), scheduler, scheduler
         ).map { it.first }.test()
 
-        boards.onNext(Board(0.0, levels, levels.reversed()))
+        boards.onNext(Board(midPrice = 0.0, bids = levels.reversed(), asks = levels))
         rows.assertNoValues()
 
         scheduler.triggerActions()
