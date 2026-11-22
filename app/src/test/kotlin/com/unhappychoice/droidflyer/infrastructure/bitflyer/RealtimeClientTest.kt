@@ -16,16 +16,21 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
-import io.socket.client.Ack
+import io.socket.client.AckWithTimeout
 import io.socket.client.Manager
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
+import io.socket.thread.EventThread
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
@@ -35,14 +40,94 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.math.BigDecimal
 import java.util.Date
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit.SECONDS
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class RealtimeClientTest {
+    private val time = TestScheduler()
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
     private val socket = RecordingSocket()
     private val accountSockets = mutableListOf<RecordingSocket>()
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+
+    @Before
+    fun setUp() {
+        RxJavaPlugins.setComputationSchedulerHandler { time }
+    }
+
+    @After
+    fun tearDown() {
+        RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun retriesUnacknowledgedAuthenticationWithBackoffOnTheSameSocket() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        val account = accountSockets.single()
+        val orders = client.childOrderEvents.test()
+        account.receive(Socket.EVENT_CONNECT)
+        val expired = checkNotNull(account.authAck)
+        expired.onTimeout()
+        expired.call(JSONObject.NULL)
+        assertEquals(emptyList<String>(), account.subscriptions)
+        assertEquals(1, account.authAttempts)
+
+        advanceRetryTime(1)
+        assertEquals(2, account.authAttempts)
+        checkNotNull(account.authAck).onTimeout()
+        advanceRetryTime(1)
+        assertEquals(2, account.authAttempts)
+        advanceRetryTime(1)
+        assertEquals(3, account.authAttempts)
+        expired.call(JSONObject.NULL)
+        account.receive("child_order_events", JSONArray())
+        orders.assertNoValues()
+        assertEquals(emptyList<String>(), account.subscriptions)
+
+        checkNotNull(account.authAck).call(JSONObject.NULL)
+        account.receive("child_order_events", JSONArray())
+        advanceRetryTime(60)
+        orders.assertValueCount(1)
+        assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
+        assertEquals(3, account.authAttempts)
+    }
+
+    @Test
+    fun socketDisconnectCancelsRetryAndReconnectAuthenticatesImmediately() {
+        preference.save(APICredentials("key", "secret"))
+        createClient()
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        checkNotNull(account.authAck).onTimeout()
+
+        account.receive(Socket.EVENT_DISCONNECT)
+        account.receive(Socket.EVENT_CONNECT)
+        advanceRetryTime(60)
+
+        assertEquals(2, account.authAttempts)
+    }
+
+    @Test
+    fun replacingThenClosingAnAccountCancelsBothPendingRetries() {
+        preference.save(APICredentials("first", "secret"))
+        val client = createClient()
+        val original = accountSockets.single()
+        original.receive(Socket.EVENT_CONNECT)
+        checkNotNull(original.authAck).onTimeout()
+
+        client.updateAccount { preference.save(APICredentials("second", "secret")) }
+        val replacement = accountSockets.last()
+        replacement.receive(Socket.EVENT_CONNECT)
+        checkNotNull(replacement.authAck).onTimeout()
+        client.disconnect()
+        advanceRetryTime(60)
+
+        assertEquals(1, original.authAttempts)
+        assertEquals(1, replacement.authAttempts)
+    }
 
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
@@ -322,27 +407,43 @@ class RealtimeClientTest {
         )
     }
 
+    private fun advanceRetryTime(seconds: Long) {
+        time.advanceTimeBy(seconds, SECONDS)
+        val drained = CountDownLatch(1)
+        EventThread.exec { drained.countDown() }
+        assertTrue(drained.await(5, SECONDS))
+    }
+
     private fun createClient() = RealtimeClient(gson, preference, socket) {
         RecordingSocket().also(accountSockets::add)
     }
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {
         val subscriptions = mutableListOf<String>()
-        var authAck: Ack? = null
+        var authAck: AckWithTimeout? = null
+        var authAttempts = 0
+        private var open = false
 
         override fun connect(): Socket = this
 
-        override fun disconnect(): Socket = this
+        override fun disconnect(): Socket = apply { open = false }
+
+        override fun connected(): Boolean = open
 
         override fun emit(event: String, vararg args: Any): Emitter {
             when (event) {
                 "subscribe" -> subscriptions.add(args.single() as String)
-                "auth" -> authAck = args.last() as Ack
+                "auth" -> {
+                    authAttempts++
+                    authAck = (args.last() as AckWithTimeout).apply { cancelTimer() }
+                }
             }
             return this
         }
 
         fun receive(event: String, vararg args: Any) {
+            if (event == EVENT_CONNECT) open = true
+            if (event == EVENT_DISCONNECT) open = false
             listeners(event).forEach { it.call(*args) }
         }
     }
