@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.adapter.activeOrder
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.Observable
@@ -49,7 +50,8 @@ class LimitOrderPresenterTest {
     private val acceptedOrder = activeOrder("BUY", 100, 0.001).copy(
         productCode = "FX_BTC_JPY", size = 0.001, executedSize = 0.0
     )
-    private val presenter by lazy { LimitOrderPresenter(state) {}.also(::attachView) }
+    private val accountPreference = CryptoCfdAccountPreference(RuntimeEnvironment.getApplication())
+    private val presenter by lazy { LimitOrderPresenter(state, accountPreference) {}.also(::attachView) }
     private var status: CurrentStatusService? = null
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -207,7 +209,7 @@ class LimitOrderPresenterTest {
             .thenReturn(initialOrders, Observable.just(listOf(acceptedOrder)))
         val status = CurrentStatusService(apiClient, Observable.never(), Observable.never(), Observable.never())
         this.status = status
-        val presenter = LimitOrderPresenter(status.privateState, status::updateStatus)
+        val presenter = LimitOrderPresenter(status.privateState, accountPreference, status::updateStatus)
         attachView(presenter)
         presenter.submitOrder(requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100)))
         return status
