@@ -13,6 +13,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import io.reactivex.Observable
@@ -23,6 +24,7 @@ import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +38,7 @@ import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
@@ -44,7 +47,8 @@ import org.robolectric.shadows.ShadowDialog
 @Config(sdk = [28], application = Application::class)
 class LimitOrderViewTest {
     private val orderClient = mock<APIClientV1>()
-    private val presenter = LimitOrderPresenter(orderClient)
+    private val accountPreference = CryptoCfdAccountPreference(RuntimeEnvironment.getApplication())
+    private val presenter = LimitOrderPresenter(orderClient, accountPreference)
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private lateinit var status: CurrentStatusService
 
@@ -93,6 +97,39 @@ class LimitOrderViewTest {
     }
 
     @Test
+    fun limitConfirmationAndSubmissionUseTheCurrentAccountMaximum() {
+        withLimitView { view ->
+            presenter.amount.value = 10.0
+            val individual = view.confirmation(R.id.bidList, R.string.buy, 100, 10.0)
+            presenter.amount.value = 10.001
+            view.clickRow(R.id.askList, 200)
+            assertSame(individual, ShadowDialog.getLatestDialog())
+
+            accountPreference.isCorporate = true
+            presenter.amount.value = 40.0
+            val corporate = view.confirmation(R.id.askList, R.string.sell, 200, 40.0)
+            presenter.amount.value = 41.0
+            view.clickRow(R.id.bidList, 100)
+            assertSame(corporate, ShadowDialog.getLatestDialog())
+
+            accountPreference.isCorporate = false
+            corporate.accept()
+            verifyNoInteractions(orderClient)
+
+            individual.accept()
+            verify(orderClient).sendChildOrder(request("BUY", 100, 10.0))
+            pending.onComplete()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            accountPreference.isCorporate = true
+            presenter.amount.value = 40.0
+            view.confirmation(R.id.askList, R.string.sell, 201, 40.0).accept()
+            verify(orderClient).sendChildOrder(request("SELL", 201, 40.0))
+            verifyNoMoreInteractions(orderClient)
+        }
+    }
+
+    @Test
     @Config(sdk = [30])
     fun obscuredConfirmationDoesNotSubmitAndClearTapSubmitsOnce() {
         withLimitView { view ->
@@ -123,9 +160,13 @@ class LimitOrderViewTest {
         }
     }
 
-    private fun LimitOrderView.confirmation(list: Int, label: Int, price: Long, size: Double): AlertDialog {
+    private fun LimitOrderView.clickRow(list: Int, price: Long) {
         val adapter = findViewById<RecyclerView>(list).adapter as BoardAdapter
         adapter.clickItems.onNext(Order(price, 1.0))
+    }
+
+    private fun LimitOrderView.confirmation(list: Int, label: Int, price: Long, size: Double): AlertDialog {
+        clickRow(list, price)
         val dialog = ShadowDialog.getLatestDialog() as AlertDialog
         val message = dialog.findViewById<TextView>(android.R.id.message)?.text.toString()
         assertEquals("${context.getString(label)} / $price / $size", message)

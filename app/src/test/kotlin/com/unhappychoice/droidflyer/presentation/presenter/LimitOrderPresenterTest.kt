@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
@@ -36,7 +37,7 @@ import org.robolectric.annotation.Config
 class LimitOrderPresenterTest {
     private val apiClient = mock<APIClientV1>()
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
-    private val presenter = LimitOrderPresenter(apiClient)
+    private val presenter = LimitOrderPresenter(apiClient, CryptoCfdAccountPreference(RuntimeEnvironment.getApplication()))
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")

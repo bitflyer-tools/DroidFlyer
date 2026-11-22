@@ -24,12 +24,14 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
             CurrentStatusService(instance(), instance(), instance<APIClient>().privateStatusClient(credentials))
         }
     }
-    bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
+    bindSingleton<SettingsPresenter> {
+        SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance(), accountPreference = instance())
+    }
     bindSingleton<ChartPresenter> {
         ChartPresenter(SystemClock::elapsedRealtimeNanos, instance<APIClientV1>()::getExecutionPrices)
     }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
-    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance()) }
+    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance(), accountPreference = instance()) }
+    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance(), instance()) }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

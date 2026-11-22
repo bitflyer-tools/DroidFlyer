@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import io.reactivex.Observable
@@ -75,7 +76,8 @@ class SettingsPresenterTest {
                 }.toResponseBody())
                 .build()
         }.build())
-    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }) { save ->
+    private val accountPreference = CryptoCfdAccountPreference(context)
+    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }, accountPreference) { save ->
         save()
         authenticated.add(savedCredentials())
     }
@@ -194,7 +196,7 @@ class SettingsPresenterTest {
             assertEquals(List(4) { "/v1/board" }, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, status::switchAccount) { it() }
+            val settings = SettingsPresenter(api, preference, status::switchAccount, accountPreference) { it() }
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
             settings.saveCredentials().test().assertValueCount(1).assertComplete()

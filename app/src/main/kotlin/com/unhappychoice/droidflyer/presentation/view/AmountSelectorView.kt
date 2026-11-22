@@ -18,6 +18,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.textChanges
+import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 import java.math.BigDecimal
@@ -29,6 +30,8 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
     val amount = Variable(0.0)
     val didIncrement: PublishSubject<Unit> = PublishSubject.create<Unit>()
     val didDecrement: PublishSubject<Unit> = PublishSubject.create<Unit>()
+
+    internal val maximumOrderSize = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 
     private val binding by lazy {
         AmountSelectorViewBinding.inflate(LayoutInflater.from(context), this, true)
@@ -49,11 +52,11 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         amountField.keyListener = AmountKeyListener(amountSymbols)
         amountField.setText(formatAmount(amount.value))
 
-        binding.minimumOrderSizeMessage.text =
-            context.getString(R.string.minimum_order_size, formatAmount(CryptoCfdOrderSize.MINIMUM))
-        amount.asObservable()
-            .subscribeNext { binding.minimumOrderSizeMessage.isVisible = it != 0.0 && !CryptoCfdOrderSize.isValid(it) }
-            .addTo(bag)
+        Observables.combineLatest(amount.asObservable(), maximumOrderSize.asObservable(), ::orderSizeMessage)
+            .subscribeNext { message ->
+                binding.orderSizeMessage.text = message
+                binding.orderSizeMessage.isVisible = message.isNotEmpty()
+            }.addTo(bag)
 
         size.asObservable()
             .subscribeNext { select(it) }
@@ -93,6 +96,13 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
 
         binding.plusButton.clicks().bindTo(didIncrement).addTo(bag)
         binding.minusButton.clicks().bindTo(didDecrement).addTo(bag)
+    }
+
+    private fun orderSizeMessage(amount: Double, maximum: Double): String = when {
+        amount > maximum -> context.getString(R.string.maximum_order_size, maximum.toInt())
+        amount != 0.0 && !CryptoCfdOrderSize.meetsMinimum(amount) ->
+            context.getString(R.string.minimum_order_size, formatAmount(CryptoCfdOrderSize.MINIMUM))
+        else -> ""
     }
 
     private fun parseAmount(text: CharSequence): Double {

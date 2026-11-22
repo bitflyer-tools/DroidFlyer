@@ -71,6 +71,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             }.addTo(bag)
 
         presenter.apply {
+            maximumOrderSize.asObservable().bindTo(binding.amountSelector.maximumOrderSize).addTo(bag)
             amount.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.amount).addTo(bag)
             unitSize.asObservable().distinctUntilChanged().bindTo(binding.amountSelector.size).addTo(bag)
         }

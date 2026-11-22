@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
@@ -25,8 +26,10 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
@@ -82,6 +85,27 @@ class SettingsViewTest {
         val saved = testAPITokenPreference(host).read()
         assertEquals(key, saved.key)
         assertEquals(secret, saved.secret)
+    }
+
+    @Test
+    fun corporateOrderLimitsAreOptInAndPersistedWithoutApplyingApiCredentials() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            assertFalse(settings.corporateAccount.isChecked)
+            val preference = settings.root.presenter.accountPreference
+            assertEquals(10.0, preference.maximumOrderSize.value, 0.0)
+
+            settings.corporateAccount.performClick()
+            assertEquals(40.0, preference.maximumOrderSize.value, 0.0)
+            assertTrue(CryptoCfdAccountPreference(host).isCorporate)
+            assertTrue(host.openSettings().corporateAccount.isChecked)
+
+            host.openSettings().corporateAccount.performClick()
+            assertEquals(10.0, preference.maximumOrderSize.value, 0.0)
+            assertFalse(CryptoCfdAccountPreference(host).isCorporate)
+            assertEquals(0, host.applyRequests)
+        }
     }
 
     @Test
@@ -150,7 +174,11 @@ class SettingsViewTest {
                     .build()
             }.build()
             val presenter = SettingsPresenter(
-                APIClient(Gson(), preference, transport), preference, switchAccount = {}, updateRealtimeAccount = { it() }
+                APIClient(Gson(), preference, transport),
+                preference,
+                switchAccount = {},
+                accountPreference = CryptoCfdAccountPreference(this),
+                updateRealtimeAccount = { it() }
             )
             DI { bindInstance { presenter } }
         }

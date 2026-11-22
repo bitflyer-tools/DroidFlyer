@@ -13,6 +13,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
@@ -24,11 +25,17 @@ import mortar.ViewPresenter
 class MarketOrderPresenter internal constructor(
     private val apiClient: APIClientV1,
     private val currentStatusService: CurrentStatusService,
+    internal val maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
     private val notify: MarketOrderPresenter.(Int) -> Unit
 ) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
-    constructor(apiClient: APIClientV1, currentStatusService: CurrentStatusService) : this(
+    constructor(
+        apiClient: APIClientV1,
+        currentStatusService: CurrentStatusService,
+        accountPreference: CryptoCfdAccountPreference
+    ) : this(
         apiClient,
         currentStatusService,
+        accountPreference.maximumOrderSize,
         notify = MarketOrderPresenter::showMessage
     )
 
@@ -79,7 +86,7 @@ class MarketOrderPresenter internal constructor(
     }
 
     private fun submit(side: String, size: Double) {
-        if (isLoading.value || !CryptoCfdOrderSize.isValid(size)) return
+        if (isLoading.value || !CryptoCfdOrderSize.isValid(size, maximumOrderSize.value)) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, size)
         apiClient.submitChildOrder(request)
             .subscribeOnIoObserveOnUI()

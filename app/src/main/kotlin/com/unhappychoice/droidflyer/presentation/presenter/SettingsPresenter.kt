@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
@@ -21,14 +22,16 @@ class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
     private val switchAccount: (APIClientV1?) -> Unit,
+    internal val accountPreference: CryptoCfdAccountPreference,
     private val updateRealtimeAccount: (() -> Unit) -> Unit
 ) : ViewPresenter<SettingsView>() {
     constructor(
         api: APIClient,
         preference: APITokenPreference,
         currentStatusService: CurrentStatusService,
-        realtimeClient: RealtimeClient
-    ) : this(api, preference, currentStatusService::switchAccount, realtimeClient::updateAccount)
+        realtimeClient: RealtimeClient,
+        accountPreference: CryptoCfdAccountPreference
+    ) : this(api, preference, currentStatusService::switchAccount, accountPreference, realtimeClient::updateAccount)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")

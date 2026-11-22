@@ -45,12 +45,17 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
                 setupStyle()
             }.addTo(bag)
 
+        val accountPreference = presenter.accountPreference
+        binding.corporateAccount.isChecked = accountPreference.isCorporate
+        binding.corporateAccount.setOnCheckedChangeListener { _, checked -> accountPreference.isCorporate = checked }
+
         binding.saveButton.clicks()
             .subscribeNext { presenter.save() }
             .addTo(bag)
     }
 
     override fun onDetachedFromWindow() {
+        binding.corporateAccount.setOnCheckedChangeListener(null)
         presenter.dropView(this)
         super.onDetachedFromWindow()
     }

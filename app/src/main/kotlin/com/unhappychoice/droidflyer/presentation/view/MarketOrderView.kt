@@ -41,14 +41,16 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         }
 
         presenter.apply {
+            maximumOrderSize.asObservable().bindTo(binding.amountSelector.maximumOrderSize).addTo(bag)
             amount.asObservable().bindTo(binding.amountSelector.amount).addTo(bag)
             unitSize.asObservable().bindTo(binding.amountSelector.size).addTo(bag)
         }
 
         Observables.combineLatest(
             presenter.amount.asObservable(),
-            presenter.isLoading.asObservable()
-        ) { amount, isLoading -> CryptoCfdOrderSize.isValid(amount) && !isLoading }
+            presenter.isLoading.asObservable(),
+            presenter.maximumOrderSize.asObservable()
+        ) { amount, isLoading, maximum -> CryptoCfdOrderSize.isValid(amount, maximum) && !isLoading }
             .subscribeNext {
                 binding.buyButton.isEnabled = it
                 binding.sellButton.isEnabled = it

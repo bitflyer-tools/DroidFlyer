@@ -12,12 +12,15 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
 import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
@@ -43,6 +46,7 @@ import org.robolectric.shadows.ShadowDialog
 )
 class MarketOrderViewTest {
     private val client = mock<APIClientV1>()
+    private val accountPreference = CryptoCfdAccountPreference(RuntimeEnvironment.getApplication())
 
     @After
     fun resetSchedulers() {
@@ -66,6 +70,31 @@ class MarketOrderViewTest {
             verify(client).sendChildOrder(request("BUY"))
             verify(client).sendChildOrder(request("SELL"))
             verify(client, times(2)).sendChildOrder(any())
+        }
+    }
+
+    @Test
+    fun marketButtonsAndSubmissionRespectBothAccountLimits() {
+        withMarketView { activity, view, presenter, _ ->
+            val buy = view.findViewById<View>(R.id.buyButton)
+            val sell = view.findViewById<View>(R.id.sellButton)
+            listOf(false to 10.0, true to 40.0).forEach { (corporate, maximum) ->
+                accountPreference.isCorporate = corporate
+                presenter.amount.value = maximum + 0.001
+                assertFalse(buy.isEnabled)
+                assertFalse(sell.isEnabled)
+                presenter.buy()
+                presenter.sell()
+
+                presenter.amount.value = maximum
+                assertTrue(buy.isEnabled)
+                assertTrue(sell.isEnabled)
+                activity.window.tap(buy)
+                activity.window.tap(sell)
+                verify(client).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, maximum))
+                verify(client).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, maximum))
+            }
+            verify(client, times(4)).sendChildOrder(any())
         }
     }
 
@@ -102,7 +131,7 @@ class MarketOrderViewTest {
             whenever(client.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
             whenever(client.sendChildOrder(any())).thenReturn(Observable.just(ChildOrderAcceptance("JRF-accepted")))
             val status = CurrentStatusService(client, Observable.never(), Observable.never(), Observable.never())
-            val presenter = MarketOrderPresenter(client, status) {}
+            val presenter = MarketOrderPresenter(client, status, accountPreference.maximumOrderSize) {}
             val activity = controller.get()
             val view = activity.layoutInflater.inflate(R.layout.market_order_view, null) as MarketOrderView
             view.inject(DI {
