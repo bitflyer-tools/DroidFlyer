@@ -205,13 +205,16 @@ class PrivateTradingStateTest {
     }
 
     @Test
-    fun switchingAccountsInvalidatesAnOpenStopConfirmation() {
+    fun switchingAccountsInvalidatesAnOpenStopConfirmationBeforeNotifyingObservers() {
         val request = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
         val confirmation = state.stopOrders.confirmation(request)
+        val submissions = state.accountChanges
+            .map { state.stopOrders.submit(confirmation) { error("Stale stop submitted") } }
+            .test()
 
         state.switchAccount(accountB.client)
 
-        assertFalse(state.stopOrders.submit(confirmation) { error("Stale stop submitted") })
+        submissions.assertValue(false).assertNoErrors()
     }
 
     @Test

@@ -39,10 +39,15 @@ class OrdersPresenter internal constructor(
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()
 
+    internal val fillHistory = FillHistory(privateState::getMyExecutions)
+
+    internal val fillAccountChanges = privateState.accountChanges.doOnNext { fillHistory.clear() }
+
     private val failedCancellations = PublishSubject.create<ChildOrder>()
     private val bag = CompositeDisposable()
 
     override fun onExitScope() {
+        fillHistory.clear()
         bag.dispose()
         super.onExitScope()
     }
