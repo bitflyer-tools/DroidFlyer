@@ -32,7 +32,7 @@ class PrivateTradingStateTest {
     fun rejectedCollateralStaysUnavailableUntilZeroIsLoaded() {
         accountA.client.getBalance().test().assertValue(emptyList()).assertComplete()
         val totals = observeTradingTotals(
-            Observable.just(MarketPrice(120.0)), state.position.asObservable(), state.collateral.asObservable()
+            Observable.just(MarketPrice(120.0)), state.position.asObservable(), state.collateral.asObservable(), scheduler
         ).test()
 
         val rejected = state.refresh().test()
@@ -42,8 +42,8 @@ class PrivateTradingStateTest {
         accountA.collateral.onError(SecurityException("Missing collateral permission"))
         scheduler.triggerActions()
         rejected.assertComplete()
-        val unavailable = TradingTotals(0L, 120L, null)
-        totals.assertValues(unavailable, unavailable)
+        val unavailable = TradingTotals(0L, 120L, null, 120L)
+        totals.assertValue(unavailable)
 
         accountA.collateral = PublishSubject.create()
         val loaded = state.refresh().test()
@@ -53,7 +53,7 @@ class PrivateTradingStateTest {
         accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
         loaded.assertComplete()
-        totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L)).assertNoErrors()
+        totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L, 120L)).assertNoErrors()
     }
 
     @Test
