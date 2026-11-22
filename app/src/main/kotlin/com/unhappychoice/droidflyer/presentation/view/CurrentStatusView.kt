@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.FundingStatus
+import com.unhappychoice.droidflyer.domain.service.TradingHeaderState
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnComputationObserveOnUI
@@ -54,18 +55,17 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             }
             .addTo(bag)
 
-        currentStatusService.tradingTotals
+        currentStatusService.tradingHeader
             .subscribeOnComputationObserveOnUI()
-            .subscribeNext { totals ->
-                val positions = currentStatusService.position.value
-                binding.profit.renderValuation(totals.profit.takeIf { positions.isNotEmpty() })
-                binding.spread.renderValuation(totals.spread.takeIf { positions.wholeSize() != 0.0 })
-                binding.balance.text = totals.balance?.let { "${it.splitByComma()} JPY" } ?: "Balance unavailable"
-            }.addTo(bag)
-
-        currentStatusService.position.asObservable()
-            .subscribeNext { binding.position.text = positionSummary(it) }
+            .subscribeNext(::renderTradingHeader)
             .addTo(bag)
+    }
+
+    private fun renderTradingHeader(state: TradingHeaderState) {
+        binding.position.text = positionSummary(state.positions)
+        binding.profit.renderValuation(state.profit)
+        binding.spread.renderValuation(state.spread)
+        binding.balance.text = state.balance?.let { "${it.splitByComma()} JPY" } ?: "Balance unavailable"
     }
 
     private fun positionSummary(positions: List<Position>): String {
