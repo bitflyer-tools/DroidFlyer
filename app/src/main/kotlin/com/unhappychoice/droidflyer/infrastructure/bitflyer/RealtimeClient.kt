@@ -39,6 +39,9 @@ class RealtimeClient internal constructor(
     internal val childOrderEvents = childEvents.hide()
     internal val parentOrderEvents = parentEvents.hide()
 
+    private val executionDisconnects = PublishSubject.create<Unit>().toSerialized()
+    internal val executionFeedDisconnects = executionDisconnects.hide()
+
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
@@ -56,6 +59,11 @@ class RealtimeClient internal constructor(
         }
         publicChannels.forEach { channel ->
             socket.on(channel) { events -> events.forEach { publishEvent(channel, it) } }
+        }
+        socket.on(Socket.EVENT_DISCONNECT) {
+            synchronized(accountLock) {
+                if (!disconnected) executionDisconnects.onNext(Unit)
+            }
         }
         socket.connect()
         authenticationWorker.schedule {
@@ -75,6 +83,7 @@ class RealtimeClient internal constructor(
         if (disconnected) return@synchronized
         disconnected = true
         authenticationWorker.dispose()
+        executionDisconnects.onNext(Unit)
         closeAccount()
         socket.off()
         socket.disconnect()
@@ -111,6 +120,12 @@ class RealtimeClient internal constructor(
         }
     }
 
+    private fun publishExecutions(body: String) {
+        synchronized(accountLock) {
+            if (!disconnected) decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions)
+        }
+    }
+
     private fun publish(channel: String, body: String) {
         when (channel) {
             "lightning_board_FX_BTC_JPY" ->
@@ -118,7 +133,7 @@ class RealtimeClient internal constructor(
             "lightning_board_snapshot_FX_BTC_JPY" ->
                 decodeAndPublish(body, Board::class.java, boardSnapshot)
             "lightning_executions_FX_BTC_JPY" ->
-                decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions)
+                publishExecutions(body)
         }
     }
 

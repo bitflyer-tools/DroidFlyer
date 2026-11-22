@@ -270,7 +270,9 @@ class SettingsPresenterTest {
         val timer = TestScheduler()
         RxJavaPlugins.setComputationSchedulerHandler { timer }
         RxJavaPlugins.setSingleSchedulerHandler { timer }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { timer }
         val status = createStatus()
+        timer.triggerActions()
         assertEquals(listOf("/v1/board"), requestPaths())
         val scope = MortarScope.buildRootScope()
             .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -284,7 +286,9 @@ class SettingsPresenterTest {
             val settings = SettingsPresenter(api, preference, status::switchAccount) { it() }
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
-            settings.saveCredentials().test().assertValueCount(1).assertComplete()
+            val saved = settings.saveCredentials().test()
+            timer.triggerActions()
+            saved.assertValueCount(1).assertComplete()
 
             assertEquals(
                 listOf(

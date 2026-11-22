@@ -25,7 +25,8 @@ class CurrentStatusService internal constructor(
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<BoardUpdate>,
     orderEvents: Observable<PrivateEvent<*>>,
-    privateClient: APIClientV1? = apiClient
+    privateClient: APIClientV1? = apiClient,
+    executionFeedDisconnects: Observable<Unit> = Observable.never()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
@@ -35,7 +36,8 @@ class CurrentStatusService internal constructor(
             realtimeClient.childOrderEvents,
             realtimeClient.parentOrderEvents
         ),
-        privateClient
+        privateClient,
+        realtimeClient.executionFeedDisconnects
     )
 
     internal val privateState = PrivateTradingState(privateClient)
@@ -45,7 +47,10 @@ class CurrentStatusService internal constructor(
     val sellPrice = Variable(0L)
     val position = privateState.position
     val tradingTotals = observeTradingTotals(
-        currentPrice.asObservable(), position.asObservable(), privateState.collateral.asObservable()
+        currentPrice.asObservable(),
+        position.asObservable(),
+        privateState.collateral.asObservable(),
+        scheduler = AndroidSchedulers.mainThread()
     )
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
@@ -58,14 +63,15 @@ class CurrentStatusService internal constructor(
     private val fundingStatus = AtomicReference(FundingStatus())
 
     init {
-        executions
-            .filter { it.isNotEmpty() }
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { batch ->
-                batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }?.let {
-                    currentPrice.value = MarketPrice(it.price)
-                }
-            }
+        Observable.merge(
+            executions.map { batch ->
+                val execution = batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }
+                MarketPrice(execution?.price)
+            }.filter { it.yen != null },
+            executionFeedDisconnects.map { MarketPrice(null) }
+        )
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext { currentPrice.value = it }
             .addTo(bag)
 
         val realtimeBoards = boardUpdates.doOnNext { realtimeBoardRevision.incrementAndGet() }
