@@ -19,6 +19,7 @@ import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.StopOrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -82,7 +83,7 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
                 }
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
     }
 
     private fun showCancellationFailure(order: ChildOrder) = showCancellationFailure(order.childOrderAcceptanceId)

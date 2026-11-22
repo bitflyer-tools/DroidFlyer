@@ -81,4 +81,7 @@
     <string name="stop_cancel_unavailable">Order %1$s is no longer available.</string>
     <string name="stop_cancel_in_progress">Cancellation of order %1$s is already in progress.</string>
     <string name="stop_cancel_ineligible">Order %1$s is no longer eligible for cancellation.</string>
+    <string name="funding_unavailable">Next funding rate unavailable</string>
+    <string name="funding_details">Next funding %1$s · %2$s</string>
+    <string name="funding_stale">%1$s (stale)</string>
 </resources>

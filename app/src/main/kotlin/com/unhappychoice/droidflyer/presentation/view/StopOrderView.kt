@@ -20,6 +20,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrd
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.Observable
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
@@ -124,7 +125,7 @@ class StopOrderView(context: Context) : BaseView(context, null) {
             .setMessage(summary)
             .setPositiveButton(R.string.stop_submit) { _, _ -> submit(confirmation) }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
     }
 
     private fun submit(confirmation: StopOrderService.Confirmation) {
@@ -156,7 +157,7 @@ class StopOrderView(context: Context) : BaseView(context, null) {
             .setMessage(R.string.stop_submit_recovery_warning)
             .setPositiveButton(R.string.stop_submit_recovery_confirm) { _, _ -> confirmRecovery() }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .showTradingConfirmation()
     }
 
     private fun showOrderEventsHelp() {

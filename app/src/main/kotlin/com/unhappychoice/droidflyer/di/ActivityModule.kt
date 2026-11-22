@@ -22,11 +22,17 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindSingleton<RealtimeClient> { RealtimeClient(instance(), instance()) }
     bind<CurrentStatusService> {
         eagerSingleton {
-            val credentials = instance<APITokenPreference>().read()
-            CurrentStatusService(
-                instance(), instance(), instance<APIClient>().privateStatusClient(credentials),
-                instance<StopSubmissionPreference>().forApiKey(credentials.key)
-            )
+            val preference = instance<APITokenPreference>()
+            val api = instance<APIClient>()
+            val stopSubmissions = instance<StopSubmissionPreference>()
+            CurrentStatusService(instance(), instance(), null).apply {
+                initializeAccount {
+                    val credentials = preference.read()
+                    api.privateStatusClient(credentials)?.let { client ->
+                        client to stopSubmissions.forApiKey(credentials.key)
+                    }
+                }
+            }
         }
     }
     bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance(), stopSubmissions = instance()) }
@@ -34,7 +40,7 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         ChartPresenter(SystemClock::elapsedRealtimeNanos, instance<APIClientV1>()::getExecutionPrices)
     }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
-    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance()) }
+    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance()) }
+    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState) }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

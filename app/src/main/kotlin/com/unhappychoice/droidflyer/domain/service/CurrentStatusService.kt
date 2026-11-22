@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Completable
+import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
@@ -17,6 +18,7 @@ import io.reactivex.subjects.CompletableSubject
 import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -51,9 +53,8 @@ class CurrentStatusService internal constructor(
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = privateState.position
-    val balance = privateState.balance
     val tradingTotals = observeTradingTotals(
-        currentPrice.asObservable(), position.asObservable(), balance.asObservable()
+        currentPrice.asObservable(), position.asObservable(), privateState.collateral.asObservable()
     )
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
@@ -61,8 +62,10 @@ class CurrentStatusService internal constructor(
     private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
     private var accountChanged = CompletableSubject.create()
+    private var channelAvailability: PrivateEvent<Boolean>? = null
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val realtimeBoardRevision = AtomicLong()
+    private val fundingStatus = AtomicReference(FundingStatus())
 
     init {
         executions
@@ -124,7 +127,10 @@ class CurrentStatusService internal constructor(
 
         privateChannelAvailability.observeOn(AndroidSchedulers.mainThread())
             .filter { it.isCurrent() }
-            .subscribeNext { stopOrders.onPrivateChannelAvailability(it.value) }
+            .subscribeNext {
+                channelAvailability = it
+                stopOrders.onPrivateChannelAvailability(it.value)
+            }
             .addTo(bag)
 
         updateStatus()
@@ -140,17 +146,57 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
+    internal fun initializeAccount(loadAccount: () -> Pair<APIClientV1, StopSubmissionGuard>?) {
+        val initialAccount = accountChanged
+        Maybe.fromCallable<Pair<APIClientV1, StopSubmissionGuard>> { loadAccount() }
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { (client, guard) ->
+                if (accountChanged === initialAccount) switchAccount(client, guard)
+            }
+            .addTo(bag)
+    }
+
     internal fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
         if (bag.isDisposed) return
 
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
         privateState.switchAccount(client, guard) {
+            channelAvailability?.takeIf { client != null && it.value && it.isCurrent() }?.let {
+                privateState.stopOrders.onPrivateChannelAvailability(true)
+            }
             // Queue the new account before ending an in-flight refresh.
             updateStatus()
             previous.onComplete()
         }
     }
+
+    internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
+        Observable.defer {
+            visibility.distinctUntilChanged()
+                .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
+                .map(::updateFundingStatus)
+                .startWith(fundingStatus.get())
+                .distinctUntilChanged()
+        }
+
+    private fun updateFundingStatus(update: FundingStatus): FundingStatus {
+        do {
+            val previous = fundingStatus.get()
+            val next = if (update.funding != null) update else previous.copy(stale = previous.funding != null)
+            if (fundingStatus.compareAndSet(previous, next)) return next
+        } while (true)
+    }
+
+    private fun pollFunding(): Observable<FundingStatus> =
+        Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }
+            .firstOrError()
+            .map { FundingStatus(it.toNextFunding()) }
+            .onErrorReturnItem(FundingStatus())
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .repeatWhen { it.delay(1, TimeUnit.MINUTES) }
 
     private fun refreshStatus(): Completable = Completable.ambArray(
         accountChanged,
