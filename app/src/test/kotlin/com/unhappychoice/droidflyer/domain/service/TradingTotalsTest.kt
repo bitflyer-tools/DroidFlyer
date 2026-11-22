@@ -10,7 +10,7 @@ import org.junit.Test
 class TradingTotalsTest {
     private val price = Variable(MarketPrice(120.75))
     private val positions = Variable<List<Position>>(emptyList())
-    private val collateral = Variable(1000.75)
+    private val collateral = Variable(Collateral(1000.75))
     private val scheduler = TestScheduler()
     private val totals = observeTradingTotals(
         price.asObservable(), positions.asObservable(), collateral.asObservable(), scheduler
@@ -51,7 +51,7 @@ class TradingTotalsTest {
     fun collateralUpdateUsesLatestPriceBeforeWindowEnds() {
         positions.value = listOf(position)
         price.value = MarketPrice(140.75)
-        collateral.value = 1500.75
+        collateral.value = Collateral(1500.75)
         totals.assertValueCount(3)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 
@@ -63,9 +63,24 @@ class TradingTotalsTest {
     }
 
     @Test
+    fun unavailableCollateralKeepsBalanceUnknownWithOpenPositions() {
+        collateral.value = Collateral(null)
+        positions.value = listOf(position)
+        price.value = MarketPrice(140.75)
+        scheduler.advanceTimeBy(100, MILLISECONDS)
+
+        totals.assertValues(
+            TradingTotals(0L, 120L, 1000L),
+            TradingTotals(0L, 120L, null),
+            TradingTotals(10L, 20L, null),
+            TradingTotals(20L, 40L, null)
+        )
+    }
+
+    @Test
     fun priceUpdateUsesLatestPositionAndCollateral() {
         positions.value = listOf(position.copy(price = 110L))
-        collateral.value = 1500.75
+        collateral.value = Collateral(1500.75)
         price.value = MarketPrice(99.75)
         scheduler.advanceTimeBy(100, MILLISECONDS)
 

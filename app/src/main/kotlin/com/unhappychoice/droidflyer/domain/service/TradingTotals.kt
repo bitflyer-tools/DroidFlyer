@@ -10,14 +10,16 @@ import io.reactivex.rxkotlin.Observables
 import io.reactivex.schedulers.Schedulers
 import java.util.concurrent.TimeUnit
 
-data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long)
+data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long?)
 
 internal data class MarketPrice(val yen: Double?)
+
+internal data class Collateral(val amount: Double?)
 
 internal fun observeTradingTotals(
     prices: Observable<MarketPrice>,
     positions: Observable<List<Position>>,
-    collateral: Observable<Double>,
+    collateral: Observable<Collateral>,
     scheduler: Scheduler = Schedulers.computation()
 ): Observable<TradingTotals> {
     val entries = positions.map { Entry(it, it.average().toLong(), it.wholeSize() < 0.0) }
@@ -37,14 +39,15 @@ internal fun observeTradingTotals(
 
 private class Entry(val positions: List<Position>, val average: Long, val isShort: Boolean)
 
-private class Account(val entry: Entry, val collateral: Double)
+private class Account(val entry: Entry, val collateral: Collateral)
 
 private data class Valuation(val price: Long?, val account: Account) {
     fun totals(): TradingTotals {
-        if (price == null) return TradingTotals(null, null, account.collateral.toLong())
+        val balance = account.collateral.amount?.toLong()
+        if (price == null) return TradingTotals(null, null, balance)
         val profit = account.entry.positions.profit(price).toLong()
         val priceChange = price - account.entry.average
         val spread = if (account.entry.isShort) -priceChange else priceChange
-        return TradingTotals(profit, spread, account.collateral.toLong() + profit)
+        return TradingTotals(profit, spread, balance?.plus(profit))
     }
 }

@@ -7,6 +7,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Completable
+import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -20,7 +21,7 @@ internal class PrivateTradingState(
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
     val position = Variable<List<Position>>(emptyList())
-    val balance = Variable(0.0)
+    val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = Session(client)
@@ -48,7 +49,7 @@ internal class PrivateTradingState(
         session = Session(client)
         orders.value = emptyList()
         position.value = emptyList()
-        balance.value = 0.0
+        collateral.value = Collateral(null)
         try {
             onSwitched()
         } finally {
@@ -63,8 +64,12 @@ internal class PrivateTradingState(
         val client = current.client ?: return@defer Completable.complete()
         Completable.mergeArray(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
-            client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
-                .publishResponse { if (!disposed && current === session) balance.value = it },
+            client.getCollateral().flatMapMaybe { response ->
+                val amount = response["collateral"] as? Number
+                amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
+            }
+                .publishResponse { if (!disposed && current === session) collateral.value = it },
+            // Unchanged rows keep their order references for cancellation.
             client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
         ).takeUntil(current.ended)
