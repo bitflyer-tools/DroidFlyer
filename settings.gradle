@@ -14,17 +14,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Maven Central rate-limits downloads of this Robolectric native runtime.
-        exclusiveContent {
-            forRepository {
-                maven {
-                    url = uri('https://maven-central.storage-download.googleapis.com/maven2')
-                }
-            }
-            filter {
-                includeVersion('org.robolectric', 'nativeruntime-dist-compat', '1.0.20')
-            }
-        }
         maven { url 'https://jitpack.io' }
     }
 }
