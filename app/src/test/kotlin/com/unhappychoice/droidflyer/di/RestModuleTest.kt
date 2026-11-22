@@ -7,6 +7,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
+import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Manager
@@ -18,6 +20,8 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -27,17 +31,17 @@ import org.robolectric.annotation.Config
 @Config(manifest = Config.NONE, application = DroidFlyerApplication::class, sdk = [30])
 class RestModuleTest {
     @Test
-    fun sharesRestClientWithOrderPresenterAndStatusService() {
+    fun sharesRestClientAndBindsLimitOrdersToTheActiveAccount() {
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         try {
-            assertSharedClient()
+            assertClientBindings()
         } finally {
             RxJavaPlugins.reset()
         }
     }
 
-    private fun assertSharedClient() {
+    private fun assertClientBindings() {
         val application = RuntimeEnvironment.getApplication() as DroidFlyerApplication
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         fun disconnectedSocket() = object : Socket(Manager(), "/", Manager.Options()) {
@@ -55,8 +59,17 @@ class RestModuleTest {
         val client = graph.direct.instance<APIClientV1>()
         try {
             assertSame(client, graph.direct.instance<APIClient>().client())
-            assertSame(client, graph.direct.instance<LimitOrderPresenter>().apiClient)
             assertSame(client, status.apiClient)
+
+            val presenter = graph.direct.instance<LimitOrderPresenter>()
+            presenter.amount.value = 0.01
+            val accountClient = mock<APIClientV1>()
+            whenever(accountClient.getPositions()).thenReturn(Observable.empty())
+            whenever(accountClient.getCollateral()).thenReturn(Observable.empty())
+            whenever(accountClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+            status.switchAccount(accountClient)
+            val confirmation = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
+            assertSame(accountClient, confirmation.order.session.client)
         } finally {
             status.dispose()
         }

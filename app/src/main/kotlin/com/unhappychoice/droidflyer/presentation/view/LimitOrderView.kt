@@ -14,7 +14,6 @@ import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
-import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderTerms
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
@@ -32,6 +31,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     private val bidAdapter by lazy { BoardAdapter(context, BoardType.Bid) }
     private val binding by lazy { LimitOrderViewBinding.bind(this) }
 
+    private var confirmationDialog: AlertDialog? = null
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
@@ -48,13 +49,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             adapter = bidAdapter
         }
 
-        askAdapter.clickItems
-            .filter { presenter.canSubmitOrder }
-            .subscribeNext { confirmOrder(LimitOrderSide.SELL, it.price) }.addTo(bag)
-
-        bidAdapter.clickItems
-            .filter { presenter.canSubmitOrder }
-            .subscribeNext { confirmOrder(LimitOrderSide.BUY, it.price) }.addTo(bag)
+        askAdapter.clickItems.subscribeNext { confirmOrder(LimitOrderSide.SELL, it.price) }.addTo(bag)
+        bidAdapter.clickItems.subscribeNext { confirmOrder(LimitOrderSide.BUY, it.price) }.addTo(bag)
 
         Observables.combineLatest(
             observeLimitOrderRows(currentStatusService.board.asObservable(), presenter.groupingSize.asObservable()),
@@ -87,18 +83,28 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
     }
 
     override fun onDetachedFromWindow() {
+        confirmationDialog?.dismiss()
+        confirmationDialog = null
         presenter.dropView(this)
         super.onDetachedFromWindow()
     }
 
     private fun confirmOrder(side: LimitOrderSide, price: Long) {
-        val terms = LimitOrderTerms(side, price, presenter.amount.value)
-        AlertDialog.Builder(context, R.style.DialogStyle)
+        val confirmation = presenter.prepareOrder(side, price) ?: return
+        val order = confirmation.order
+        confirmationDialog?.dismiss()
+        val dialog = AlertDialog.Builder(context, R.style.DialogStyle)
             .setTitle(R.string.create_limit_order)
-            .setMessage("${context.getString(terms.side.label)} / ${terms.price} / ${terms.size}")
-            .setPositiveButton(R.string.ok) { _, _ -> presenter.submitOrder(terms) }
+            .setMessage("${context.getString(confirmation.side.label)} / ${order.request.price} / ${order.request.size}")
+            .setPositiveButton(R.string.ok) { _, _ -> presenter.submitOrder(confirmation) }
             .setNegativeButton(R.string.cancel, null)
             .showTradingConfirmation()
+        confirmationDialog = dialog
+        val sessionEnd = order.sessionEnded.subscribe { dialog.dismiss() }
+        dialog.setOnDismissListener {
+            sessionEnd.dispose()
+            if (confirmationDialog === dialog) confirmationDialog = null
+        }
     }
 
     private fun setupStyle() {

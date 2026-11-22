@@ -4,12 +4,11 @@ import android.content.res.Resources
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.NewOrder
 import com.unhappychoice.droidflyer.extension.Variable
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.submitChildOrder
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
@@ -17,8 +16,8 @@ import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
-class LimitOrderPresenter(
-    val apiClient: APIClientV1,
+class LimitOrderPresenter internal constructor(
+    private val state: PrivateTradingState,
     private val resources: Resources,
     private val showSnackbar: (String, Int) -> Unit
 ) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
@@ -49,18 +48,25 @@ class LimitOrderPresenter(
         groupingSizes.getOrNull(index - 1)?.let { groupingSize.value = it }
     }
 
-    internal fun submitOrder(terms: LimitOrderTerms) {
-        if (isLoading.value || !CryptoCfdOrderSize.isValid(terms.size)) return
+    internal fun prepareOrder(side: LimitOrderSide, price: Long): LimitOrderConfirmation? {
+        if (!canSubmitOrder) return null
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, amount.value)
+        return state.prepareOrder(request)?.let { LimitOrderConfirmation(side, it) }
+    }
 
-        val (side, price, size) = terms
-        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, size)
+    internal fun submitOrder(confirmation: LimitOrderConfirmation) {
+        if (isLoading.value || view == null) return
+        val order = confirmation.order
+        val submission = state.submitOrder(order) ?: return
+        val request = order.request
 
         isLoading.value = true
-        apiClient.submitChildOrder(request)
-            .subscribeOnIoObserveOnUI()
-            .doFinally { isLoading.value = false }
+        submission.doFinally { isLoading.value = false }
             .subscribe({
-                showSnackbar(resources.getString(side.orderedMessage, size, price), Snackbar.LENGTH_SHORT)
+                showSnackbar(
+                    resources.getString(confirmation.side.orderedMessage, request.size, request.price),
+                    Snackbar.LENGTH_SHORT
+                )
             }, { error ->
                 val messageResId = if (error is OrderAcceptanceUncertainException) R.string.order_acceptance_uncertain
                 else R.string.limit_order_failed
@@ -70,7 +76,7 @@ class LimitOrderPresenter(
     }
 }
 
-internal data class LimitOrderTerms(val side: LimitOrderSide, val price: Long, val size: Double)
+internal class LimitOrderConfirmation(val side: LimitOrderSide, val order: NewOrder)
 
 internal enum class LimitOrderSide(val label: Int, val orderedMessage: Int) {
     BUY(R.string.buy, R.string.ordered_buy),

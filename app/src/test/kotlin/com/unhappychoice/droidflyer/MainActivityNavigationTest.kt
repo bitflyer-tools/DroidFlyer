@@ -9,24 +9,30 @@ import androidx.core.view.children
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
+import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
-import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderTerms
 import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import flow.Flow
 import io.reactivex.plugins.RxJavaPlugins
-import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -62,12 +68,13 @@ import retrofit2.Response
     instrumentedPackages = ["io.socket.client"]
 )
 class MainActivityNavigationTest {
+    private val background = TestScheduler()
+
     @Before
     fun pauseBackgroundRequests() {
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.HIDE_OVERLAY_WINDOWS)
         DisconnectedSocket.connections.clear()
-        val scheduler = TestScheduler()
-        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setIoSchedulerHandler { background }
     }
 
     @After
@@ -167,6 +174,7 @@ class MainActivityNavigationTest {
 
         Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
             val oldClient = controller.get().module.direct.instance<RealtimeClient>()
+            background.triggerActions()
             val (oldPublic, oldPrivate) = DisconnectedSocket.connections
             assertTrue(oldPublic.hasListeners("lightning_board_FX_BTC_JPY"))
             assertTrue(oldPrivate.hasListeners("child_order_events"))
@@ -174,6 +182,7 @@ class MainActivityNavigationTest {
             controller.recreate()
 
             val newClient = controller.get().module.direct.instance<RealtimeClient>()
+            background.triggerActions()
             assertNotSame(oldClient, newClient)
             assertFalse(oldPublic.hasListeners("lightning_board_FX_BTC_JPY"))
             assertFalse(oldPrivate.hasListeners("child_order_events"))
@@ -198,6 +207,47 @@ class MainActivityNavigationTest {
         }
     }
 
+    @Test
+    fun recreationFinishesWhileCredentialSaveIsInProgress() {
+        val ioStarted = CountDownLatch(1)
+        val resumeIo = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        val credentials = APICredentials("replacement-key", "replacement-secret")
+        val cipher = APICredentialCipher { create ->
+            if (create) {
+                ioStarted.countDown()
+                check(resumeIo.await(10, TimeUnit.SECONDS)) { "Activity recreation blocked credential save" }
+            }
+            testCredentialKey
+        }
+        val preference = APITokenPreference(RuntimeEnvironment.getApplication(), cipher)
+
+        try {
+            Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+                val oldClient = controller.get().module.direct.instance<RealtimeClient>()
+                val oldSocket = DisconnectedSocket.connections.single()
+                val save = executor.submit {
+                    oldClient.updateAccount { preference.save(credentials) }
+                }
+
+                try {
+                    assertTrue(ioStarted.await(10, TimeUnit.SECONDS))
+                    controller.recreate()
+                    assertFalse(oldSocket.hasListeners("lightning_board_FX_BTC_JPY"))
+                    assertNotSame(oldClient, controller.get().module.direct.instance<RealtimeClient>())
+                } finally {
+                    resumeIo.countDown()
+                }
+                save.get(10, TimeUnit.SECONDS)
+                val saved = preference.read()
+                assertEquals(credentials.key to credentials.secret, saved.key to saved.secret)
+                assertEquals(2, DisconnectedSocket.connections.size)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
     private fun assertLimitOrderFeedbackAfterNavigation(
         destination: Int,
         expectedMessage: MainActivity.() -> String,
@@ -214,15 +264,13 @@ class MainActivityNavigationTest {
             val page = pager.children.filterIsInstance<LimitOrderView>().firstOrNull()
                 ?: pager.adapter!!.instantiateItem(pager, 1) as LimitOrderView
 
-            val presenter = LimitOrderPresenter(apiClient, activity.resources, activity::showSnackbar)
+            val orderScheduler = TestScheduler()
+            val state = PrivateTradingState(apiClient, requestScheduler = orderScheduler)
+            val presenter = LimitOrderPresenter(state, activity.resources, activity::showSnackbar)
             presenter.takeView(page)
-            val backgroundScheduler = Schedulers.io()
-            RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-            try {
-                presenter.submitOrder(LimitOrderTerms(LimitOrderSide.BUY, 100, 0.001))
-            } finally {
-                RxJavaPlugins.setIoSchedulerHandler { backgroundScheduler }
-            }
+            presenter.amount.value = 0.001
+            presenter.submitOrder(requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100)))
+            orderScheduler.triggerActions()
 
             assertTrue(presenter.isLoading.value)
             assertTrue(page.isAttachedToWindow)
