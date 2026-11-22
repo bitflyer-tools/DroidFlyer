@@ -18,6 +18,21 @@ internal fun boardUpdates(snapshots: Observable<Board>, deltas: Observable<Board
         deltas.map { BoardUpdate(it, BoardSource.DELTA) }
     )
 
+internal class OrderBookFallback {
+    // A null revision means a realtime snapshot has arrived and REST is no longer needed.
+    @Volatile private var revision: Long? = 0L
+
+    @Synchronized
+    fun onRealtimeUpdate(update: BoardUpdate) {
+        revision = if (update.source == BoardSource.SNAPSHOT) null else revision?.plus(1)
+    }
+
+    fun requestRevision(): Long? = revision
+
+    fun isCurrent(update: BoardUpdate): Boolean =
+        update.requestRevision?.let { it == revision } ?: true
+}
+
 internal sealed class OrderBookEvent {
     data class Quotes(val bestAsk: Long, val bestBid: Long) : OrderBookEvent()
     data class View(val board: Board) : OrderBookEvent()
