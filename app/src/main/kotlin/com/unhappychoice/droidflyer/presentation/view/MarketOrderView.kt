@@ -5,7 +5,6 @@ import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
-import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
@@ -92,11 +91,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         val order = confirmation.order
         val side = context.getString(if (order.side == "SELL") R.string.sell else R.string.buy)
         val summary = "$side / ${order.size}"
-        val message = if (order.size > ClosePositionService.ORDER_SIZE_LIMIT) {
-            "$summary\n\n" + context.getString(R.string.close_positions_multiple_orders)
-        } else {
-            summary
-        }
+        val message = "$summary\n\n" + context.getString(R.string.close_positions_multiple_orders)
         AlertDialog.Builder(context, R.style.DialogStyle)
             .setTitle(R.string.clear_all_positions)
             .setMessage(message)

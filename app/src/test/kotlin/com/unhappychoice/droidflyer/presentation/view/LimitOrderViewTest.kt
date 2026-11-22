@@ -24,6 +24,7 @@ import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
@@ -32,9 +33,9 @@ import org.kodein.di.DI
 import org.kodein.di.bindInstance
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
-import org.mockito.kotlin.verifyNoInteractions
-import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -46,9 +47,9 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
 class LimitOrderViewTest {
-    private val orderClient = mock<APIClientV1>()
+    private val orderClient = mockAccount()
+    private lateinit var presenter: LimitOrderPresenter
     private val accountPreference = CryptoCfdAccountPreference(RuntimeEnvironment.getApplication())
-    private val presenter = LimitOrderPresenter(orderClient, accountPreference)
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private lateinit var status: CurrentStatusService
 
@@ -56,12 +57,8 @@ class LimitOrderViewTest {
     fun setUp() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         whenever(orderClient.sendChildOrder(any())).thenReturn(pending, Observable.never())
-        val statusClient = mock<APIClientV1>()
-        whenever(statusClient.getPositions()).thenReturn(Observable.empty())
-        whenever(statusClient.getCollateral()).thenReturn(Observable.empty())
-        whenever(statusClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
-        whenever(statusClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        status = CurrentStatusService(statusClient, Observable.never(), Observable.never(), Observable.never())
+        status = CurrentStatusService(mockAccount(), Observable.never(), Observable.never(), Observable.never(), orderClient)
+        presenter = LimitOrderPresenter(status.privateState, accountPreference)
     }
 
     @After
@@ -71,28 +68,32 @@ class LimitOrderViewTest {
     }
 
     @Test
-    fun confirmationsKeepTheirTermsAndPendingSubmissionBlocksAnOpenDialog() {
+    fun confirmationsKeepTheirTermsAndAreDismissedOnAccountSwitch() {
         withLimitView { view ->
             presenter.amount.value = 0.01
+            val previousSell = view.confirmation(R.id.askList, R.string.sell, 200, 0.01)
             val buy = view.confirmation(R.id.bidList, R.string.buy, 100, 0.01)
-            presenter.amount.value = 0.02
-            val sell = view.confirmation(R.id.askList, R.string.sell, 200, 0.02)
+            assertFalse(previousSell.isShowing)
             presenter.amount.value = 0.0
-
             buy.accept()
-            presenter.amount.value = 0.05
-            sell.accept()
+
             verify(orderClient).sendChildOrder(request("BUY", 100, 0.01))
-            verifyNoMoreInteractions(orderClient)
             pending.onComplete()
             shadowOf(Looper.getMainLooper()).idle()
 
             presenter.amount.value = 0.03
-            val latestSell = view.confirmation(R.id.askList, R.string.sell, 201, 0.03)
+            val staleSell = view.confirmation(R.id.askList, R.string.sell, 201, 0.03)
+            val newAccount = mockAccount()
+            whenever(newAccount.sendChildOrder(any())).thenReturn(Observable.empty())
+            status.switchAccount(newAccount)
+            assertFalse(staleSell.isShowing)
+            verify(newAccount, never()).sendChildOrder(any())
+
+            val latestSell = view.confirmation(R.id.askList, R.string.sell, 202, 0.03)
             presenter.amount.value = 0.04
             latestSell.accept()
-            verify(orderClient).sendChildOrder(request("SELL", 201, 0.03))
-            verifyNoMoreInteractions(orderClient)
+            verify(newAccount).sendChildOrder(request("SELL", 202, 0.03))
+            verify(orderClient, times(1)).sendChildOrder(any())
         }
     }
 
@@ -105,6 +106,11 @@ class LimitOrderViewTest {
             view.clickRow(R.id.askList, 200)
             assertSame(individual, ShadowDialog.getLatestDialog())
 
+            individual.accept()
+            verify(orderClient).sendChildOrder(request("BUY", 100, 10.0))
+            pending.onComplete()
+            shadowOf(Looper.getMainLooper()).idle()
+
             accountPreference.isCorporate = true
             presenter.amount.value = 40.0
             val corporate = view.confirmation(R.id.askList, R.string.sell, 200, 40.0)
@@ -114,18 +120,13 @@ class LimitOrderViewTest {
 
             accountPreference.isCorporate = false
             corporate.accept()
-            verifyNoInteractions(orderClient)
-
-            individual.accept()
-            verify(orderClient).sendChildOrder(request("BUY", 100, 10.0))
-            pending.onComplete()
-            shadowOf(Looper.getMainLooper()).idle()
+            verify(orderClient, times(1)).sendChildOrder(any())
 
             accountPreference.isCorporate = true
             presenter.amount.value = 40.0
             view.confirmation(R.id.askList, R.string.sell, 201, 40.0).accept()
             verify(orderClient).sendChildOrder(request("SELL", 201, 40.0))
-            verifyNoMoreInteractions(orderClient)
+            verify(orderClient, times(2)).sendChildOrder(any())
         }
     }
 
@@ -139,10 +140,9 @@ class LimitOrderViewTest {
             val window = requireNotNull(dialog.window)
 
             window.tapWithObscuration(button)
-            verifyNoInteractions(orderClient)
+            verify(orderClient, never()).sendChildOrder(any())
             window.tap(button)
             verify(orderClient).sendChildOrder(request("BUY", 100, 0.01))
-            verifyNoMoreInteractions(orderClient)
         }
     }
 
@@ -176,6 +176,13 @@ class LimitOrderViewTest {
     private fun AlertDialog.accept() {
         getButton(DialogInterface.BUTTON_POSITIVE).performClick()
         shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun mockAccount() = mock<APIClientV1>().also {
+        whenever(it.getPositions()).thenReturn(Observable.empty())
+        whenever(it.getCollateral()).thenReturn(Observable.empty())
+        whenever(it.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+        whenever(it.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
     }
 
     private fun request(side: String, price: Long, size: Double) =
