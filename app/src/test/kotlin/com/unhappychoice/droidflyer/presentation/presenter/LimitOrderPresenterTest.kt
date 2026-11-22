@@ -6,6 +6,7 @@ import android.widget.FrameLayout
 import com.google.gson.JsonParseException
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
@@ -16,6 +17,7 @@ import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
@@ -29,7 +31,7 @@ import org.junit.runner.RunWith
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
-import org.mockito.Mockito.times
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoMoreInteractions
 import org.mockito.kotlin.whenever
@@ -42,13 +44,13 @@ import org.robolectric.annotation.Config
 class LimitOrderPresenterTest {
     private val apiClient = mock<APIClientV1>()
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
-    private val statusClient = mock<APIClientV1>()
-    private val initialOrders = PublishSubject.create<List<ChildOrder>>()
+    private val scheduler = TestScheduler()
+    private val state = PrivateTradingState(apiClient, scheduler, Schedulers.trampoline())
     private val acceptedOrder = activeOrder("BUY", 100, 0.001).copy(
         productCode = "FX_BTC_JPY", size = 0.001, executedSize = 0.0
     )
-    private lateinit var status: CurrentStatusService
-    private lateinit var presenter: LimitOrderPresenter
+    private val presenter by lazy { LimitOrderPresenter(state) {}.also(::attachView) }
+    private var status: CurrentStatusService? = null
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")
@@ -58,15 +60,9 @@ class LimitOrderPresenterTest {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         whenever(apiClient.sendChildOrder(any())).thenReturn(pending, PublishSubject.create())
+    }
 
-        whenever(statusClient.getPositions()).thenReturn(Observable.empty())
-        whenever(statusClient.getCollateral()).thenReturn(Observable.empty())
-        whenever(statusClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
-        whenever(statusClient.getChildOrders("FX_BTC_JPY", count = 500))
-            .thenReturn(initialOrders, Observable.just(listOf(acceptedOrder)))
-        status = CurrentStatusService(statusClient, Observable.never(), Observable.never(), Observable.never())
-        presenter = LimitOrderPresenter(apiClient, status)
-
+    private fun attachView(presenter: LimitOrderPresenter) {
         val themedContext = ContextThemeWrapper(RuntimeEnvironment.getApplication(), R.style.AppTheme)
         val context = scope.createContext(themedContext)
         val view = LimitOrderView(context, null)
@@ -78,7 +74,7 @@ class LimitOrderPresenterTest {
     @After
     fun tearDown() {
         scope.destroy()
-        status.dispose()
+        status?.dispose()
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
     }
@@ -88,25 +84,23 @@ class LimitOrderPresenterTest {
         presenter.amount.value = 0.0001
 
         assertFalse(presenter.canSubmitOrder)
-        presenter.amount.value = 0.001
-        submit(LimitOrderSide.BUY, 100, size = 0.0001)
-        submit(LimitOrderSide.SELL, 200, size = 0.0001)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.SELL, 200)
 
         verify(apiClient, never()).sendChildOrder(any())
         assertFalse(presenter.isLoading.value)
     }
 
     @Test
-    fun buyAcceptanceRefreshesActiveOrdersImmediatelyAndAllowsResubmission() {
-        initialOrders.onComplete()
+    fun buyCanBeSubmittedAgainAfterSuccess() {
+        val openSell = requireNotNull(presenter.prepareOrder(LimitOrderSide.SELL, 200))
         submit(LimitOrderSide.BUY, 100)
         submit(LimitOrderSide.BUY, 100)
-        submit(LimitOrderSide.SELL, 200)
+        presenter.submitOrder(openSell)
+        scheduler.triggerActions()
 
         verifyPendingOrder("BUY", 100)
-        assertTrue(status.orders.value.isEmpty())
-        pending.onNext(ChildOrderAcceptance(acceptedOrder.childOrderAcceptanceId))
-        assertEquals(listOf(acceptedOrder), status.orders.value)
+        pending.onNext(ChildOrderAcceptance("test"))
         assertFalse(presenter.canSubmitOrder)
         pending.onComplete()
 
@@ -123,10 +117,6 @@ class LimitOrderPresenterTest {
 
         verifyPendingOrder("SELL", 200)
         pending.onError(JsonParseException("Invalid acceptance ID"))
-        initialOrders.onComplete()
-
-        verify(statusClient).getChildOrders("FX_BTC_JPY", count = 500)
-        assertTrue(status.orders.value.isEmpty())
 
         assertTrue(presenter.canSubmitOrder)
         submit(LimitOrderSide.SELL, 201)
@@ -134,23 +124,99 @@ class LimitOrderPresenterTest {
     }
 
     @Test
+    fun switchingAccountsInvalidatesOpenAndQueuedLimitOrders() {
+        val queued = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
+        val open = requireNotNull(presenter.prepareOrder(LimitOrderSide.SELL, 200))
+        val sessionEnd = open.order.sessionEnded.test()
+        presenter.submitOrder(queued)
+        assertFalse(presenter.canSubmitOrder)
+
+        val newAccount = mock<APIClientV1>()
+        whenever(newAccount.getPositions()).thenReturn(Observable.empty())
+        whenever(newAccount.getCollateral()).thenReturn(Observable.empty())
+        whenever(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+        whenever(newAccount.sendChildOrder(any())).thenReturn(Observable.empty())
+        state.switchAccount(newAccount)
+        sessionEnd.assertComplete()
+        presenter.submitOrder(open)
+        scheduler.triggerActions()
+
+        verifyNoMoreInteractions(apiClient)
+        verify(newAccount, never()).sendChildOrder(any())
+        assertTrue(presenter.canSubmitOrder)
+        submit(LimitOrderSide.SELL, 200)
+        verify(newAccount).sendChildOrder(request("SELL", 200))
+    }
+
+    @Test
+    fun submissionUsesTheAmountDisplayedInTheConfirmation() {
+        val confirmation = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
+        presenter.amount.value = 0.02
+        presenter.submitOrder(confirmation)
+        scheduler.triggerActions()
+
+        verifyPendingOrder("BUY", 100)
+    }
+
+    @Test
+    fun acceptanceRefreshesActiveOrdersImmediately() {
+        val initialOrders = PublishSubject.create<List<ChildOrder>>()
+        val status = submitWithStatus(initialOrders)
+        initialOrders.onComplete()
+        assertTrue(status.orders.value.isEmpty())
+
+        pending.onNext(ChildOrderAcceptance(acceptedOrder.childOrderAcceptanceId))
+
+        assertEquals(listOf(acceptedOrder), status.orders.value)
+    }
+
+    @Test
     fun acceptanceQueuesAnActiveOrderFetchAfterAnInFlightRefresh() {
-        submit(LimitOrderSide.BUY, 100)
+        val initialOrders = PublishSubject.create<List<ChildOrder>>()
+        val status = submitWithStatus(initialOrders)
+
         pending.onNext(ChildOrderAcceptance(acceptedOrder.childOrderAcceptanceId))
         pending.onComplete()
-
-        verify(statusClient).getChildOrders("FX_BTC_JPY", count = 500)
+        verify(apiClient).getChildOrders("FX_BTC_JPY", count = 500)
         assertTrue(status.orders.value.isEmpty())
 
         initialOrders.onNext(emptyList())
         initialOrders.onComplete()
 
-        verify(statusClient, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
+        verify(apiClient, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
         assertEquals(listOf(acceptedOrder), status.orders.value)
     }
 
-    private fun submit(side: LimitOrderSide, price: Long, size: Double = 0.001) =
-        presenter.submitOrder(LimitOrderTerms(side, price, size))
+    @Test
+    fun failedSubmissionDoesNotRefreshActiveOrders() {
+        val initialOrders = PublishSubject.create<List<ChildOrder>>()
+        val status = submitWithStatus(initialOrders)
+
+        pending.onError(JsonParseException("Invalid acceptance ID"))
+        initialOrders.onComplete()
+
+        verify(apiClient).getChildOrders("FX_BTC_JPY", count = 500)
+        assertTrue(status.orders.value.isEmpty())
+    }
+
+    private fun submitWithStatus(initialOrders: Observable<List<ChildOrder>>): CurrentStatusService {
+        whenever(apiClient.getPositions()).thenReturn(Observable.empty())
+        whenever(apiClient.getCollateral()).thenReturn(Observable.empty())
+        whenever(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(apiClient.getChildOrders("FX_BTC_JPY", count = 500))
+            .thenReturn(initialOrders, Observable.just(listOf(acceptedOrder)))
+        val status = CurrentStatusService(apiClient, Observable.never(), Observable.never(), Observable.never())
+        this.status = status
+        val presenter = LimitOrderPresenter(status.privateState, status::updateStatus)
+        attachView(presenter)
+        presenter.submitOrder(requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100)))
+        return status
+    }
+
+    private fun submit(side: LimitOrderSide, price: Long) {
+        presenter.prepareOrder(side, price)?.let(presenter::submitOrder)
+        scheduler.triggerActions()
+    }
 
     private fun verifyPendingOrder(side: String, price: Long) {
         assertFalse(presenter.canSubmitOrder)
