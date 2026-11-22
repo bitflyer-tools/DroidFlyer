@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
 import io.reactivex.Completable
+import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
@@ -17,6 +18,7 @@ import io.reactivex.subjects.CompletableSubject
 import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
@@ -42,9 +44,8 @@ class CurrentStatusService internal constructor(
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = privateState.position
-    val balance = privateState.balance
     val tradingTotals = observeTradingTotals(
-        currentPrice.asObservable(), position.asObservable(), balance.asObservable()
+        currentPrice.asObservable(), position.asObservable(), privateState.collateral.asObservable()
     )
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
@@ -54,6 +55,7 @@ class CurrentStatusService internal constructor(
     private var accountChanged = CompletableSubject.create()
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val realtimeBoardRevision = AtomicLong()
+    private val fundingStatus = AtomicReference(FundingStatus())
 
     init {
         executions
@@ -102,6 +104,17 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = statusRefresh.request(followUp = false)
 
+    internal fun initializeAccount(loadClient: () -> APIClientV1?) {
+        val initialAccount = accountChanged
+        Maybe.fromCallable<APIClientV1> { loadClient() }
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { client ->
+                if (accountChanged === initialAccount) switchAccount(client)
+            }
+            .addTo(bag)
+    }
+
     internal fun switchAccount(client: APIClientV1?) {
         if (bag.isDisposed) return
 
@@ -113,6 +126,32 @@ class CurrentStatusService internal constructor(
             previous.onComplete()
         }
     }
+
+    internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
+        Observable.defer {
+            visibility.distinctUntilChanged()
+                .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
+                .map(::updateFundingStatus)
+                .startWith(fundingStatus.get())
+                .distinctUntilChanged()
+        }
+
+    private fun updateFundingStatus(update: FundingStatus): FundingStatus {
+        do {
+            val previous = fundingStatus.get()
+            val next = if (update.funding != null) update else previous.copy(stale = previous.funding != null)
+            if (fundingStatus.compareAndSet(previous, next)) return next
+        } while (true)
+    }
+
+    private fun pollFunding(): Observable<FundingStatus> =
+        Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }
+            .firstOrError()
+            .map { FundingStatus(it.toNextFunding()) }
+            .onErrorReturnItem(FundingStatus())
+            .toObservable()
+            .subscribeOnIoObserveOnUI()
+            .repeatWhen { it.delay(1, TimeUnit.MINUTES) }
 
     private fun refreshStatus(): Completable = Completable.ambArray(
         accountChanged,
