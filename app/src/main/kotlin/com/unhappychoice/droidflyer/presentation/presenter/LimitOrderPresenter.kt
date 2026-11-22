@@ -3,21 +3,19 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.NewOrder
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
-import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
-class LimitOrderPresenter(
-    private val submit: (SendChildOrderRequest) -> Observable<ChildOrderAcceptance>?
-) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
+class LimitOrderPresenter internal constructor(private val state: PrivateTradingState) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
     override val isLoading = Variable(false)
     override val amount = Variable(0.0)
     override val unitSize = Variable(1.0)
@@ -45,18 +43,22 @@ class LimitOrderPresenter(
         groupingSizes.getOrNull(index - 1)?.let { groupingSize.value = it }
     }
 
-    internal fun submitOrder(terms: LimitOrderTerms) {
-        if (isLoading.value || !CryptoCfdOrderSize.isValid(terms.size)) return
+    internal fun prepareOrder(side: LimitOrderSide, price: Long): LimitOrderConfirmation? {
+        if (!canSubmitOrder) return null
+        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, amount.value)
+        return state.prepareOrder(request)?.let { LimitOrderConfirmation(side, it) }
+    }
 
-        val (side, price, size) = terms
-        val request = SendChildOrderRequest("FX_BTC_JPY", "LIMIT", side.name, price, size)
-        val order = submit(request) ?: return
-        val orderView = view
-        val message = orderView.context.getString(side.orderedMessage, size, price)
+    internal fun submitOrder(confirmation: LimitOrderConfirmation) {
+        if (isLoading.value) return
+        val orderView = view ?: return
+        val order = confirmation.order
+        val submission = state.submitOrder(order) ?: return
+        val request = order.request
+        val message = orderView.context.getString(confirmation.side.orderedMessage, request.size, request.price)
 
         isLoading.value = true
-        order
-            .doFinally { isLoading.value = false }
+        submission.doFinally { isLoading.value = false }
             .subscribe({
                 Snackbar.make(orderView, message, Snackbar.LENGTH_SHORT).show()
             }, { error ->
@@ -68,7 +70,7 @@ class LimitOrderPresenter(
     }
 }
 
-internal data class LimitOrderTerms(val side: LimitOrderSide, val price: Long, val size: Double)
+internal class LimitOrderConfirmation(val side: LimitOrderSide, val order: NewOrder)
 
 internal enum class LimitOrderSide(val label: Int, val orderedMessage: Int) {
     BUY(R.string.buy, R.string.ordered_buy),

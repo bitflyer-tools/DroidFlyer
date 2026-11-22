@@ -18,16 +18,20 @@ import flow.State
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
@@ -39,19 +43,107 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SettingsViewTest {
-    @Test
-    fun reattachingSettingsRestoresFieldAndApplySubscriptionsExactlyOnce() {
+    @Before
+    fun setSchedulers() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
-        try {
-            Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
-                val host = controller.get()
-                val settings = host.openSettings()
-                repeat(3) { cycle -> assertSettingsReattachment(host, settings, cycle) }
-            }
-        } finally {
-            RxAndroidPlugins.reset()
-            RxJavaPlugins.reset()
+    }
+
+    @After
+    fun resetSchedulers() {
+        RxAndroidPlugins.reset()
+        RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun reattachingSettingsRestoresFieldAndApplySubscriptionsExactlyOnce() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            repeat(3) { cycle -> assertSettingsReattachment(host, settings, cycle) }
+        }
+    }
+
+    @Test
+    fun fillsFieldsOnMainOnlyWhileAttached() {
+        val io = TestScheduler()
+        val main = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { io }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val detached = host.openSettings()
+            assertFalse(detached.saveButton.isEnabled)
+            io.triggerActions()
+            assertEquals("", detached.apiTokenTextView.text.toString())
+            host.setContentView(LinearLayout(host))
+            main.triggerActions()
+            assertEquals("", detached.apiTokenTextView.text.toString())
+
+            val attached = host.openSettings()
+            io.triggerActions()
+            main.triggerActions()
+            assertEquals("stored-key", attached.apiTokenTextView.text.toString())
+            assertEquals("stored-secret", attached.apiSecretTextView.text.toString())
+            assertTrue(attached.saveButton.isEnabled)
+        }
+    }
+
+    @Test
+    fun applyCompletesAfterLeavingSettings() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val io = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { io }
+
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+            settings.saveButton.performClick()
+            settings.saveButton.performClick()
+            host.setContentView(LinearLayout(host))
+
+            io.triggerActions()
+
+            val saved = testAPITokenPreference(host).read()
+            assertEquals("new-key", saved.key)
+            assertEquals("new-secret", saved.secret)
+            assertEquals(1, host.applyRequests)
+        }
+    }
+
+    @Test
+    fun reopeningDuringApplyWaitsForTheSavedCredentials() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
+
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+            settings.saveButton.performClick()
+            host.setContentView(LinearLayout(host))
+
+            val loadIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { loadIo }
+            val reopened = host.openSettings()
+            loadIo.triggerActions()
+            assertFalse(reopened.apiTokenTextView.isEnabled)
+            assertFalse(reopened.apiSecretTextView.isEnabled)
+            assertFalse(reopened.saveButton.isEnabled)
+            assertEquals("", reopened.apiTokenTextView.text.toString())
+
+            saveIo.triggerActions()
+            loadIo.triggerActions()
+
+            assertEquals("new-key", reopened.apiTokenTextView.text.toString())
+            assertEquals("new-secret", reopened.apiSecretTextView.text.toString())
+            assertTrue(reopened.apiTokenTextView.isEnabled)
+            assertTrue(reopened.apiSecretTextView.isEnabled)
+            assertTrue(reopened.saveButton.isEnabled)
+            assertEquals(1, host.applyRequests)
         }
     }
 
@@ -124,6 +216,27 @@ class SettingsViewTest {
             val reopened = activity.openSettings()
             assertEquals("", reopened.apiTokenTextView.text.toString())
             assertEquals("", reopened.apiSecretTextView.text.toString())
+        }
+    }
+
+    @Test
+    fun unlinkCancelsApplyBeforeValidationStarts() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val io = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { io }
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+
+            settings.saveButton.performClick()
+            settings.unlinkButton.performClick()
+            io.triggerActions()
+
+            assertEquals(0, host.applyRequests)
+            assertEquals("", settings.apiTokenTextView.text.toString())
+            assertEquals("", settings.apiSecretTextView.text.toString())
+            assertTrue(settings.saveButton.isEnabled)
         }
     }
 

@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.textChanges
+import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -31,8 +32,18 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         setupStyle()
 
-        presenter.loadCredentials()
-        showCredentials()
+        val credentialLoad = SerialDisposable()
+        credentialLoad.addTo(bag)
+        presenter.accountUnlinked.startWith(Unit)
+            .subscribeNext {
+                setCredentialInputsEnabled(false)
+                credentialLoad.set(presenter.loadCredentials {
+                    binding.apiTokenTextView.setText(presenter.key.value)
+                    binding.apiSecretTextView.setText(presenter.secret.value)
+                    setCredentialInputsEnabled(true)
+                })
+            }
+            .addTo(bag)
 
         binding.apiTokenTextView.textChanges()
             .subscribeNext {
@@ -47,14 +58,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
             }.addTo(bag)
 
         binding.saveButton.clicks()
-            .subscribeNext { presenter.save() }
-            .addTo(bag)
-
-        presenter.accountUnlinked
-            .subscribeNext {
-                presenter.loadCredentials()
-                showCredentials()
-            }
+            .subscribeNext { if (binding.saveButton.isEnabled) presenter.save() }
             .addTo(bag)
 
         binding.unlinkButton.clicks()
@@ -70,9 +74,10 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         super.onDetachedFromWindow()
     }
 
-    private fun showCredentials() {
-        binding.apiTokenTextView.setText(presenter.key.value)
-        binding.apiSecretTextView.setText(presenter.secret.value)
+    private fun setCredentialInputsEnabled(enabled: Boolean) {
+        binding.apiTokenTextView.isEnabled = enabled
+        binding.apiSecretTextView.isEnabled = enabled
+        binding.saveButton.isEnabled = enabled
     }
 
     private fun setupStyle() {

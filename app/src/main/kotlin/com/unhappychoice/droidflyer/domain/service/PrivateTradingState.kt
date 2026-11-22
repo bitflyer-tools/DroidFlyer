@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcce
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Completable
+import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -23,7 +24,7 @@ internal class PrivateTradingState(
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
     val position = Variable<List<Position>>(emptyList())
-    val balance = Variable(0.0)
+    val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     private var session = client?.let(::Session)
@@ -59,11 +60,24 @@ internal class PrivateTradingState(
         val client = current.client
         Completable.mergeArray(
             client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
-            client.getCollateral().map { it["collateral"] as? Double ?: 0.0 }
-                .publishResponse { if (!disposed && current === session) balance.value = it },
+            client.getCollateral().flatMapMaybe { response ->
+                val amount = response["collateral"] as? Number
+                amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
+            }
+                .publishResponse { if (!disposed && current === session) collateral.value = it },
+            // Unchanged rows keep their order references for cancellation.
             client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
                 .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
         ).takeUntil(current.ended.firstElement().ignoreElement())
+    }
+
+    fun prepareOrder(request: SendChildOrderRequest): NewOrder? =
+        session?.let { NewOrder(it, request) }
+
+    fun submitOrder(order: NewOrder): Observable<ChildOrderAcceptance>? {
+        val current = order.session
+        if (current !== session) return null
+        return withinSession(current, Observable.defer { current.client.submitChildOrder(order.request) })
     }
 
     fun isCurrent(confirmation: CloseConfirmation): Boolean = !disposed && confirmation.session === session
@@ -91,11 +105,6 @@ internal class PrivateTradingState(
         )
     }
 
-    fun submitOrder(request: SendChildOrderRequest): Observable<ChildOrderAcceptance>? {
-        val current = session ?: return null
-        return withinSession(current, current.client.submitChildOrder(request))
-    }
-
     fun cancelOrder(row: OrderRow): Observable<Unit>? {
         val current = session ?: return null
         if (row.session !== current) return null
@@ -104,7 +113,9 @@ internal class PrivateTradingState(
                 it.childOrderAcceptanceId == row.order.childOrderAcceptanceId
         } ?: return null
         val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
-        return withinSession(current, current.client.cancelChildOrder(request).andThen(Observable.just(Unit)))
+        return withinSession(current, Observable.defer {
+            current.client.cancelChildOrder(request).andThen(Observable.just(Unit))
+        })
     }
 
     private fun replaceSession(next: Session?, onSwitched: () -> Unit = {}) {
@@ -112,7 +123,7 @@ internal class PrivateTradingState(
         session = next
         orders.value = emptyList()
         position.value = emptyList()
-        balance.value = 0.0
+        collateral.value = Collateral(null)
         try {
             onSwitched()
         } finally {
@@ -127,6 +138,10 @@ internal class PrivateTradingState(
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
+
+    class NewOrder internal constructor(internal val session: Session, val request: SendChildOrderRequest) {
+        val sessionEnded: Completable get() = session.ended.firstElement().ignoreElement()
+    }
 
     companion object {
         private const val ACTIVE_ORDER_LIMIT = 500

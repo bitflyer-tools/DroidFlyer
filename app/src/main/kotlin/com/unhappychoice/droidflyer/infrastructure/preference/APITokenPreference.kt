@@ -10,7 +10,7 @@ class APITokenPreference internal constructor(
 ) {
     constructor(context: Context) : this(context, APICredentialCipher())
 
-    private val preferences = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+    private val preferences by lazy { context.getSharedPreferences("api_token", Context.MODE_PRIVATE) }
 
     private val unlinks = PublishSubject.create<Unit>()
     internal val accountUnlinked = unlinks.hide()
@@ -35,6 +35,15 @@ class APITokenPreference internal constructor(
         val legacy = APICredentials(values["key"] as? String ?: "", values["secret"] as? String ?: "")
         if ("key" in values || "secret" in values) migrateLegacy(legacy)
         legacy
+    }
+
+    internal fun saveIfChanged(credentials: APICredentials, generation: Long): Boolean = synchronized(lock) {
+        if (generation != unlinkGeneration) return@synchronized false
+
+        val saved = read()
+        val changed = saved.key != credentials.key || saved.secret != credentials.secret
+        if (changed) save(credentials)
+        changed
     }
 
     fun save(credentials: APICredentials) = synchronized(lock) {

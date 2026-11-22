@@ -29,6 +29,7 @@ import retrofit2.Response
 
 class MarketOrderPresenterTest {
     private val scheduler = TestScheduler()
+    private val preferenceBackedClient = Mockito.mock(APIClientV1::class.java)
     private val apiClient = Mockito.mock(APIClientV1::class.java)
     private val closePositionResponse = PublishSubject.create<List<Position>>()
     private val acceptedResponse = ChildOrderAcceptance("JRF-accepted")
@@ -43,10 +44,12 @@ class MarketOrderPresenterTest {
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
 
         Mockito.`when`(apiClient.getCollateral()).thenReturn(Observable.empty())
-        Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        Mockito.`when`(preferenceBackedClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.empty())
-        status = CurrentStatusService(apiClient, Observable.empty(), Observable.empty(), Observable.empty())
+        status = CurrentStatusService(
+            preferenceBackedClient, Observable.empty(), Observable.empty(), Observable.empty(), apiClient
+        )
         presenter = MarketOrderPresenter(status) { messages.add(it) }
     }
 
@@ -89,6 +92,48 @@ class MarketOrderPresenterTest {
         scheduler.triggerActions()
 
         assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
+    @Test
+    fun switchingAccountsDropsQueuedMarketOrdersAndAllowsNewOrders() {
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 0.5)
+        val newAccount = Mockito.mock(APIClientV1::class.java)
+        Mockito.`when`(newAccount.getPositions()).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getCollateral()).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+        Mockito.`when`(newAccount.sendChildOrder(request)).thenReturn(Observable.just(acceptedResponse))
+        presenter.amount.value = 0.5
+
+        presenter.buy()
+        status.switchAccount(newAccount)
+        scheduler.triggerActions()
+
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(request)
+        Mockito.verify(newAccount, Mockito.never()).sendChildOrder(request)
+        Mockito.verify(preferenceBackedClient, Mockito.never()).sendChildOrder(request)
+        assertEquals(emptyList<Int>(), messages)
+        assertEquals(false, presenter.isLoading.value)
+
+        presenter.buy()
+        scheduler.triggerActions()
+
+        Mockito.verify(newAccount).sendChildOrder(request)
+        assertEquals(listOf(R.string.market_order_accepted), messages)
+    }
+
+    @Test
+    fun noActiveAccountLeavesMarketOrderUnsubmitted() {
+        status.switchAccount(null)
+        presenter.amount.value = 0.5
+
+        presenter.buy()
+        scheduler.triggerActions()
+
+        val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 0.5)
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(request)
+        Mockito.verify(preferenceBackedClient, Mockito.never()).sendChildOrder(request)
+        assertTrue(messages.isEmpty())
+        assertFalse(presenter.isLoading.value)
     }
 
     @Test
@@ -206,7 +251,7 @@ class MarketOrderPresenterTest {
     fun switchingAccountsStopsThePreviousCloseSequence() {
         stubClose("SELL", "BUY", positionSize = 12.0)
         val oldBoard = PublishSubject.create<Board>()
-        Mockito.`when`(apiClient.getBoard("FX_BTC_JPY")).thenReturn(oldBoard, Observable.empty())
+        Mockito.`when`(preferenceBackedClient.getBoard("FX_BTC_JPY")).thenReturn(oldBoard, Observable.empty())
         confirmPositionClose()
         status.updateStatus()
         scheduler.triggerActions()

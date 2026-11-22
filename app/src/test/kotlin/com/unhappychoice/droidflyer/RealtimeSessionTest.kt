@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer
 import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.domain.service.Collateral
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
@@ -89,14 +90,14 @@ class RealtimeSessionTest {
     fun unlinkSignalClearsActiveSessionAndKeepsPublicSocketOpen() {
         val session = Session()
         try {
-            session.status.balance.value = 500.0
+            session.status.privateState.collateral.value = Collateral(500.0)
             val account = session.accountSockets.single()
             account.receiveExecution()
 
             assertTrue(session.preference.clear())
             time.advanceTimeBy(1, TimeUnit.SECONDS)
 
-            assertEquals(0.0, session.status.balance.value, 0.0)
+            assertNull(session.status.privateState.collateral.value.amount)
             assertFalse(session.positions.hasObservers())
             assertFalse(account.connected())
             assertTrue(session.socket.connected())

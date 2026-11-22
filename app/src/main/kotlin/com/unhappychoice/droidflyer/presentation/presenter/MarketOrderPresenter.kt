@@ -76,9 +76,10 @@ class MarketOrderPresenter internal constructor(
     private fun submit(side: String, size: Double) {
         if (isLoading.value || !CryptoCfdOrderSize.isValid(size)) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, size)
-        val order = currentStatusService.privateState.submitOrder(request) ?: return
-        order
-            .startLoading()
+        val state = currentStatusService.privateState
+        val order = state.prepareOrder(request) ?: return
+        val submission = state.submitOrder(order) ?: return
+        submission.startLoading()
             .subscribe({
                 notify(R.string.market_order_accepted)
                 currentStatusService.updateStatus()

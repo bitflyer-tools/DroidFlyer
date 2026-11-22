@@ -114,6 +114,18 @@ class APIClientTest {
     }
 
     @Test
+    fun tradingCommissionRequestIncludesProductCode() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("""{"commission_rate":0.001}""").build())
+
+            client(origin).getTradingCommision("FX_BTC_JPY").test().assertComplete().assertNoErrors()
+
+            assertSignedRequest(origin, "GET", "/v1/me/gettradingcommission?product_code=FX_BTC_JPY", "")
+        }
+    }
+
+    @Test
     fun publicMarketDataDoesNotReadOrSendSavedCredentials() {
         MockWebServer().use { origin ->
             origin.start()

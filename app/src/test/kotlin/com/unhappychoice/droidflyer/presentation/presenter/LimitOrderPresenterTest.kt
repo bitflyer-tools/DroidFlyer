@@ -5,13 +5,16 @@ import android.view.ContextThemeWrapper
 import android.widget.FrameLayout
 import com.google.gson.JsonParseException
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
+import io.reactivex.Observable
 import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
@@ -36,7 +39,9 @@ import org.robolectric.annotation.Config
 class LimitOrderPresenterTest {
     private val apiClient = mock<APIClientV1>()
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
-    private val presenter = LimitOrderPresenter(apiClient::sendChildOrder)
+    private val scheduler = TestScheduler()
+    private val state = PrivateTradingState(apiClient, scheduler, Schedulers.trampoline())
+    private val presenter = LimitOrderPresenter(state)
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")
@@ -67,9 +72,8 @@ class LimitOrderPresenterTest {
         presenter.amount.value = 0.0001
 
         assertFalse(presenter.canSubmitOrder)
-        presenter.amount.value = 0.001
-        submit(LimitOrderSide.BUY, 100, size = 0.0001)
-        submit(LimitOrderSide.SELL, 200, size = 0.0001)
+        submit(LimitOrderSide.BUY, 100)
+        submit(LimitOrderSide.SELL, 200)
 
         verify(apiClient, never()).sendChildOrder(any())
         assertFalse(presenter.isLoading.value)
@@ -77,9 +81,11 @@ class LimitOrderPresenterTest {
 
     @Test
     fun buyCanBeSubmittedAgainAfterSuccess() {
+        val openSell = requireNotNull(presenter.prepareOrder(LimitOrderSide.SELL, 200))
         submit(LimitOrderSide.BUY, 100)
         submit(LimitOrderSide.BUY, 100)
-        submit(LimitOrderSide.SELL, 200)
+        presenter.submitOrder(openSell)
+        scheduler.triggerActions()
 
         verifyPendingOrder("BUY", 100)
         pending.onNext(ChildOrderAcceptance("test"))
@@ -105,8 +111,45 @@ class LimitOrderPresenterTest {
         verify(apiClient).sendChildOrder(request("SELL", 201))
     }
 
-    private fun submit(side: LimitOrderSide, price: Long, size: Double = 0.001) =
-        presenter.submitOrder(LimitOrderTerms(side, price, size))
+    @Test
+    fun switchingAccountsInvalidatesOpenAndQueuedLimitOrders() {
+        val queued = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
+        val open = requireNotNull(presenter.prepareOrder(LimitOrderSide.SELL, 200))
+        val sessionEnd = open.order.sessionEnded.test()
+        presenter.submitOrder(queued)
+        assertFalse(presenter.canSubmitOrder)
+
+        val newAccount = mock<APIClientV1>()
+        whenever(newAccount.getPositions()).thenReturn(Observable.empty())
+        whenever(newAccount.getCollateral()).thenReturn(Observable.empty())
+        whenever(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+        whenever(newAccount.sendChildOrder(any())).thenReturn(Observable.empty())
+        state.switchAccount(newAccount)
+        sessionEnd.assertComplete()
+        presenter.submitOrder(open)
+        scheduler.triggerActions()
+
+        verifyNoMoreInteractions(apiClient)
+        verify(newAccount, never()).sendChildOrder(any())
+        assertTrue(presenter.canSubmitOrder)
+        submit(LimitOrderSide.SELL, 200)
+        verify(newAccount).sendChildOrder(request("SELL", 200))
+    }
+
+    @Test
+    fun submissionUsesTheAmountDisplayedInTheConfirmation() {
+        val confirmation = requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100))
+        presenter.amount.value = 0.02
+        presenter.submitOrder(confirmation)
+        scheduler.triggerActions()
+
+        verifyPendingOrder("BUY", 100)
+    }
+
+    private fun submit(side: LimitOrderSide, price: Long) {
+        presenter.prepareOrder(side, price)?.let(presenter::submitOrder)
+        scheduler.triggerActions()
+    }
 
     private fun verifyPendingOrder(side: String, price: Long) {
         assertFalse(presenter.canSubmitOrder)
