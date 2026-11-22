@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer
 
 import android.app.Application
+import android.content.Context
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -47,6 +48,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 @Config(application = Application::class)
 class RealtimeClientTest {
     private val time = TestScheduler()
+    private val authentication = TestScheduler()
     private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
     private val socket = RecordingSocket()
     private val accountSockets = mutableListOf<RecordingSocket>()
@@ -54,6 +56,7 @@ class RealtimeClientTest {
 
     @Before
     fun setUp() {
+        RxJavaPlugins.setIoSchedulerHandler { authentication }
         RxJavaPlugins.setComputationSchedulerHandler { time }
     }
 
@@ -66,6 +69,7 @@ class RealtimeClientTest {
     fun retriesUnacknowledgedAuthenticationWithBackoffOnTheSameSocket() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val account = accountSockets.single()
         val orders = client.childOrderEvents.test()
         account.receive(Socket.EVENT_CONNECT)
@@ -99,6 +103,7 @@ class RealtimeClientTest {
     fun socketDisconnectCancelsRetryAndReconnectAuthenticatesImmediately() {
         preference.save(APICredentials("key", "secret"))
         createClient()
+        authentication.triggerActions()
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
         checkNotNull(account.authAck).onTimeout()
@@ -114,6 +119,7 @@ class RealtimeClientTest {
     fun replacingThenClosingAnAccountCancelsBothPendingRetries() {
         preference.save(APICredentials("first", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val original = accountSockets.single()
         original.receive(Socket.EVENT_CONNECT)
         checkNotNull(original.authAck).onTimeout()
@@ -131,7 +137,8 @@ class RealtimeClientTest {
 
     @Test
     fun subscribesToBoardAndExecutionsAndKeepsAuthenticatedSubscriptions() {
-        preference.save(APICredentials("key", "secret"))
+        val stored = RuntimeEnvironment.getApplication().getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        stored.edit().putString("key", "key").putString("secret", "secret").commit()
         val client = createClient()
         socket.receive(Socket.EVENT_CONNECT)
         assertEquals(
@@ -140,6 +147,10 @@ class RealtimeClientTest {
         )
         assertFalse(socket.hasListeners("lightning_ticker_FX_BTC_JPY"))
 
+        assertEquals(emptyList<RecordingSocket>(), accountSockets)
+        assertEquals("key", stored.getString("key", null))
+        authentication.triggerActions()
+        assertFalse(stored.contains("key"))
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
         account.authAck!!.call(JSONObject.NULL)
@@ -165,6 +176,7 @@ class RealtimeClientTest {
     fun publishesPrivateExecutionBatchWithFractionalAndIntegralPrices() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
         account.authAck!!.call(JSONObject.NULL)
@@ -186,9 +198,38 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun disconnectCancelsPendingCredentialLoad() {
+        val stored = RuntimeEnvironment.getApplication().getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        stored.edit().putString("key", "key").putString("secret", "secret").commit()
+        val client = createClient()
+
+        client.disconnect()
+        authentication.triggerActions()
+
+        assertEquals("key", stored.getString("key", null))
+        assertEquals(emptyList<RecordingSocket>(), accountSockets)
+    }
+
+    @Test
+    fun pendingStartupLoadKeepsTheAccountAlreadyApplied() {
+        val client = createClient()
+        client.updateAccount { preference.save(APICredentials("replacement", "secret")) }
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        val acknowledge = checkNotNull(account.authAck)
+
+        authentication.triggerActions()
+        acknowledge.call(JSONObject.NULL)
+
+        assertEquals(listOf(account), accountSockets)
+        assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
+    }
+
+    @Test
     fun ignoresAuthenticationAcknowledgementAfterDisconnect() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         socket.receive(Socket.EVENT_CONNECT)
         val account = accountSockets.single()
         account.receive(Socket.EVENT_CONNECT)
@@ -204,6 +245,7 @@ class RealtimeClientTest {
     fun accountSwitchRejectsStalePrivateCallbacksAndKeepsPublicData() {
         preference.save(APICredentials("first", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         socket.receive(Socket.EVENT_CONNECT)
         val old = accountSockets.single()
         old.receive(Socket.EVENT_CONNECT)
@@ -251,6 +293,7 @@ class RealtimeClientTest {
     fun failedAuthenticationKeepsPrivateEventsDisabledUntilSuccessfulRetry() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val account = accountSockets.single()
         val orders = client.childOrderEvents.test()
 
@@ -273,6 +316,7 @@ class RealtimeClientTest {
     fun resavingCredentialsRetriesPendingAuthenticationAndIgnoresLateAcknowledgement() {
         preference.save(APICredentials("key", "secret"))
         val client = createClient()
+        authentication.triggerActions()
         val original = accountSockets.single()
         val orders = client.childOrderEvents.test()
 
@@ -318,7 +362,7 @@ class RealtimeClientTest {
             assertNull(service.currentPrice.value.yen)
             collateral.onNext(mapOf("collateral" to 200_000.0))
             totals.assertValues(
-                TradingTotals(null, null, 0L),
+                TradingTotals(null, null, null),
                 TradingTotals(null, null, 200_000L)
             )
 
@@ -331,7 +375,7 @@ class RealtimeClientTest {
             socket.receive(channel, JSONArray("""[{"price":0.0},{"price":10100000.0}]"""))
             assertEquals(10_100_000.0, service.currentPrice.value.yen!!, 0.0)
             totals.assertValues(
-                TradingTotals(null, null, 0L),
+                TradingTotals(null, null, null),
                 TradingTotals(null, null, 200_000L),
                 TradingTotals(10_000L, 100_000L, 210_000L)
             ).assertNoErrors()

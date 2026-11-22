@@ -2,6 +2,8 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import android.app.Application
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
@@ -26,6 +28,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,7 +46,30 @@ class SettingsPresenterTest {
     private val context = RuntimeEnvironment.getApplication()
     private var credentialKey: SecretKeySpec? = testCredentialKey
     private val replacementKey = SecretKeySpec(ByteArray(32) { 1 }, "AES")
-    private val preference = APITokenPreference(context, APICredentialCipher { create ->
+    private var failNextCommit = false
+    private val storage = object : ContextWrapper(context) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val preferences = super.getSharedPreferences(name, mode)
+            return object : SharedPreferences by preferences {
+                override fun edit(): SharedPreferences.Editor {
+                    val editor = preferences.edit()
+                    return object : SharedPreferences.Editor by editor {
+                        override fun putString(key: String?, value: String?) = apply {
+                            editor.putString(key, value)
+                        }
+
+                        override fun commit(): Boolean {
+                            val saved = editor.commit()
+                            val failed = failNextCommit
+                            failNextCommit = false
+                            return saved && !failed
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private val preference = APITokenPreference(storage, APICredentialCipher { create ->
         credentialKey ?: if (create) replacementKey.also { credentialKey = it }
         else error("API credential encryption key is missing")
     })
@@ -129,6 +155,67 @@ class SettingsPresenterTest {
     }
 
     @Test
+    fun savesAndUpdatesRealtimeOnIoBeforeSwitchingAndEmittingSuccessOnMain() {
+        val io = TestScheduler()
+        val main = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { io }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+        val result = presenter.saveCredentials().test()
+
+        assertEquals(emptyList<String>(), requestPaths())
+        val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+        assertEquals("saved-key", stored.getString("key", null))
+
+        io.triggerActions()
+        assertEquals(listOf("/v1/me/getbalance"), requestPaths())
+        assertFalse(stored.contains("key"))
+        assertEquals("submitted-key" to "submitted-secret", savedCredentials())
+        assertEquals(emptyList<APIClientV1?>(), switched)
+        assertEquals(listOf("submitted-key" to "submitted-secret"), authenticated)
+        result.assertNoValues().assertNotComplete()
+
+        main.triggerActions()
+        assertEquals(1, switched.size)
+        result.assertValueCount(1).assertComplete()
+    }
+
+    @Test
+    fun failedPersistenceKeepsTheCurrentAccountAndDoesNotEmitSuccess() {
+        preference.read() // Migrate the old pair before simulating a failed write.
+        failNextCommit = true
+
+        presenter.saveCredentials().test().assertNoValues().assertError(IOException::class.java)
+        assertSavedPairStillActive()
+    }
+
+    @Test
+    fun ignoresStartupCredentialsWhenAnAccountHasAlreadyBeenApplied() {
+        val io = TestScheduler()
+        val main = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { io }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+        val status = CurrentStatusService(api.client(), Observable.empty(), Observable.empty(), Observable.empty(), null)
+        try {
+            val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
+            status.initializeAccount { api.privateStatusClient(preference.read()) }
+            assertEquals("saved-key", stored.getString("key", null))
+
+            io.triggerActions()
+            assertFalse(stored.contains("key"))
+            assertEquals(listOf("/v1/board"), requestPaths())
+
+            status.switchAccount(api.client(APICredentials("new-key", "new-secret")))
+            main.triggerActions()
+            io.triggerActions()
+            val privateRequests = requests.filter { it.url.encodedPath.startsWith("/v1/me/") }
+            assertEquals(3, privateRequests.size)
+            privateRequests.forEach { assertSignedWith(it, "new-key", "new-secret") }
+        } finally {
+            status.dispose()
+        }
+    }
+
+    @Test
     fun missingEncryptionKeyAllowsCredentialsToBeRegisteredAgain() {
         preference.save(APICredentials("saved-key", "saved-secret"))
         val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
@@ -209,7 +296,7 @@ class SettingsPresenterTest {
             val privateRequests = requests.drop(4).filter { it.url.encodedPath.startsWith("/v1/me/") }
             privateRequests.forEach { assertSignedWith(it, "submitted-key", "submitted-secret") }
             assertEquals("ACTIVE", privateRequests.last().url.queryParameter("child_order_state"))
-            assertEquals(250.0, status.balance.value, 0.0)
+            assertEquals(250L, status.tradingTotals.blockingFirst().balance)
         } finally {
             status.dispose()
             scope.destroy()
