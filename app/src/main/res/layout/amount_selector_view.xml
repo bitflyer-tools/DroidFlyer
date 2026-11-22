@@ -103,10 +103,11 @@
     </LinearLayout>
 
     <TextView
-        android:id="@+id/minimumOrderSizeMessage"
+        android:id="@+id/orderSizeMessage"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:accessibilityLiveRegion="polite"
         android:gravity="center"
+        android:textColor="@color/colorAccent"
         android:visibility="gone"/>
 </LinearLayout>

@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Observable
@@ -42,7 +43,7 @@ class LimitOrderPresenterTest {
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private val scheduler = TestScheduler()
     private val state = PrivateTradingState(apiClient, scheduler, Schedulers.trampoline())
-    private val presenter = LimitOrderPresenter(state)
+    private val presenter = LimitOrderPresenter(state, CryptoCfdAccountPreference(RuntimeEnvironment.getApplication()))
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")

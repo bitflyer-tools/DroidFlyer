@@ -1,7 +1,9 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
@@ -31,6 +33,7 @@ class CurrentStatusServiceTest {
     private val responses = PublishSubject.create<Board>()
     private val snapshots = PublishSubject.create<Board>()
     private val deltas = PublishSubject.create<Board>()
+    private val orderEvents = PublishSubject.create<PrivateEvent<*>>()
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
     private val api = mock(APIClientV1::class.java)
@@ -50,7 +53,7 @@ class CurrentStatusServiceTest {
         `when`(api.getPositions()).thenReturn(Observable.empty())
         `when`(api.getCollateral()).thenReturn(Observable.empty())
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
-        service = CurrentStatusService(api, Observable.empty(), boardUpdates(snapshots, deltas), Observable.empty())
+        service = CurrentStatusService(api, Observable.empty(), boardUpdates(snapshots, deltas), orderEvents)
         scheduler.triggerActions()
     }
 
@@ -158,37 +161,52 @@ class CurrentStatusServiceTest {
     }
 
     @Test
-    fun manualRefreshQueuesOneBoardRequestWhilePollingSkipsAnActiveRefresh() {
+    fun orderEventQueuesAccountRefreshWhileBoardResponseIsHeld() {
+        val orderResponses = PublishSubject.create<List<ChildOrder>>()
+        `when`(api.getChildOrders("FX_BTC_JPY", count = 500))
+            .thenReturn(orderResponses.take(1))
+        snapshots.onNext(updatedBook)
+        service.updateStatus()
+        scheduler.triggerActions()
+
+        orderEvents.onNext(PrivateEvent(Unit) { true })
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
+
+        orderResponses.onNext(emptyList())
+        scheduler.triggerActions()
+        verify(api, times(3)).getChildOrders("FX_BTC_JPY", count = 500)
+        assertTrue(responses.hasObservers())
+        assertEquals(1, boardRequests)
+    }
+
+    @Test
+    fun refreshesAndAccountSwitchShareAnInFlightFallback() {
         service.pollStatus()
         service.updateStatus()
-        service.updateStatus()
+        service.switchAccount(null)
         scheduler.triggerActions()
         assertEquals(1, boardRequests)
+        assertTrue(responses.hasObservers())
 
-        responses.onNext(initialBook)
-        scheduler.triggerActions()
-        assertEquals(2, boardRequests)
-
-        service.pollStatus()
         responses.onNext(updatedBook)
         scheduler.advanceTimeBy(300, MILLISECONDS)
-        assertEquals(2, boardRequests)
+        assertFalse(responses.hasObservers())
+        assertEquals(1, boardRequests)
         assertBook(updatedBook, 110)
     }
 
     @Test
-    fun switchingToNoPrivateAccountReplacesTheInFlightBoardRequest() {
-        assertEquals(1, boardRequests)
-
-        service.switchAccount(null)
-        assertFalse(responses.hasObservers())
-        scheduler.triggerActions()
-        assertEquals(2, boardRequests)
-
-        responses.onNext(updatedBook)
+    fun realtimeSnapshotStopsNewFallbackRequests() {
+        snapshots.onNext(updatedBook)
+        responses.onNext(initialBook)
         scheduler.advanceTimeBy(300, MILLISECONDS)
-        assertFalse(responses.hasObservers())
-        assertEquals(2, boardRequests)
+
+        service.pollStatus()
+        service.updateStatus()
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        verify(api).getBoard("FX_BTC_JPY")
+        verify(api, times(3)).getChildOrders("FX_BTC_JPY", count = 500)
         assertBook(updatedBook, 110)
     }
 

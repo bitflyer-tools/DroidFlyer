@@ -27,12 +27,14 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
             }
         }
     }
-    bindSingleton<SettingsPresenter> { SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance()) }
+    bindSingleton<SettingsPresenter> {
+        SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance(), accountPreference = instance())
+    }
     bindSingleton<ChartPresenter> {
         ChartPresenter(SystemClock::elapsedRealtimeNanos, instance<APIClientV1>()::getExecutionPrices)
     }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
-    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState) }
+    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), accountPreference = instance()) }
+    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState, instance()) }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }

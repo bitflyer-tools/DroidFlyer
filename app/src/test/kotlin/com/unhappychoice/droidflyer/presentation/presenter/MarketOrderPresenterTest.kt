@@ -251,12 +251,12 @@ class MarketOrderPresenterTest {
     @Test
     fun switchingAccountsStopsThePreviousCloseSequence() {
         stubClose("SELL", "BUY", positionSize = 12.0)
-        val oldBoard = PublishSubject.create<Board>()
-        Mockito.`when`(preferenceBackedClient.getBoard("FX_BTC_JPY")).thenReturn(oldBoard, Observable.empty())
+        val boardResponse = PublishSubject.create<Board>()
+        Mockito.`when`(preferenceBackedClient.getBoard("FX_BTC_JPY")).thenReturn(boardResponse)
         confirmPositionClose()
         status.updateStatus()
         scheduler.triggerActions()
-        assertTrue(oldBoard.hasObservers())
+        assertTrue(boardResponse.hasObservers())
         assertTrue(closePositionResponse.hasObservers())
 
         val newAccount = Mockito.mock(APIClientV1::class.java)
@@ -265,7 +265,7 @@ class MarketOrderPresenterTest {
         Mockito.`when`(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         status.switchAccount(newAccount)
         scheduler.triggerActions()
-        assertFalse(oldBoard.hasObservers())
+        assertTrue(boardResponse.hasObservers())
         assertFalse(closePositionResponse.hasObservers())
         Mockito.verify(newAccount).getPositions()
         assertEquals(emptyList<Position>(), status.position.value)
