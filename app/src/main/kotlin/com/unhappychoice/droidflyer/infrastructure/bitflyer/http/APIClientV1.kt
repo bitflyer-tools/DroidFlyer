@@ -110,8 +110,12 @@ interface APIClientV1 {
     // @GET("me/getparentorder")
     // fun getParentOrder(//): Observable<Map<String, Any>>
 
-    // @GET("me/getexecutions")
-    // fun getExecutions(//): Observable<List<Map<String, Any>>>
+    @GET("me/getexecutions")
+    fun getMyExecutions(
+        @Query("count") count: Int,
+        @Query("before") before: Long? = null,
+        @Query("product_code") productCode: String = "FX_BTC_JPY"
+    ): Observable<List<PrivateExecution>>
 
     @GET("me/getpositions")
     fun getPositions(

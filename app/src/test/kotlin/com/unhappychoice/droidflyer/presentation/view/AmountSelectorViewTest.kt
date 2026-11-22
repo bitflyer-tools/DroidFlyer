@@ -59,7 +59,7 @@ class AmountSelectorViewTest {
 
     @Test
     fun minimumMessageIsVisibleOnlyForBelowMinimumInput() {
-        val message = selector.findViewById<TextView>(R.id.minimumOrderSizeMessage)
+        val message = selector.findViewById<TextView>(R.id.orderSizeMessage)
         assertEquals(View.GONE, message.visibility)
 
         field.setText("0.0001")
@@ -70,6 +70,25 @@ class AmountSelectorViewTest {
         field.setText("0.001")
         assertEquals(0.001, selector.amount.value, 0.0)
         assertEquals(View.GONE, message.visibility)
+    }
+
+    @Test
+    fun maximumMessageTracksTheAccountLimitAndAllowsExactMaximum() {
+        val message = selector.findViewById<TextView>(R.id.orderSizeMessage)
+        field.setText("10")
+        assertEquals(View.GONE, message.visibility)
+
+        field.setText("10.001")
+        assertEquals(View.VISIBLE, message.visibility)
+        assertEquals("Maximum order quantity is 10 BTC-CFD", message.text.toString())
+
+        selector.maximumOrderSize.value = 40.0
+        field.setText("40")
+        assertEquals(View.GONE, message.visibility)
+
+        field.setText("40.001")
+        assertEquals(View.VISIBLE, message.visibility)
+        assertEquals("Maximum order quantity is 40 BTC-CFD", message.text.toString())
     }
 
     @Test

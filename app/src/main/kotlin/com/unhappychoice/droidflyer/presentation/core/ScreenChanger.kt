@@ -4,7 +4,9 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager.LayoutParams.FLAG_SECURE
 import com.unhappychoice.droidflyer.MainActivity
+import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import com.unhappychoice.droidflyer.presentation.screen.core.Screen
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import flow.Direction
@@ -30,12 +32,15 @@ class ScreenChanger(val activity: MainActivity) : KeyChanger {
         containerView.removeAllViews()
 
         val screen = incomingState.getScreen()
+        if (screen is SettingsScreen) activity.window.addFlags(FLAG_SECURE)
 
         screen?.inflateView()?.let {
             inject(it)
             containerView.addView(it)
             incomingState.restore(it)
         }
+
+        if (screen !is SettingsScreen) activity.window.clearFlags(FLAG_SECURE)
 
         screen?.let {
             activity.updateBottomNavigation(it)
