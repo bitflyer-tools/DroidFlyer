@@ -29,6 +29,8 @@
     <string name="close_positions_multiple_orders">The app checks the remaining position after each market order and may submit additional market orders if an order is partially filled or the position exceeds the order size limit.</string>
     <string name="close_positions_incomplete">Could not confirm that all positions were closed. Check your positions and orders.</string>
     <string name="cleared_all_positions">Cleared all positions</string>
+    <string name="maximum_order_size">Maximum order quantity is %1$d BTC-CFD</string>
+    <string name="crypto_cfd_corporate_account">Use corporate Crypto CFD account limits</string>
     <string name="minimum_order_size">Minimum order quantity is %1$s BTC-CFD</string>
     <string name="market_order_accepted">Market order accepted</string>
     <string name="order_acceptance_uncertain">Order acceptance could not be confirmed. Check your orders before submitting again.</string>
@@ -81,6 +83,7 @@
     <string name="stop_cancel_unavailable">Order %1$s is no longer available.</string>
     <string name="stop_cancel_in_progress">Cancellation of order %1$s is already in progress.</string>
     <string name="stop_cancel_ineligible">Order %1$s is no longer eligible for cancellation.</string>
+    <string name="status_collateral">Collateral: %1$s</string>
     <string name="funding_unavailable">Next funding rate unavailable</string>
     <string name="funding_details">Next funding %1$s · %2$s</string>
     <string name="funding_stale">%1$s (stale)</string>

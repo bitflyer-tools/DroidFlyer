@@ -14,6 +14,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import io.reactivex.Observable
@@ -104,7 +105,8 @@ class SettingsPresenterTest {
                 }.toResponseBody())
                 .build()
         }.build())
-    private val presenter = SettingsPresenter(api, preference, { client, _ -> switched.add(client) }) { save ->
+    private val accountPreference = CryptoCfdAccountPreference(context)
+    private val presenter = SettingsPresenter(api, preference, { client, _ -> switched.add(client) }, accountPreference) { save ->
         save()
         authenticated.add(savedCredentials())
     }
@@ -297,7 +299,9 @@ class SettingsPresenterTest {
         val timer = TestScheduler()
         RxJavaPlugins.setComputationSchedulerHandler { timer }
         RxJavaPlugins.setSingleSchedulerHandler { timer }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { timer }
         val status = createStatus()
+        timer.triggerActions()
         assertEquals(listOf("/v1/board"), requestPaths())
         val scope = MortarScope.buildRootScope()
             .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -308,10 +312,12 @@ class SettingsPresenterTest {
             assertEquals(List(4) { "/v1/board" }, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, { client, _ -> status.switchAccount(client) }) { it() }
+            val settings = SettingsPresenter(api, preference, { client, _ -> status.switchAccount(client) }, accountPreference) { it() }
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
-            settings.saveCredentials().test().assertValueCount(1).assertComplete()
+            val saved = settings.saveCredentials().test()
+            timer.triggerActions()
+            saved.assertValueCount(1).assertComplete()
 
             assertEquals(
                 listOf(

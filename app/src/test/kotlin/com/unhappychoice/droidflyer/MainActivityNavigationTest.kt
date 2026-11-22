@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer
 import android.Manifest
 import android.content.Context
 import android.view.View
+import android.view.WindowManager.LayoutParams.FLAG_SECURE
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
@@ -97,6 +98,35 @@ class MainActivityNavigationTest {
             assertDestination(activity, R.id.orderIcon, OrderView::class.java, 2)
             activity.onBackPressed()
             assertDestination(activity, R.id.chartIcon, ChartView::class.java, 1)
+        }
+    }
+
+    @Test
+    fun settingsBlocksScreenCaptureUntilNavigatingBack() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            assertFalse(activity.isScreenCaptureBlocked())
+
+            activity.tapTab(R.id.settingsIcon)
+            assertTrue(activity.isScreenCaptureBlocked())
+
+            activity.onBackPressed()
+            assertFalse(activity.isScreenCaptureBlocked())
+        }
+    }
+
+    @Test
+    fun recreationBlocksCaptureOfRestoredSettingsUntilSwitchingTabs() {
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            controller.get().tapTab(R.id.settingsIcon)
+            controller.recreate()
+
+            val activity = controller.get()
+            assertDestination(activity, R.id.settingsIcon, SettingsView::class.java, 2)
+            assertTrue(activity.isScreenCaptureBlocked())
+
+            activity.tapTab(R.id.orderIcon)
+            assertFalse(activity.isScreenCaptureBlocked())
         }
     }
 
@@ -217,6 +247,9 @@ class MainActivityNavigationTest {
     private fun MainActivity.tapTab(itemId: Int) {
         binding.bottomNavigation.findViewById<View>(itemId).performClick()
     }
+
+    private fun MainActivity.isScreenCaptureBlocked(): Boolean =
+        (window.attributes.flags and FLAG_SECURE) != 0
 
     private fun assertDestination(activity: MainActivity, itemId: Int, viewClass: Class<*>, historySize: Int) {
         assertEquals(viewClass, activity.binding.containerView.getChildAt(0).javaClass)

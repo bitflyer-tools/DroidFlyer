@@ -17,7 +17,6 @@ import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.CompletableSubject
 import io.reactivex.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class CurrentStatusService internal constructor(
@@ -28,7 +27,8 @@ class CurrentStatusService internal constructor(
     privateClient: APIClientV1? = apiClient,
     parentEvents: Observable<PrivateEvent<List<ParentOrderEvent>>> = Observable.empty(),
     privateChannelAvailability: Observable<PrivateEvent<Boolean>> = Observable.empty(),
-    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+    executionFeedDisconnects: Observable<Unit> = Observable.never()
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) :
         this(apiClient, realtimeClient, privateClient, StopSubmissionGuard.inMemory())
@@ -44,7 +44,8 @@ class CurrentStatusService internal constructor(
         privateClient,
         realtimeClient.parentOrderEvents,
         realtimeClient.privateChannelAvailability,
-        submissionGuard
+        submissionGuard,
+        realtimeClient.executionFeedDisconnects
     )
 
     internal val privateState = PrivateTradingState(privateClient, submissionGuard = submissionGuard)
@@ -54,7 +55,10 @@ class CurrentStatusService internal constructor(
     val sellPrice = Variable(0L)
     val position = privateState.position
     val tradingTotals = observeTradingTotals(
-        currentPrice.asObservable(), position.asObservable(), privateState.collateral.asObservable()
+        currentPrice.asObservable(),
+        position.asObservable(),
+        privateState.collateral.asObservable(),
+        scheduler = AndroidSchedulers.mainThread()
     )
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
@@ -64,24 +68,24 @@ class CurrentStatusService internal constructor(
     private var accountChanged = CompletableSubject.create()
     private var channelAvailability: PrivateEvent<Boolean>? = null
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
-    private val realtimeBoardRevision = AtomicLong()
+    private val boardFallback = OrderBookFallback()
+    private val boardRefresh = StatusRefreshCoordinator(::refreshBoard)
     private val fundingStatus = AtomicReference(FundingStatus())
 
     init {
-        executions
-            .filter { it.isNotEmpty() }
-            .subscribeOnIoObserveOnUI()
-            .subscribeNext { batch ->
-                batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }?.let {
-                    currentPrice.value = MarketPrice(it.price)
-                }
-            }
+        Observable.merge(
+            executions.map { batch ->
+                val execution = batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }
+                MarketPrice(execution?.price)
+            }.filter { it.yen != null },
+            executionFeedDisconnects.map { MarketPrice(null) }
+        )
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext { currentPrice.value = it }
             .addTo(bag)
 
-        val realtimeBoards = boardUpdates.doOnNext { realtimeBoardRevision.incrementAndGet() }
-        observeOrderBook(Observable.merge(realtimeBoards, restBoards), Schedulers.single()) { update ->
-            update.requestRevision?.let { it == realtimeBoardRevision.get() } ?: true
-        }
+        val realtimeBoards = boardUpdates.doOnNext(boardFallback::onRealtimeUpdate)
+        observeOrderBook(Observable.merge(realtimeBoards, restBoards), Schedulers.single(), boardFallback::isCurrent)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { event ->
                 when (event) {
@@ -139,12 +143,18 @@ class CurrentStatusService internal constructor(
     fun dispose() {
         bag.dispose()
         statusRefresh.dispose()
+        boardRefresh.dispose()
         privateState.dispose()
     }
 
-    fun updateStatus() = statusRefresh.request(followUp = true)
+    fun updateStatus() = requestRefresh(followUp = true)
 
-    fun pollStatus() = statusRefresh.request(followUp = false)
+    fun pollStatus() = requestRefresh(followUp = false)
+
+    private fun requestRefresh(followUp: Boolean) {
+        statusRefresh.request(followUp)
+        boardRefresh.request(followUp = false)
+    }
 
     internal fun initializeAccount(loadAccount: () -> Pair<APIClientV1, StopSubmissionGuard>?) {
         val initialAccount = accountChanged
@@ -200,15 +210,14 @@ class CurrentStatusService internal constructor(
 
     private fun refreshStatus(): Completable = Completable.ambArray(
         accountChanged,
-        Completable.mergeArray(privateState.refresh(), refreshBoard())
+        privateState.refresh()
     )
 
-    private fun refreshBoard(): Completable {
-        val requestRevision = realtimeBoardRevision.get()
-        return apiClient.getBoard("FX_BTC_JPY")
+    private fun refreshBoard(): Completable =
+        Observable.defer {
+            val revision = boardFallback.requestRevision() ?: return@defer Observable.empty<BoardUpdate>()
+            apiClient.getBoard("FX_BTC_JPY").map { BoardUpdate(it, BoardSource.REST, revision) }
+        }
             .subscribeOnIoObserveOnUI()
-            .publishStatus { snapshot ->
-                restBoards.onNext(BoardUpdate(snapshot, BoardSource.REST, requestRevision))
-            }
-    }
+            .publishStatus(restBoards::onNext)
 }
