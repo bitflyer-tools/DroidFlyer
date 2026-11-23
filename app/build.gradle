@@ -138,6 +138,12 @@ android {
     }
 }
 
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variant ->
+        variant.enableUnitTest = true
+    }
+}
+
 play {
     enabled = releaseKeystore != null
     if (playAccount != null) serviceAccountCredentials.set(playAccountFile)
