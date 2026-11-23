@@ -87,23 +87,23 @@ class OrderAdapterTest {
         val cancel = row.findViewById<View>(R.id.cancel)
 
         response = listOf(firstOrder)
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
         adapter.onBindViewHolder(adapter.ViewHolder(row), 0)
 
         response = listOf(secondOrder, firstOrder.copy())
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
         cancel.performClick()
         val expected = listOf(CancelChildOrderRequest(firstOrder.productCode, firstOrder.childOrderAcceptanceId))
         assertEquals(expected, requests)
 
         response = listOf(secondOrder)
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
         cancel.performClick()
         assertEquals(expected, requests)
 
         response = listOf(firstOrder.copy())
         state.switchAccount(client)
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
         assertEquals(1, adapter.itemCount)
         cancel.performClick()
         assertEquals(expected, requests)
@@ -118,7 +118,7 @@ class OrderAdapterTest {
         val warning = presenter.ordersMayBeIncomplete.test()
         response = (1..101).map(::order)
 
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
 
         assertEquals(101, adapter.itemCount)
         warning.assertValues(false)
@@ -134,11 +134,11 @@ class OrderAdapterTest {
         val warning = OrdersPresenter(state) {}.ordersMayBeIncomplete.test()
         response = (1..500).map(::order)
 
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
         warning.assertValues(false, true)
 
         response = response.dropLast(1)
-        state.refresh().test().assertComplete()
+        state.refreshActiveOrders().test().assertComplete()
         warning.assertValues(false, true, false)
     }
 

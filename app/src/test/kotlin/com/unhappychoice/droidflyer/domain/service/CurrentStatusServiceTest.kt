@@ -2,11 +2,15 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
+import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
@@ -37,6 +41,10 @@ class CurrentStatusServiceTest {
     private val orderEvents = PublishSubject.create<PrivateEvent<*>>()
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
+    private val activeOrder = ChildOrder(
+        1, "order", "FX_BTC_JPY", "SELL", "LIMIT", 110, 0, 0.5, "ACTIVE",
+        "acceptance", 0.5, 0.0, 0.0, 0.0
+    )
     private val api = mock(APIClientV1::class.java)
     private lateinit var service: CurrentStatusService
     private var boardRequests = 0
@@ -202,6 +210,67 @@ class CurrentStatusServiceTest {
         verify(api, times(3)).getChildOrders("FX_BTC_JPY", count = 500)
         assertTrue(responses.hasObservers())
         assertEquals(1, boardRequests)
+    }
+
+    @Test
+    fun cancellationQueuesOneOrderReadWhilePositionsAndCollateralAreHeld() {
+        val positions = PublishSubject.create<List<Position>>()
+        val collateral = PublishSubject.create<Map<String, Any>>()
+        val orderResponses = PublishSubject.create<List<ChildOrder>>()
+        `when`(api.getPositions()).thenReturn(positions.take(1))
+        `when`(api.getCollateral()).thenReturn(collateral.take(1))
+        `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(orderResponses.take(1))
+        `when`(api.cancelChildOrder(CancelChildOrderRequest(activeOrder.productCode, activeOrder.childOrderAcceptanceId)))
+            .thenReturn(Completable.complete())
+        val presenter = OrdersPresenter(service)
+        val rows = presenter.orders.test()
+
+        service.updateStatus()
+        scheduler.triggerActions()
+        orderResponses.onNext(listOf(activeOrder))
+        scheduler.triggerActions()
+        val row = rows.values().last().single()
+
+        service.pollStatus()
+        scheduler.triggerActions()
+        repeat(2) { presenter.cancelOrder(row) }
+        scheduler.triggerActions()
+        verify(api, times(3)).getChildOrders("FX_BTC_JPY", count = 500)
+
+        orderResponses.onNext(listOf(activeOrder))
+        scheduler.triggerActions()
+        verify(api, times(4)).getChildOrders("FX_BTC_JPY", count = 500)
+        orderResponses.onNext(emptyList())
+        scheduler.triggerActions()
+
+        rows.assertValues(emptyList(), listOf(row), emptyList())
+        assertTrue(positions.hasObservers())
+        assertTrue(collateral.hasObservers())
+        verify(api, times(2)).getPositions()
+        verify(api, times(2)).getCollateral()
+        verify(api, times(4)).getChildOrders("FX_BTC_JPY", count = 500)
+    }
+
+    @Test
+    fun accountSwitchDropsAnOrderResponseQueuedForDelivery() {
+        val oldOrders = PublishSubject.create<List<ChildOrder>>()
+        val newOrder = activeOrder.copy(childOrderAcceptanceId = "new-acceptance")
+        val newAccount = mock(APIClientV1::class.java)
+        `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(oldOrders.take(1))
+        `when`(newAccount.getPositions()).thenReturn(Observable.empty())
+        `when`(newAccount.getCollateral()).thenReturn(Observable.empty())
+        `when`(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.just(listOf(newOrder)))
+        val orders = service.orders.asObservable().test()
+
+        service.updateActiveOrders()
+        scheduler.triggerActions()
+        oldOrders.onNext(listOf(activeOrder))
+        service.switchAccount(newAccount)
+        scheduler.triggerActions()
+
+        orders.assertValueAt(orders.valueCount() - 1, listOf(newOrder))
+        orders.assertNever(listOf(activeOrder))
+        assertFalse(oldOrders.hasObservers())
     }
 
     @Test
