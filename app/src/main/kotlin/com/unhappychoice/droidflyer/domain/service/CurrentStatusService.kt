@@ -70,7 +70,7 @@ class CurrentStatusService internal constructor(
             }.filter { it.yen != null },
             executionFeedDisconnects.map { MarketPrice(null) }
         )
-            .observeOn(AndroidSchedulers.mainThread())
+            .observeMarketPricesOn(AndroidSchedulers.mainThread())
             .subscribeNext { currentPrice.value = it }
             .addTo(bag)
 
