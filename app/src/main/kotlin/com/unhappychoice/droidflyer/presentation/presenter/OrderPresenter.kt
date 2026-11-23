@@ -5,26 +5,25 @@ import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
-import mortar.MortarScope
+import io.reactivex.disposables.Disposable
 import mortar.ViewPresenter
 import java.util.concurrent.TimeUnit
 
 class OrderPresenter(val currentStatusService: CurrentStatusService) : ViewPresenter<OrderView>() {
-    private val bag = CompositeDisposable()
+    private var polling: Disposable? = null
 
-    override fun onEnterScope(scope: MortarScope?) {
-        super.onEnterScope(scope)
+    fun startPolling() {
+        if (polling != null) return
 
-        Observable.interval(6, TimeUnit.SECONDS)
+        polling = Observable.interval(0, 6, TimeUnit.SECONDS)
             .observeOn(AndroidSchedulers.mainThread())
-            .subscribeNext { currentStatusService.pollStatus() }
-            .addTo(bag)
+            .subscribeNext { tick ->
+                if (tick == 0L) currentStatusService.updateStatus() else currentStatusService.pollStatus()
+            }
     }
 
-    override fun onExitScope() {
-        bag.dispose()
-        super.onExitScope()
+    fun stopPolling() {
+        polling?.dispose()
+        polling = null
     }
 }
