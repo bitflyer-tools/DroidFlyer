@@ -96,6 +96,26 @@ class APIClientTest {
     }
 
     @Test
+    fun pinnedRequestsStopAtUnlinkEvenAfterRelinking() {
+        MockWebServer().use { origin ->
+            origin.start()
+            val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+            val original = APICredentials("dummy-key", "dummy-secret")
+            preference.save(original)
+            val api = APIClient(gson, preference, OkHttpClient(), origin.url("/v1/").toString())
+            val pending = api.client(original).sendChildOrder(order)
+            assertTrue(preference.clear())
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+
+            api.client().getMarkets().test().assertComplete()
+            assertNull(checkNotNull(origin.takeRequest(5, TimeUnit.SECONDS)).headers["Access-Key"])
+            preference.save(original)
+            pending.test().assertError(IOException::class.java)
+            assertEquals(1, origin.requestCount)
+        }
+    }
+
+    @Test
     fun tradingCommissionRequestIncludesProductCode() {
         MockWebServer().use { origin ->
             origin.start()
@@ -238,6 +258,30 @@ class APIClientTest {
             if (BuildConfig.DEBUG) {
                 assertTrue(lines.any { it.startsWith("--> GET ") && it.contains(lookupPath) })
                 assertTrue(lines.any { it.startsWith("<-- 200 ") && it.contains(lookupPath) })
+                assertFalse(lines.any { it.contains(acceptanceId) })
+            } else {
+                assertEquals(emptyList<String>(), lines)
+            }
+        }
+    }
+
+    @Test
+    fun fillLookupLogsFollowBuildVariant() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            val acceptanceId = "test-close-order-acceptance-id"
+            val lines = mutableListOf<String>()
+            val logger = HttpLoggingInterceptor.Logger { lines.add(it) }
+            val api = APIClient(gson, credentialPreference(), OkHttpClient(), origin.url("/v1/").toString(), logger)
+
+            api.client().getChildOrders("FX_BTC_JPY", null, acceptanceId).blockingSingle()
+
+            val target = "/v1/me/getchildorders?product_code=FX_BTC_JPY&child_order_acceptance_id=$acceptanceId"
+            assertSignedRequest(origin, "GET", target, "")
+            if (BuildConfig.DEBUG) {
+                assertTrue(lines.any { it.startsWith("--> GET ") && it.contains("child_order_acceptance_id=") })
+                assertTrue(lines.any { it.startsWith("<-- 200 ") })
                 assertFalse(lines.any { it.contains(acceptanceId) })
             } else {
                 assertEquals(emptyList<String>(), lines)

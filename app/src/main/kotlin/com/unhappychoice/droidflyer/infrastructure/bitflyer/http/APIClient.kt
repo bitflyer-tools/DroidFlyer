@@ -14,6 +14,7 @@ import okio.Buffer
 import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.IOException
 
 class APIClient internal constructor(
     val gson: Gson,
@@ -47,13 +48,19 @@ class APIClient internal constructor(
 
     private val defaultClient by lazy { createClient(null) }
 
-    private fun authenticatedTransport(credentials: APICredentials?) = okHttp.newBuilder()
-        .apply {
-            interceptors().add(0, Interceptor { chain ->
-                chain.proceed(authenticatedRequest(chain.request(), credentials))
-            })
-        }
-        .build()
+    private fun authenticatedTransport(credentials: APICredentials?): OkHttpClient {
+        val generation = preference.unlinkGeneration
+        return okHttp.newBuilder()
+            .apply {
+                interceptors().add(0, Interceptor { chain ->
+                    if (credentials != null && generation != preference.unlinkGeneration) {
+                        throw IOException("bitFlyer account was unlinked")
+                    }
+                    chain.proceed(authenticatedRequest(chain.request(), credentials))
+                })
+            }
+            .build()
+    }
 
     private fun authenticatedRequest(request: Request, pinned: APICredentials?): Request {
         val builder = request.newBuilder()
