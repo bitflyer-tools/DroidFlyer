@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DroidFlyer</string>
+    <string name="trading_credentials_required">注文にはAPIキーとAPIシークレットが必要です。「設定」で入力し、「適用」をタップしてください。</string>
     <string name="api_key">APIキー</string>
     <string name="api_secret">APIシークレット</string>
     <string name="apply">適用</string>
