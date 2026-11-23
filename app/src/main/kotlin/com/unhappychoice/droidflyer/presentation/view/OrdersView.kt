@@ -9,6 +9,7 @@ import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.FillAdapter
@@ -42,6 +43,11 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             .subscribeNext { orderAdapter.updateOrders(it) }
             .addTo(subscriptions)
 
+        binding.activeOrdersStatus.setTextColor(DefaultStyle.accentColor)
+        presenter.activeOrdersStatus
+            .subscribeNext(::renderActiveOrdersStatus)
+            .addTo(subscriptions)
+
         presenter.ordersMayBeIncomplete
             .subscribeNext { binding.orderLimitWarning.isVisible = it }
             .addTo(subscriptions)
@@ -61,6 +67,17 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         presenter.fillHistory.clear()
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun renderActiveOrdersStatus(status: ActiveOrdersStatus) {
+        val message = when (status) {
+            ActiveOrdersStatus.EMPTY -> R.string.no_active_orders
+            ActiveOrdersStatus.UNAVAILABLE -> R.string.active_orders_unavailable
+            ActiveOrdersStatus.STALE -> R.string.active_orders_stale
+            ActiveOrdersStatus.INITIAL, ActiveOrdersStatus.AVAILABLE -> null
+        }
+        message?.let { binding.activeOrdersStatus.setText(it) }
+        binding.activeOrdersStatus.isVisible = message != null
     }
 
     private fun setupFills() {
