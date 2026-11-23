@@ -58,7 +58,7 @@ class CurrentStatusServiceTest {
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         service = CurrentStatusService(
             api, executions, boardUpdates(snapshots, deltas), orderEvents,
-            executionFeedDisconnects = disconnects
+            publicFeedDisconnects = disconnects
         )
         scheduler.triggerActions()
     }
@@ -156,6 +156,26 @@ class CurrentStatusServiceTest {
         responses.onNext(initialBook)
         scheduler.advanceTimeBy(300, MILLISECONDS)
         assertBook(updatedBook, 110)
+    }
+
+    @Test
+    fun disconnectRejectsEarlierFallbackAndWaitsForASnapshotBeforeApplyingDeltas() {
+        snapshots.onNext(initialBook)
+        disconnects.onNext(Unit)
+        responses.onNext(initialBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(Board(0.0, emptyList(), emptyList()), 0)
+
+        service.pollStatus()
+        scheduler.triggerActions()
+        deltas.onNext(initialBook.copy(asks = listOf(Order(90, 1.0))))
+        scheduler.triggerActions()
+        assertEquals(0L, service.buyPrice.value)
+
+        responses.onNext(updatedBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(updatedBook, 110)
+        assertEquals(2, boardRequests)
     }
 
     @Test

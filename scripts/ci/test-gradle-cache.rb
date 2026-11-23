@@ -1,7 +1,11 @@
 require "yaml"
 
 config = YAML.safe_load_file(File.expand_path("../../.circleci/config.yml", __dir__))
-build, test = config.fetch("jobs").values_at("build", "test")
+build, test, deploy = config.fetch("jobs").values_at("build", "test", "deploy")
+images = [build, test, deploy].map { |job| job.fetch("docker").first.fetch("image") }
+abort "Build, test, and deploy must use the same pinned Android image" unless
+  images.uniq.size == 1 && images.first.match?(/\Acimg\/android:\d{4}\.\d{2}\.\d+\z/)
+
 abort "Expected the APK build to use the large resource class" unless build.fetch("resource_class") == "large"
 
 build_steps = build.fetch("steps")

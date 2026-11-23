@@ -38,6 +38,12 @@
         android:layout_height="wrap_content"
         android:text="@string/apply"/>
 
+    <Button
+        android:id="@+id/unlinkButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/unlink_account"/>
+
     <CheckBox
         android:id="@+id/corporateAccount"
         android:layout_width="wrap_content"
