@@ -1013,7 +1013,7 @@ class RealtimeClientTest {
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(Observable.just(listOf(parent)))
-        listOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED").forEach { state ->
+        listOf("COMPLETED", "CANCELED", null).forEach { state ->
             whenever(api.getParentOrders(orderState = state)).thenReturn(Observable.just(emptyList()))
         }
         whenever(api.getParentOrder("parent-1")).thenReturn(Observable.just(details))

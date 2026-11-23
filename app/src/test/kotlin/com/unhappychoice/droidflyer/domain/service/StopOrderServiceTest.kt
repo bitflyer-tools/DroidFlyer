@@ -348,7 +348,7 @@ class StopOrderServiceTest {
 
             scheduler.advanceTimeBy(16, SECONDS)
             assertEquals(
-                listOf("ACTIVE", "COMPLETED", "CANCELED", "EXPIRED", "REJECTED"),
+                listOf("ACTIVE", "COMPLETED", "CANCELED", null),
                 requests.filter { it.url.encodedPath == "/v1/me/getparentorders" }
                     .map { it.url.queryParameter("parent_order_state") }
             )
@@ -358,6 +358,27 @@ class StopOrderServiceTest {
             scheduler.triggerActions()
             assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
         }
+
+    @Test
+    fun loadsExpiredAndRejectedStopHistoryWithoutStateFilters() {
+        listOf("EXPIRED" to StopOrderStatus.EXPIRED, "REJECTED" to StopOrderStatus.REJECTED)
+            .forEach { (state, expectedStatus) ->
+                withRealtimeStops { stops, _, scheduler ->
+                    parentState = state
+                    requests.clear()
+                    stops.refresh()
+                    scheduler.advanceTimeBy(60, SECONDS)
+
+                    assertFalse(stops.loadFailed.value)
+                    assertEquals(expectedStatus, stops.orders.value.single().status)
+                    assertEquals(
+                        listOf("ACTIVE", "COMPLETED", "CANCELED", null),
+                        requests.filter { it.url.encodedPath == "/v1/me/getparentorders" }
+                            .map { it.url.queryParameter("parent_order_state") }
+                    )
+                }
+            }
+    }
 
     @Test
     fun connectedInitialRefreshPacesActiveReadsBeforeHistory() =
@@ -375,7 +396,7 @@ class StopOrderServiceTest {
             assertTrue(stops.orders.value.single().canCancel)
 
             scheduler.advanceTimeBy(16, SECONDS)
-            assertEquals(7, stopReadPaths().size)
+            assertEquals(6, stopReadPaths().size)
         }
 
     @Test
@@ -424,7 +445,7 @@ class StopOrderServiceTest {
             assertEquals(3, stopReadPaths().size)
 
             scheduler.advanceTimeBy(52, SECONDS)
-            assertEquals(14, stopReadPaths().size)
+            assertEquals(12, stopReadPaths().size)
         }
 
     @Test
@@ -456,8 +477,8 @@ class StopOrderServiceTest {
             )
 
             scheduler.advanceTimeBy(60, SECONDS)
-            assertEquals(14, stopReadPaths().size)
-            assertEquals(10, stopReadPaths().count { it == "/v1/me/getparentorders" })
+            assertEquals(12, stopReadPaths().size)
+            assertEquals(8, stopReadPaths().count { it == "/v1/me/getparentorders" })
         }
 
     @Test
@@ -1318,15 +1339,15 @@ class StopOrderServiceTest {
         }
         "/v1/me/getparentorders" -> {
             assertEquals("FX_BTC_JPY", request.url.queryParameter("product_code"))
-            val state = requireNotNull(request.url.queryParameter("parent_order_state"))
-            assertTrue(state in listOf("ACTIVE", "COMPLETED", "CANCELED", "EXPIRED", "REJECTED"))
+            val state = request.url.queryParameter("parent_order_state")
             val active = state == "ACTIVE"
             val page = activeParentPage
             when {
                 parentOrderStatus != 200 -> parentOrderStatus to ""
+                state == "EXPIRED" || state == "REJECTED" -> 400 to ""
                 !active && historyStatus != 200 -> historyStatus to ""
                 page != null && active -> 200 to page(request.url.queryParameter("before"))
-                state != parentState || (active && omitStopFromActiveParents) -> 200 to "[]"
+                (state != null && state != parentState) || (active && omitStopFromActiveParents) -> 200 to "[]"
                 else -> 200 to parentOrders()
             }
         }

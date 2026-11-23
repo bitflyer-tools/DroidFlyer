@@ -115,7 +115,7 @@ interface APIClientV1 {
     @GET("me/getparentorders")
     fun getParentOrders(
         @Query("product_code") productCode: String = "FX_BTC_JPY",
-        @Query("parent_order_state") orderState: String,
+        @Query("parent_order_state") orderState: String?,
         @Query("count") count: Int? = null,
         @Query("before") before: Long? = null
     ): Observable<List<ParentOrder>>

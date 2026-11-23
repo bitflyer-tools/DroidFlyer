@@ -387,19 +387,22 @@ internal class StopOrderService(
             }
     }
 
-    private fun loadRecentParents(client: APIClientV1, onFailure: () -> Unit): Observable<ParentOrder> =
-        Observable.fromIterable(listOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED"))
-            .concatMap { state ->
-                refreshReads.read { client.getParentOrders(orderState = state) }
-                    .onErrorReturn {
-                        onFailure()
-                        emptyList()
-                    }
+    private fun loadRecentParents(client: APIClientV1, onFailure: () -> Unit): Observable<ParentOrder> {
+        fun read(state: String?) = refreshReads.read { client.getParentOrders(orderState = state) }
+            .onErrorReturn {
+                onFailure()
+                emptyList()
             }
             .flatMapIterable { it }
+
+        val expiredOrRejected = read(null).filter {
+            it.parentOrderState == "EXPIRED" || it.parentOrderState == "REJECTED"
+        }
+        return Observable.concat(read("COMPLETED"), read("CANCELED"), expiredOrRejected)
             .filter(::isCryptoCfdStop)
             .toList()
             .flatMapObservable { rows -> Observable.fromIterable(rows.sortedByDescending { it.id }.take(10)) }
+    }
 
     // The child list can omit unfilled terminal orders whose events were missed.
     private val canUseRestWaitingEvidence get() = orderEventsReady && channelGapCount == 0
