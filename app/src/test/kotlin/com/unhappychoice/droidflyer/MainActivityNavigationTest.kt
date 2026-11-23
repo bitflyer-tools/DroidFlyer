@@ -2,12 +2,18 @@ package com.unhappychoice.droidflyer
 
 import android.Manifest
 import android.content.Context
+import android.os.Looper
 import android.view.View
 import android.view.WindowManager.LayoutParams.FLAG_SECURE
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
@@ -17,6 +23,7 @@ import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import flow.Flow
+import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Socket
@@ -24,10 +31,12 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
 import org.kodein.di.direct
 import org.kodein.di.instance
 import org.robolectric.Robolectric
@@ -98,6 +107,65 @@ class MainActivityNavigationTest {
             assertDestination(activity, R.id.orderIcon, OrderView::class.java, 2)
             activity.onBackPressed()
             assertDestination(activity, R.id.chartIcon, ChartView::class.java, 1)
+        }
+    }
+
+    @Test
+    @Config(
+        shadows = [OfflineApi::class],
+        instrumentedPackages = ["com.unhappychoice.droidflyer.infrastructure.bitflyer.http"]
+    )
+    fun orderPollsOnlyWhileStartedAndRefreshesWhenRestarted() {
+        val polling = TestScheduler()
+        RxJavaPlugins.setComputationSchedulerHandler { polling }
+        val requests = mutableListOf<String>()
+        val privateClient = recordingStatusClient(requests)
+        val statusRead = listOf("positions", "collateral", "orders")
+
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.module.direct.instance<CurrentStatusService>().switchAccount(privateClient)
+            drainStatusRequests()
+            requests.clear()
+            activity.tapTab(R.id.orderIcon)
+            polling.triggerActions()
+            drainStatusRequests()
+            assertEquals(statusRead, requests)
+            repeat(3) {
+                val order = activity.binding.containerView.getChildAt(0)
+                requests.clear()
+                controller.pause().stop()
+                assertTrue(order.isAttachedToWindow)
+                assertSame(order, activity.binding.containerView.getChildAt(0))
+                polling.advanceTimeBy(13, TimeUnit.SECONDS)
+                drainStatusRequests()
+                assertTrue(requests.isEmpty())
+
+                controller.restart().resume()
+                assertDestination(activity, R.id.orderIcon, OrderView::class.java, 2)
+                polling.triggerActions()
+                drainStatusRequests()
+                assertEquals(statusRead, requests)
+                requests.clear()
+
+                polling.advanceTimeBy(5, TimeUnit.SECONDS)
+                drainStatusRequests()
+                assertTrue(requests.isEmpty())
+                polling.advanceTimeBy(1, TimeUnit.SECONDS)
+                drainStatusRequests()
+                assertEquals(statusRead, requests)
+            }
+
+            requests.clear()
+            activity.tapTab(R.id.chartIcon)
+            polling.advanceTimeBy(12, TimeUnit.SECONDS)
+            drainStatusRequests()
+            assertTrue(requests.isEmpty())
+
+            activity.tapTab(R.id.orderIcon)
+            polling.triggerActions()
+            drainStatusRequests()
+            assertEquals(statusRead, requests)
         }
     }
 
@@ -248,6 +316,25 @@ class MainActivityNavigationTest {
         binding.bottomNavigation.findViewById<View>(itemId).performClick()
     }
 
+    private fun drainStatusRequests() {
+        val main = shadowOf(Looper.getMainLooper())
+        main.idle()
+        background.triggerActions()
+        main.idle()
+    }
+
+    private fun recordingStatusClient(requests: MutableList<String>): APIClientV1 {
+        val positions = Observable.just(emptyList<Position>()).doOnSubscribe { requests.add("positions") }
+        val collateral = Observable.just<Map<String, Any>>(mapOf("collateral" to 100.0))
+            .doOnSubscribe { requests.add("collateral") }
+        val orders = Observable.just(emptyList<ChildOrder>()).doOnSubscribe { requests.add("orders") }
+        return mock {
+            on { getPositions() }.thenReturn(positions)
+            on { getCollateral() }.thenReturn(collateral)
+            on { getChildOrders("FX_BTC_JPY", count = 500) }.thenReturn(orders)
+        }
+    }
+
     private fun MainActivity.isScreenCaptureBlocked(): Boolean =
         (window.attributes.flags and FLAG_SECURE) != 0
 
@@ -269,6 +356,16 @@ class MainActivityNavigationTest {
 
         companion object {
             val connections = mutableListOf<Socket>()
+        }
+    }
+
+    @Implements(value = APIClient::class, isInAndroidSdk = false)
+    class OfflineApi {
+        @Implementation
+        fun client(): APIClientV1 = mock {
+            on { getBoard("FX_BTC_JPY") }.thenReturn(Observable.empty())
+            on { getExecutionPrices("FX_BTC_JPY", 500) }.thenReturn(Observable.empty())
+            on { getFundingRate("FX_BTC_JPY") }.thenReturn(Observable.empty())
         }
     }
 }
