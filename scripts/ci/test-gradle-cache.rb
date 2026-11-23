@@ -1,6 +1,6 @@
 require "yaml"
 
-config = YAML.safe_load_file(File.expand_path("../../.circleci/config.yml", __dir__))
+config = YAML.safe_load_file(File.expand_path("../../.circleci/config.yml", __dir__), aliases: true)
 build, test = config.fetch("jobs").values_at("build", "test")
 abort "Expected the APK build to use the large resource class" unless build.fetch("resource_class") == "large"
 
@@ -30,7 +30,14 @@ abort "Expected the test job to restore caches after checkout and before running
 
 restore_steps = config.fetch("commands").fetch("restore_gradle_cache").fetch("steps")
 restored_keys = restore_steps.map { |step| step.fetch("restore_cache").fetch("key") }
-expected_restores = [saves_by_path.fetch(["~/.gradle"]), *expected_keys.values]
+dependency_key = saves_by_path.fetch(["~/.gradle"])
+dependency_inputs = %w[gradle/wrapper/gradle-wrapper.properties settings.gradle build.gradle app/build.gradle app/gradle.lockfile]
+repo_root = File.expand_path("../..", __dir__)
+cache_inputs = dependency_key.scan(/\{\{ checksum "([^"]+)" \}\}/).flatten
+abort "Expected the Gradle dependency cache key to include each dependency input" unless
+  cache_inputs == dependency_inputs && cache_inputs.all? { |path| File.file?(File.join(repo_root, path)) }
+
+expected_restores = [dependency_key, *expected_keys.values]
 abort "Expected each Gradle cache to be restored independently" unless restored_keys == expected_restores
 
 workflow_jobs = config.fetch("workflows").fetch("test-and-deploy").fetch("jobs")

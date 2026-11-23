@@ -4,7 +4,8 @@ commands:
   restore_gradle_cache:
     steps:
       - restore_cache:
-          key: jars-{{ checksum "build.gradle" }}-{{ checksum  "app/build.gradle" }}
+          key: &gradle_dependency_cache_key >-
+            gradle-deps-v1-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "settings.gradle" }}-{{ checksum "build.gradle" }}-{{ checksum "app/build.gradle" }}-{{ checksum "app/gradle.lockfile" }}
       - restore_cache:
           key: builds-{{ .Revision }}
       - restore_cache:
@@ -29,7 +30,7 @@ jobs:
       - save_cache:
           paths:
             - ~/.gradle
-          key: jars-{{ checksum "build.gradle" }}-{{ checksum  "app/build.gradle" }}
+          key: *gradle_dependency_cache_key
       - save_cache:
           paths:
             - build
