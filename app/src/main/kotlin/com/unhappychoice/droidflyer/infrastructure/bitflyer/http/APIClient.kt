@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.google.gson.Gson
+import com.unhappychoice.droidflyer.BuildConfig
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
@@ -19,7 +20,8 @@ class APIClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
     transport: OkHttpClient,
-    private val baseUrl: String = "https://api.bitflyer.jp/v1/"
+    private val baseUrl: String = "https://api.bitflyer.jp/v1/",
+    logger: HttpLoggingInterceptor.Logger = HttpLoggingInterceptor.Logger.DEFAULT
 ) {
     constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, OkHttpClient())
 
@@ -32,7 +34,14 @@ class APIClient internal constructor(
 
     private val okHttp = transport.newBuilder()
         .followRedirects(false)
-        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+        .apply {
+            if (BuildConfig.DEBUG) {
+                addInterceptor(HttpLoggingInterceptor(logger).apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                    redactQueryParams("child_order_acceptance_id")
+                })
+            }
+        }
         .build()
 
     private val privatePathPrefix = checkNotNull(baseUrl.toHttpUrl().resolve("me/")).encodedPath
