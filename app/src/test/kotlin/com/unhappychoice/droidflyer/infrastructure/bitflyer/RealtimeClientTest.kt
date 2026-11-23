@@ -339,23 +339,57 @@ class RealtimeClientTest {
     }
 
     @Test
-    fun disconnectClearsMarketPriceWithoutPrivateCredentials() {
+    fun disconnectClearsPublicQuotesAndRestoresBoardFallbackWithoutPrivateCredentials() {
         val client = createClient()
         val api = mock<APIClientV1>()
-        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        val fallback = Board(10_050_000.0, listOf(Order(10_000_000, 1.0)), listOf(Order(10_100_000, 1.0)))
+        val delayedFallback = PublishSubject.create<Board>()
+        whenever(api.getBoard("FX_BTC_JPY"))
+            .thenReturn(Observable.empty(), Observable.just(fallback), delayedFallback.take(1))
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxJavaPlugins.setSingleSchedulerHandler { clock }
         RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
         val service = CurrentStatusService(api, client, null)
+        val snapshots = "lightning_board_snapshot_FX_BTC_JPY"
         try {
             socket.receive(Socket.EVENT_CONNECT)
+            socket.receive(snapshots, JSONObject(
+                """{"mid_price":9990000,"bids":[{"price":9980000,"size":1}],"asks":[{"price":10000000,"size":1}]}"""
+            ))
             socket.receive("lightning_executions_FX_BTC_JPY", JSONArray("""[{"price":10000000.0}]"""))
-            clock.triggerActions()
+            clock.advanceTimeBy(300, MILLISECONDS)
             assertEquals(MarketPrice(10_000_000.0), service.currentPrice.value)
+            assertEquals(10_000_000L, service.buyPrice.value)
+            assertEquals(9_980_000L, service.sellPrice.value)
+            assertEquals(listOf(Order(10_000_000, 1.0)), service.board.value.asks)
 
             socket.receive(Socket.EVENT_DISCONNECT)
             clock.triggerActions()
             assertEquals(MarketPrice(null), service.currentPrice.value)
+            assertEquals(0L, service.buyPrice.value)
+            assertEquals(0L, service.sellPrice.value)
+            assertEquals(Board(0.0, emptyList(), emptyList()), service.board.value)
+
+            service.pollStatus()
+            clock.advanceTimeBy(300, MILLISECONDS)
+            assertEquals(fallback, service.board.value)
+            assertEquals(10_100_000L, service.buyPrice.value)
+            assertEquals(10_000_000L, service.sellPrice.value)
+
+            service.pollStatus()
+            clock.triggerActions()
+            assertTrue(delayedFallback.hasObservers())
+            socket.receive(Socket.EVENT_CONNECT)
+            socket.receive(snapshots, JSONObject(
+                """{"mid_price":10150000,"bids":[{"price":10100000,"size":1}],"asks":[{"price":10200000,"size":1}]}"""
+            ))
+            clock.advanceTimeBy(300, MILLISECONDS)
+            delayedFallback.onNext(fallback)
+            clock.advanceTimeBy(300, MILLISECONDS)
+            assertEquals(10_200_000L, service.buyPrice.value)
+            assertEquals(10_100_000L, service.sellPrice.value)
+            assertEquals(listOf(Order(10_200_000, 1.0)), service.board.value.asks)
         } finally {
             service.dispose()
             client.disconnect()
