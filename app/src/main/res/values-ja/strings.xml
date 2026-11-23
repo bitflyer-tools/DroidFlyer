@@ -38,7 +38,9 @@
     <string name="orders">注文</string>
     <string name="sell">売り</string>
     <string name="setting">設定</string>
-    <string name="api_key_not_saved">APIキーが間違っています</string>
+    <string name="api_key_not_saved">端末にAPI認証情報を保存できませんでした</string>
+    <string name="api_key_rejected">このAPI認証情報でのアクセスがbitFlyerに拒否されました</string>
+    <string name="api_key_validation_failed">bitFlyerでAPI認証情報を確認できませんでした。もう一度お試しください。</string>
     <string name="api_key_saved">APIキーを保存しました</string>
     <string name="order_executed">約定しました %1$s / %2$s / %3$f / %4$s</string>
     <string name="active_orders">有効な注文</string>
