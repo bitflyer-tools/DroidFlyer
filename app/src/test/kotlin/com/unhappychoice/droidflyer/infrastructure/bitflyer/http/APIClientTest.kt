@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParseException
+import com.unhappychoice.droidflyer.BuildConfig
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -17,10 +18,12 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.SocketEffect
 import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -204,6 +207,30 @@ class APIClientTest {
                 }
                 assertFalse(accepted)
                 assertEquals((index + 1) * 2, origin.requestCount)
+            }
+        }
+    }
+
+    @Test
+    fun fillLookupLogsFollowBuildVariant() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            val acceptanceId = "test-close-order-acceptance-id"
+            val lines = mutableListOf<String>()
+            val logger = HttpLoggingInterceptor.Logger { lines.add(it) }
+            val api = APIClient(gson, credentialPreference(), OkHttpClient(), origin.url("/v1/").toString(), logger)
+
+            api.client().getChildOrders("FX_BTC_JPY", null, acceptanceId).blockingSingle()
+
+            val target = "/v1/me/getchildorders?product_code=FX_BTC_JPY&child_order_acceptance_id=$acceptanceId"
+            assertSignedRequest(origin, "GET", target, "")
+            if (BuildConfig.DEBUG) {
+                assertTrue(lines.any { it.startsWith("--> GET ") && it.contains("child_order_acceptance_id=") })
+                assertTrue(lines.any { it.startsWith("<-- 200 ") })
+                assertFalse(lines.any { it.contains(acceptanceId) })
+            } else {
+                assertEquals(emptyList<String>(), lines)
             }
         }
     }
