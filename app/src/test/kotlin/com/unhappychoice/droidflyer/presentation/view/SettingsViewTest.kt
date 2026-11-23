@@ -244,6 +244,46 @@ class SettingsViewTest {
         }
     }
 
+    @Test
+    fun unlinkButtonClearsBothFieldsAndSavedCredentials() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val settings = activity.openSettings()
+
+            assertTrue(settings.unlinkButton.performClick())
+            assertEquals("", settings.apiTokenTextView.text.toString())
+            assertEquals("", settings.apiSecretTextView.text.toString())
+            val values = activity.getSharedPreferences("api_token", Activity.MODE_PRIVATE).all
+            assertTrue(values.isEmpty())
+
+            activity.setContentView(LinearLayout(activity))
+            val reopened = activity.openSettings()
+            assertEquals("", reopened.apiTokenTextView.text.toString())
+            assertEquals("", reopened.apiSecretTextView.text.toString())
+        }
+    }
+
+    @Test
+    fun unlinkCancelsApplyBeforeValidationStarts() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val io = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { io }
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+
+            settings.saveButton.performClick()
+            settings.unlinkButton.performClick()
+            io.triggerActions()
+
+            assertEquals(0, host.applyRequests)
+            assertEquals("", settings.apiTokenTextView.text.toString())
+            assertEquals("", settings.apiSecretTextView.text.toString())
+            assertTrue(settings.saveButton.isEnabled)
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun assertCredentialsOmitted(settings: SettingsViewBinding, activityState: Bundle, flowState: State) {
         val hierarchy = activityState.getBundle("android:viewHierarchyState")

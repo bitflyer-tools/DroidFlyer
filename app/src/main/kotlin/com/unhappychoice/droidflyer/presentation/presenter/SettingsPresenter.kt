@@ -40,6 +40,7 @@ class SettingsPresenter internal constructor(
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
+    internal val accountUnlinked = preference.accountUnlinked
     private val bag = CompositeDisposable()
     private var pendingSave: CompletableSubject? = null
 
@@ -77,19 +78,27 @@ class SettingsPresenter internal constructor(
             .addTo(bag)
     }
 
+    fun unlink(): Boolean {
+        bag.clear()
+        val cleared = preference.clear()
+        loadCredentials()
+        return cleared
+    }
+
     internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
         val submitted = APICredentials(key.value, secret.value)
+        val generation = preference.unlinkGeneration
         return validateCredentials(submitted)
+            .filter { generation == preference.unlinkGeneration }
             .map { balance ->
                 var changed = false
                 updateRealtimeAccount {
-                    val saved = preference.read()
-                    changed = saved.key != submitted.key || saved.secret != submitted.secret
-                    if (changed) preference.save(submitted)
+                    changed = preference.saveIfChanged(submitted, generation)
                 }
                 balance to changed
             }
             .subscribeOnIoObserveOnUI()
+            .filter { generation == preference.unlinkGeneration }
             .map { (balance, changed) ->
                 if (changed) switchAccount(api.privateStatusClient(submitted))
                 balance
@@ -97,7 +106,7 @@ class SettingsPresenter internal constructor(
     }
 
     private fun validateCredentials(credentials: APICredentials): Observable<List<Map<String, Any>>> =
-        api.client().getBalance(credentials).onErrorResumeNext { error: Throwable ->
+        api.client(credentials).getBalance().onErrorResumeNext { error: Throwable ->
             Observable.error(CredentialValidationFailure(error))
         }
 }

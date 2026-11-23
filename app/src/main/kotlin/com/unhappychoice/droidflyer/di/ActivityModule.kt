@@ -35,6 +35,13 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
     bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), accountPreference = instance()) }
-    bindSingleton<LimitOrderPresenter> { LimitOrderPresenter(instance<CurrentStatusService>().privateState, instance()) }
+    bindSingleton<LimitOrderPresenter> {
+        LimitOrderPresenter(
+            instance<CurrentStatusService>().privateState,
+            instance(),
+            activity.resources,
+            activity::showSnackbar
+        )
+    }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
 }
