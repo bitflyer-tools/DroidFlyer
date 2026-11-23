@@ -26,9 +26,13 @@ internal class PrivateTradingState(
     private val requestScheduler: Scheduler = Schedulers.io(),
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
+    enum class ActiveOrdersStatus { INITIAL, EMPTY, AVAILABLE, UNAVAILABLE, STALE }
+
     val position = Variable<List<Position>>(emptyList())
     val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
+
+    val activeOrdersStatus = Variable(ActiveOrdersStatus.INITIAL)
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
@@ -62,7 +66,7 @@ internal class PrivateTradingState(
 
     fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched)
 
-    fun refresh(): Completable = Completable.defer {
+    fun refreshPositionsAndCollateral(): Completable = Completable.defer {
         if (disposed) return@defer Completable.complete()
 
         val current = session ?: return@defer Completable.complete()
@@ -73,11 +77,32 @@ internal class PrivateTradingState(
                 val amount = response["collateral"] as? Number
                 amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
             }
-                .publishResponse { if (!disposed && current === session) collateral.value = it },
-            // Unchanged rows keep their order references for cancellation.
-            client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
-                .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+                .publishResponse { if (!disposed && current === session) collateral.value = it }
         ).takeUntil(current.ended.firstElement().ignoreElement())
+    }
+
+    fun refreshActiveOrders(): Completable = Completable.defer {
+        if (disposed) return@defer Completable.complete()
+
+        val current = session ?: return@defer Completable.complete()
+        current.client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .doOnError {
+                if (!disposed && current === session) {
+                    activeOrdersStatus.value =
+                        if (orders.value.isEmpty()) ActiveOrdersStatus.UNAVAILABLE else ActiveOrdersStatus.STALE
+                }
+            }
+            .publishStatus {
+                if (!disposed && current === session) {
+                    // Unchanged rows keep their order references for cancellation.
+                    if (orders.value != it) orders.value = it
+                    activeOrdersStatus.value =
+                        if (it.isEmpty()) ActiveOrdersStatus.EMPTY else ActiveOrdersStatus.AVAILABLE
+                }
+            }
+            .takeUntil(current.ended.firstElement().ignoreElement())
     }
 
     fun getMyExecutions(count: Int, before: Long?): Single<List<PrivateExecution>> {
@@ -120,9 +145,11 @@ internal class PrivateTradingState(
         )
     }
 
+    fun isCurrent(row: OrderRow): Boolean = !disposed && row.session === session
+
     fun cancelOrder(row: OrderRow): Observable<Unit>? {
         val current = session ?: return null
-        if (row.session !== current) return null
+        if (!isCurrent(row)) return null
         val order = orders.value.firstOrNull {
             it.productCode == row.order.productCode &&
                 it.childOrderAcceptanceId == row.order.childOrderAcceptanceId
@@ -137,6 +164,7 @@ internal class PrivateTradingState(
         val previous = session
         session = next
         orders.value = emptyList()
+        activeOrdersStatus.value = ActiveOrdersStatus.INITIAL
         position.value = emptyList()
         collateral.value = Collateral(null)
         try {
