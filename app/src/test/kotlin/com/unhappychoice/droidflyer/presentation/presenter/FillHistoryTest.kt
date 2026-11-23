@@ -39,6 +39,35 @@ class FillHistoryTest {
     }
 
     @Test
+    fun appendsOnlyUniqueFillsBelowEachCursorInNewestFirstOrder() {
+        val cursors = mutableListOf<Long?>()
+        val firstDuplicate = fill(48L).copy(side = "SELL")
+        val olderDuplicate = fill(45L).copy(side = "SELL")
+        val history = FillHistory { count, before ->
+            cursors.add(before)
+            Single.just(when (before) {
+                null -> listOf(fill(48L), fill(46L), firstDuplicate, fill(47L)) +
+                    List(count - 4) { fill(48L) }
+                46L -> listOf(fill(43L), fill(45L), olderDuplicate, fill(44L), fill(46L), fill(49L)) +
+                    List(count - 6) { fill(46L) }
+                else -> listOf(fill(41L), fill(42L), fill(43L), fill(48L), fill(42L))
+            })
+        }
+
+        history.refresh()
+        val firstPage = history.state.value.fills
+        history.loadOlder()
+        val firstTwoPages = history.state.value.fills
+        history.loadOlder()
+
+        assertEquals(listOf(null, 46L, 43L), cursors)
+        assertEquals((48L downTo 41L).map(::fill), history.state.value.fills)
+        assertEquals((48L downTo 46L).map(::fill), firstPage)
+        assertEquals((48L downTo 43L).map(::fill), firstTwoPages)
+        assertNull(history.state.value.nextCursor)
+    }
+
+    @Test
     fun distinguishesEmptyHistoryFromAccessDenied() {
         var result: Single<List<PrivateExecution>> = Single.just(emptyList())
         val history = FillHistory { _, _ -> result }
@@ -55,15 +84,24 @@ class FillHistoryTest {
 
     @Test
     fun failedOlderPageKeepsRowsAndCursorForRetry() {
+        val cursors = mutableListOf<Long?>()
         val history = FillHistory { count, before ->
-            if (before == null) Single.just((1L..count.toLong()).map(::fill))
-            else Single.error(IOException("Offline"))
+            cursors.add(before)
+            when {
+                before == null -> Single.just((2L..(count + 1L)).map(::fill))
+                cursors.size == 2 -> Single.error(IOException("Offline"))
+                else -> Single.just(listOf(fill(1L)))
+            }
         }
 
         history.refresh()
         val loaded = history.state.value
         history.loadOlder()
         assertEquals(loaded.copy(error = FillHistory.Error.REQUEST_FAILED), history.state.value)
+        history.loadOlder()
+        assertEquals(listOf(null, 2L, 2L), cursors)
+        assertEquals((51L downTo 1L).map(::fill), history.state.value.fills)
+        assertNull(history.state.value.error)
     }
 
     @Test

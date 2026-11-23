@@ -7,6 +7,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.doOnAttach
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
@@ -90,6 +91,10 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNavigation.menu.findItem(itemId).isChecked = true
     }
 
+    internal fun showSnackbar(message: String, duration: Int) {
+        binding.containerView.doOnAttach { Snackbar.make(it, message, duration).show() }
+    }
+
     override fun onDestroy() {
         if (realtimeSession.isInitialized()) realtimeSession.value.close()
         scope.destroy()
@@ -137,7 +142,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showExecution(event: ChildOrderEvent) {
-        val message = executionMessage(event)
-        Snackbar.make(binding.containerView, message, Snackbar.LENGTH_SHORT).show()
+        showSnackbar(executionMessage(event), Snackbar.LENGTH_SHORT)
     }
 }
