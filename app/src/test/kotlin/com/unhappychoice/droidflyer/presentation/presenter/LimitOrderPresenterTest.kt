@@ -50,8 +50,12 @@ class LimitOrderPresenterTest {
     private val acceptedOrder = activeOrder("BUY", 100, 0.001).copy(
         productCode = "FX_BTC_JPY", size = 0.001, executedSize = 0.0
     )
-    private val accountPreference = CryptoCfdAccountPreference(RuntimeEnvironment.getApplication())
-    private val presenter by lazy { LimitOrderPresenter(state, accountPreference) {}.also(::attachView) }
+    private val application = RuntimeEnvironment.getApplication()
+    private val accountPreference = CryptoCfdAccountPreference(application)
+    private val presenter by lazy {
+        LimitOrderPresenter(state, accountPreference, {}, application.resources) { _, _ -> }
+            .also(::attachView)
+    }
     private var status: CurrentStatusService? = null
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
@@ -209,7 +213,9 @@ class LimitOrderPresenterTest {
             .thenReturn(initialOrders, Observable.just(listOf(acceptedOrder)))
         val status = CurrentStatusService(apiClient, Observable.never(), Observable.never(), Observable.never())
         this.status = status
-        val presenter = LimitOrderPresenter(status.privateState, accountPreference, status::updateStatus)
+        val presenter = LimitOrderPresenter(
+            status.privateState, accountPreference, status::updateStatus, application.resources
+        ) { _, _ -> }
         attachView(presenter)
         presenter.submitOrder(requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100)))
         return status

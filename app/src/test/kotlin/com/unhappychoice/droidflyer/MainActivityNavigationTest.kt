@@ -2,24 +2,39 @@ package com.unhappychoice.droidflyer
 
 import android.Manifest
 import android.content.Context
+import android.os.Looper
 import android.view.View
 import android.view.WindowManager.LayoutParams.FLAG_SECURE
+import android.widget.TextView
+import androidx.core.view.children
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
+import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
 import com.unhappychoice.droidflyer.presentation.view.ChartView
+import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import flow.Flow
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import io.socket.client.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +45,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -39,9 +59,8 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.RealObject
 import org.robolectric.util.ReflectionHelpers
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import retrofit2.HttpException
+import retrofit2.Response
 
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -204,6 +223,21 @@ class MainActivityNavigationTest {
     }
 
     @Test
+    fun delayedLimitOrderAcceptanceShowsOnChart() {
+        assertLimitOrderFeedbackAfterNavigation(R.id.chartIcon, { getString(R.string.ordered_buy, 0.001, 100L) }) {
+            onNext(ChildOrderAcceptance("test"))
+            onComplete()
+        }
+    }
+
+    @Test
+    fun delayedLimitOrderRejectionShowsOnSettings() {
+        assertLimitOrderFeedbackAfterNavigation(R.id.settingsIcon, { getString(R.string.limit_order_failed) }) {
+            onError(HttpException(Response.error<ChildOrderAcceptance>(400, "Order rejected".toResponseBody())))
+        }
+    }
+
+    @Test
     fun recreationFinishesWhileCredentialSaveIsInProgress() {
         val ioStarted = CountDownLatch(1)
         val resumeIo = CountDownLatch(1)
@@ -241,6 +275,49 @@ class MainActivityNavigationTest {
             }
         } finally {
             executor.shutdownNow()
+        }
+    }
+
+    private fun assertLimitOrderFeedbackAfterNavigation(
+        destination: Int,
+        expectedMessage: MainActivity.() -> String,
+        completeOrder: PublishSubject<ChildOrderAcceptance>.() -> Unit
+    ) {
+        val apiClient = mock<APIClientV1>()
+        val pending = PublishSubject.create<ChildOrderAcceptance>()
+        whenever(apiClient.sendChildOrder(any())).thenReturn(pending)
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.tapTab(R.id.orderIcon)
+            val order = OrderViewBinding.bind(activity.binding.containerView.getChildAt(0))
+            val pager = order.viewPager
+            val page = pager.children.filterIsInstance<LimitOrderView>().firstOrNull()
+                ?: pager.adapter!!.instantiateItem(pager, 1) as LimitOrderView
+
+            val orderScheduler = TestScheduler()
+            val state = PrivateTradingState(apiClient, requestScheduler = orderScheduler)
+            val presenter = LimitOrderPresenter(
+                state, activity.module.direct.instance(), {}, activity.resources, activity::showSnackbar
+            )
+            presenter.takeView(page)
+            presenter.amount.value = 0.001
+            presenter.submitOrder(requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100)))
+            orderScheduler.triggerActions()
+
+            assertTrue(presenter.isLoading.value)
+            assertTrue(page.isAttachedToWindow)
+            activity.tapTab(destination)
+            assertFalse(page.isAttachedToWindow)
+            presenter.dropView(page)
+            assertTrue(presenter.isLoading.value)
+
+            pending.completeOrder()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse(presenter.isLoading.value)
+            val message = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            assertEquals(activity.expectedMessage(), message?.text?.toString())
+            verify(apiClient).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "BUY", 100, 0.001))
+            verifyNoMoreInteractions(apiClient)
         }
     }
 
