@@ -46,6 +46,7 @@ internal class StopOrderService(
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
+    private var missedOrderEvents = false
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val refreshReads = StopOrderFallbackReads(io)
@@ -65,6 +66,7 @@ internal class StopOrderService(
         pendingRealtimeRefresh = null
         privateChannelsUnavailable = true
         channelGapOpen = false
+        missedOrderEvents = false
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -201,6 +203,7 @@ internal class StopOrderService(
 
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && channelGapOpen) return
+        if (!ready && orderEventsReady) missedOrderEvents = true
         if ((!ready && !privateChannelsUnavailable) || (ready && channelGapOpen)) {
             events.values.removeAll { it.eventType == "ORDER" }
         }
@@ -250,7 +253,7 @@ internal class StopOrderService(
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
-        val channelsReady = orderEventsReady
+        val canConfirmWaitingFromRest = canUseRestWaitingEvidence
         refreshRequest.set(null)
         var historyFailed = false
         val parents = loadActiveParents(client, reads = refreshReads).filter(::isCryptoCfdStop).toList()
@@ -272,7 +275,8 @@ internal class StopOrderService(
                 val event = realtimeEvent?.takeUnless { it == "ORDER" } ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, refreshReads).concatMap { stop ->
-                    val restWaitingConfirmed = channelsReady && activeAndOutstanding && parent.isFullyOutstanding()
+                    val restWaitingConfirmed =
+                        canConfirmWaitingFromRest && activeAndOutstanding && parent.isFullyOutstanding()
                     val updated = stop.copy(
                         event = event,
                         childTermination = cached?.childTermination,
@@ -388,12 +392,15 @@ internal class StopOrderService(
             .toList()
             .flatMapObservable { rows -> Observable.fromIterable(rows.sortedByDescending { it.id }.take(10)) }
 
+    // The child list can omit unfilled terminal orders whose events were missed.
+    private val canUseRestWaitingEvidence get() = orderEventsReady && !missedOrderEvents
+
     private fun applyEvent(order: StopOrder): StopOrder {
         val event = events[order.acceptanceId]
         val childTermination = event?.childOrderAcceptanceId?.let(childTerminations::get)?.terminationStatus()
         return order.copy(
             event = event?.eventType?.takeUnless { it == "ORDER" } ?: order.event,
-            waitingConfirmed = event?.eventType == "ORDER" || (orderEventsReady && order.restWaitingConfirmed),
+            waitingConfirmed = event?.eventType == "ORDER" || (canUseRestWaitingEvidence && order.restWaitingConfirmed),
             childTermination = childTermination ?: order.childTermination
         )
     }

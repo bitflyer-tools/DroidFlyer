@@ -646,24 +646,36 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun reconnectRestoresCancellationForFullyOutstandingActiveStop() =
+    fun reconnectKeepsFullyOutstandingStopUnknownWhenRestOmitsUnfilledCanceledChild() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
             scheduler.advanceTimeBy(28, SECONDS)
-            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+            val waiting = stops.orders.value.single()
+            assertTrue(waiting.canCancel)
+            val confirmation = stops.cancellationConfirmation(waiting)
 
             realtime.available(false)
             scheduler.advanceTimeBy(28, SECONDS)
             assertCancellationBlocked(stops, confirmation)
 
+            // The parent still looks fully outstanding after the unfilled child was canceled.
+            childOrders = "[]"
+            requests.clear()
             realtime.available(true)
             scheduler.advanceTimeBy(28, SECONDS)
-            assertEquals(StopOrderStatus.WAITING, stops.orders.value.single().status)
-            assertTrue(stops.orders.value.single().canCancel)
 
-            stops.cancel(confirmation) { fail("Cancellation failed: $it") }
-            scheduler.triggerActions()
-            assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
+            assertTrue(stopReadPaths().contains("/v1/me/getchildorders"))
+            val reconnected = stops.orders.value.single()
+            assertEquals("ACTIVE", reconnected.parent.parentOrderState)
+            assertEquals(size, reconnected.parent.outstandingSize)
+            assertEquals(StopOrderStatus.UNKNOWN, reconnected.status)
+            assertCancellationBlocked(stops, confirmation)
+            assertFalse(stops.loadFailed.value)
+
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
+            assertCancellationBlocked(stops, confirmation)
         }
 
     @Test
