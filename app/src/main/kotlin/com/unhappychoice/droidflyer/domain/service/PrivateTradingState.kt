@@ -36,6 +36,14 @@ internal class PrivateTradingState(
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
+    val hasPrivateClient: Boolean get() = !disposed && session != null
+
+    fun observePrivateClientAvailability(): Observable<Boolean> = Observable.defer {
+        accountChanges.map { hasPrivateClient }
+            .startWith(hasPrivateClient)
+            .distinctUntilChanged()
+    }
+
     private var session = client?.let(::Session)
     private val accountSwitches = PublishSubject.create<Unit>()
     private var disposed = false

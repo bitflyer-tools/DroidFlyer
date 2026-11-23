@@ -21,6 +21,13 @@ import io.reactivex.subjects.PublishSubject
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val clickItems = PublishSubject.create<Order>()
 
+    internal var orderEntryEnabled = true
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyItemRangeChanged(0, itemCount)
+        }
+
     private var rows = emptyList<Row>()
     private var groupingSize = 1L
     private var myOrders = emptyList<ChildOrder>()
@@ -47,7 +54,8 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     override fun onBindViewHolder(holder: BoardAdapter.ViewHolder, position: Int) {
         val item = rows[position]
         holder.bind(item.order, item.outstandingSize)
-        holder.view.setOnClickListener { clickItems.onNext(item.order) }
+        holder.view.setOnClickListener { if (orderEntryEnabled) clickItems.onNext(item.order) }
+        holder.view.isClickable = orderEntryEnabled
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BoardAdapter.ViewHolder {

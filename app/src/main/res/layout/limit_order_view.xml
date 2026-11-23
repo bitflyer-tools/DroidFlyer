@@ -5,6 +5,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <TextView
+        android:id="@+id/credentialsRequired"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="@dimen/vertical_margin"
+        android:text="@string/trading_credentials_required"
+        android:textColor="@color/colorAccent"/>
+
     <com.unhappychoice.droidflyer.presentation.view.AmountSelectorView
         android:id="@+id/amountSelector"
         android:layout_height="wrap_content"

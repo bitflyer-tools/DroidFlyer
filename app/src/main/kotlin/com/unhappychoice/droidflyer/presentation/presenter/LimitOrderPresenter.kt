@@ -14,6 +14,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
@@ -31,8 +32,18 @@ class LimitOrderPresenter internal constructor(
 
     internal val maximumOrderSize = accountPreference.maximumOrderSize
 
+    internal val privateClientAvailable = state.observePrivateClientAvailability()
+
+    internal val orderEntryEnabled = Observables.combineLatest(
+        privateClientAvailable,
+        isLoading.asObservable(),
+        amount.asObservable(),
+        maximumOrderSize.asObservable(),
+        ::isOrderEntryEnabled
+    ).distinctUntilChanged()
+
     val canSubmitOrder: Boolean
-        get() = !isLoading.value && CryptoCfdOrderSize.isValid(amount.value, maximumOrderSize.value)
+        get() = isOrderEntryEnabled(state.hasPrivateClient, isLoading.value, amount.value, maximumOrderSize.value)
 
     private val groupingSizes = listOf(1L, 10L, 50L, 100L, 250L, 500L, 1000L, 2500L, 5000L)
     private val bag = CompositeDisposable()
@@ -78,6 +89,9 @@ class LimitOrderPresenter internal constructor(
             })
             .addTo(bag)
     }
+
+    private fun isOrderEntryEnabled(available: Boolean, loading: Boolean, amount: Double, maximum: Double): Boolean =
+        available && !loading && CryptoCfdOrderSize.isValid(amount, maximum)
 }
 
 internal class LimitOrderConfirmation(val side: LimitOrderSide, val order: NewOrder)
