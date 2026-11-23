@@ -26,9 +26,13 @@ internal class PrivateTradingState(
     private val requestScheduler: Scheduler = Schedulers.io(),
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
+    enum class ActiveOrdersStatus { INITIAL, EMPTY, AVAILABLE, UNAVAILABLE, STALE }
+
     val position = Variable<List<Position>>(emptyList())
     val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
+
+    val activeOrdersStatus = Variable(ActiveOrdersStatus.INITIAL)
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
@@ -81,9 +85,23 @@ internal class PrivateTradingState(
         if (disposed) return@defer Completable.complete()
 
         val current = session ?: return@defer Completable.complete()
-        // Unchanged rows keep their order references for cancellation.
         current.client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
-            .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .doOnError {
+                if (!disposed && current === session) {
+                    activeOrdersStatus.value =
+                        if (orders.value.isEmpty()) ActiveOrdersStatus.UNAVAILABLE else ActiveOrdersStatus.STALE
+                }
+            }
+            .publishStatus {
+                if (!disposed && current === session) {
+                    // Unchanged rows keep their order references for cancellation.
+                    if (orders.value != it) orders.value = it
+                    activeOrdersStatus.value =
+                        if (it.isEmpty()) ActiveOrdersStatus.EMPTY else ActiveOrdersStatus.AVAILABLE
+                }
+            }
             .takeUntil(current.ended.firstElement().ignoreElement())
     }
 
@@ -146,6 +164,7 @@ internal class PrivateTradingState(
         val previous = session
         session = next
         orders.value = emptyList()
+        activeOrdersStatus.value = ActiveOrdersStatus.INITIAL
         position.value = emptyList()
         collateral.value = Collateral(null)
         try {
