@@ -45,12 +45,13 @@ class CurrentStatusService internal constructor(
     val buyPrice = Variable(0L)
     val sellPrice = Variable(0L)
     val position = privateState.position
-    val tradingTotals = observeTradingTotals(
+    internal val tradingHeader = observeTradingHeader(
         currentPrice.asObservable(),
         position.asObservable(),
         privateState.collateral.asObservable(),
         scheduler = AndroidSchedulers.mainThread()
     )
+    val tradingTotals = tradingHeader.map { it.totals }.distinctUntilChanged()
     val board = Variable(Board(0.0, listOf(), listOf()))
     val orders = privateState.orders
 
