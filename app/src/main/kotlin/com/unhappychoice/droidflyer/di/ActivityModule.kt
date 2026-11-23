@@ -40,7 +40,7 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         LimitOrderPresenter(
             status.privateState,
             instance(),
-            status::updateStatus,
+            status::updateActiveOrders,
             activity.resources,
             activity::showSnackbar
         )

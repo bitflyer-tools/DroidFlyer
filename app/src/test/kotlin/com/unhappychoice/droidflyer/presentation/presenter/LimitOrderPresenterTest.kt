@@ -174,6 +174,9 @@ class LimitOrderPresenterTest {
         pending.onNext(ChildOrderAcceptance(acceptedOrder.childOrderAcceptanceId))
 
         assertEquals(listOf(acceptedOrder), status.orders.value)
+        verify(apiClient).getPositions()
+        verify(apiClient).getCollateral()
+        verify(apiClient).getBoard("FX_BTC_JPY")
     }
 
     @Test
@@ -214,7 +217,7 @@ class LimitOrderPresenterTest {
         val status = CurrentStatusService(apiClient, Observable.never(), Observable.never(), Observable.never())
         this.status = status
         val presenter = LimitOrderPresenter(
-            status.privateState, accountPreference, status::updateStatus, application.resources
+            status.privateState, accountPreference, status::updateActiveOrders, application.resources
         ) { _, _ -> }
         attachView(presenter)
         presenter.submitOrder(requireNotNull(presenter.prepareOrder(LimitOrderSide.BUY, 100)))

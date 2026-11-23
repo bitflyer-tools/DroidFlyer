@@ -20,7 +20,7 @@ import mortar.ViewPresenter
 class LimitOrderPresenter internal constructor(
     private val state: PrivateTradingState,
     accountPreference: CryptoCfdAccountPreference,
-    private val refreshStatus: () -> Unit,
+    private val refreshActiveOrders: () -> Unit,
     private val resources: Resources,
     private val showSnackbar: (String, Int) -> Unit
 ) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
@@ -68,7 +68,7 @@ class LimitOrderPresenter internal constructor(
         isLoading.value = true
         submission.doFinally { isLoading.value = false }
             .subscribe({
-                refreshStatus()
+                refreshActiveOrders()
                 showSnackbar(
                     resources.getString(confirmation.side.orderedMessage, request.size, request.price),
                     Snackbar.LENGTH_SHORT
