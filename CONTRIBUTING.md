@@ -17,7 +17,7 @@ Run the same build and test tasks used by [CircleCI](.circleci/config.yml) befor
 ./gradlew jacoco
 ```
 
-The `jacoco` task runs the debug unit tests and generates coverage reports.
+The `jacoco` task runs the debug unit tests and generates coverage reports. CircleCI requires at least 87% line coverage.
 
 ## Open a pull request
 

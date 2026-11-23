@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.FundingStatus
+import com.unhappychoice.droidflyer.domain.service.TradingHeaderState
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
@@ -17,6 +18,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 import java.text.DateFormat
@@ -44,24 +46,24 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .addTo(bag)
         updateFundingVisibility()
 
-        currentStatusService.tradingTotals
-            .subscribeNext { totals ->
-                binding.currentPrice.text = totals.price?.let { "${it.splitByComma()} JPY" } ?: "—"
-                binding.profit.showValuation(totals.profit)
-                binding.spread.showValuation(totals.spread)
-                binding.balance.text = totals.balance?.let {
-                    val balance = "${it.splitByComma()} JPY"
-                    if (totals.price == null) context.getString(R.string.status_collateral, balance) else balance
-                } ?: context.getString(R.string.status_balance_unavailable)
-            }.addTo(bag)
-
-        currentStatusService.position.asObservable()
-            .subscribeNext { positions ->
-                binding.profit.isVisible = positions.isNotEmpty()
-                binding.spread.isVisible = positions.wholeSize() != 0.0
-                binding.position.text = positionSummary(positions)
-            }
+        currentStatusService.tradingHeader
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribeNext(::renderTradingHeader)
             .addTo(bag)
+    }
+
+    private fun renderTradingHeader(state: TradingHeaderState) {
+        val (positions, totals) = state
+        binding.currentPrice.text = totals.price?.let { "${it.splitByComma()} JPY" } ?: "—"
+        binding.position.text = positionSummary(positions)
+        binding.profit.isVisible = positions.isNotEmpty()
+        binding.profit.showValuation(totals.profit)
+        binding.spread.isVisible = positions.wholeSize() != 0.0
+        binding.spread.showValuation(totals.spread)
+        binding.balance.text = totals.balance?.let {
+            val balance = "${it.splitByComma()} JPY"
+            if (totals.price == null) context.getString(R.string.status_collateral, balance) else balance
+        } ?: context.getString(R.string.status_balance_unavailable)
     }
 
     private fun positionSummary(positions: List<Position>): String {

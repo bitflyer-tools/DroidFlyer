@@ -11,6 +11,8 @@ import java.util.concurrent.TimeUnit
 
 data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long?, val price: Long?)
 
+internal data class TradingHeaderState(val positions: List<Position>, val totals: TradingTotals)
+
 internal data class MarketPrice(val yen: Double?)
 
 internal data class Collateral(val amount: Double?)
@@ -20,7 +22,15 @@ internal fun observeTradingTotals(
     positions: Observable<List<Position>>,
     collateral: Observable<Collateral>,
     scheduler: Scheduler
-): Observable<TradingTotals> {
+): Observable<TradingTotals> =
+    observeTradingHeader(prices, positions, collateral, scheduler).map { it.totals }.distinctUntilChanged()
+
+internal fun observeTradingHeader(
+    prices: Observable<MarketPrice>,
+    positions: Observable<List<Position>>,
+    collateral: Observable<Collateral>,
+    scheduler: Scheduler
+): Observable<TradingHeaderState> {
     val entries = positions.map { Entry(it, it.average().toLong(), it.wholeSize() < 0.0) }
     val account = Observables.combineLatest(entries, collateral, ::Account)
     return Observables.combineLatest(prices, account) { price, currentAccount ->
@@ -33,7 +43,7 @@ internal fun observeTradingTotals(
                 .withLatestFrom(latest) { _, valuation -> valuation }
         }
         .distinctUntilChanged()
-        .map { it.totals() }
+        .map { TradingHeaderState(it.account.entry.positions, it.totals()) }
         .distinctUntilChanged()
 }
 
