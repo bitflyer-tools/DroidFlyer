@@ -232,6 +232,40 @@ class APIClientTest {
     }
 
     @Test
+    fun closeOrderFillLookupLogsFollowBuildVariant() {
+        MockWebServer().use { origin ->
+            origin.start()
+            val acceptanceId = "test-close-order-acceptance-id"
+            origin.enqueue(MockResponse.Builder().body("""[{"side":"BUY","size":0.5}]""").build())
+            origin.enqueue(MockResponse.Builder().body("""{"child_order_acceptance_id":"$acceptanceId"}""").build())
+            val fill = """
+                [{"child_order_acceptance_id":"$acceptanceId","child_order_state":"COMPLETED",
+                  "outstanding_size":0,"executed_size":0.5}]
+            """.trimIndent()
+            origin.enqueue(MockResponse.Builder().body(fill).build())
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            val lines = mutableListOf<String>()
+            val logger = HttpLoggingInterceptor.Logger { lines.add(it) }
+            val api = APIClient(gson, credentialPreference(), OkHttpClient(), origin.url("/v1/").toString(), logger)
+
+            ClosePositionService(api.client()).close(0.5).test().assertResult(Unit)
+
+            assertEquals(4, origin.requestCount)
+            assertSignedRequest(origin, "GET", "/v1/me/getpositions?product_code=FX_BTC_JPY", "")
+            assertEquals("/v1/me/sendchildorder", origin.takeRequest(5, TimeUnit.SECONDS)?.target)
+            val lookupPath = "/v1/me/getchildorders?product_code=FX_BTC_JPY&child_order_acceptance_id="
+            assertSignedRequest(origin, "GET", lookupPath + acceptanceId, "")
+            if (BuildConfig.DEBUG) {
+                assertTrue(lines.any { it.startsWith("--> GET ") && it.contains(lookupPath) })
+                assertTrue(lines.any { it.startsWith("<-- 200 ") && it.contains(lookupPath) })
+                assertFalse(lines.any { it.contains(acceptanceId) })
+            } else {
+                assertEquals(emptyList<String>(), lines)
+            }
+        }
+    }
+
+    @Test
     fun fillLookupLogsFollowBuildVariant() {
         MockWebServer().use { origin ->
             origin.start()
