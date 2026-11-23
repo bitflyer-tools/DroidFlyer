@@ -89,6 +89,7 @@ android {
         }
     }
     buildFeatures {
+        buildConfig true
         viewBinding true
     }
     defaultConfig {
@@ -134,6 +135,12 @@ android {
                 }
             }
         }
+    }
+}
+
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variant ->
+        variant.enableUnitTest = true
     }
 }
 
