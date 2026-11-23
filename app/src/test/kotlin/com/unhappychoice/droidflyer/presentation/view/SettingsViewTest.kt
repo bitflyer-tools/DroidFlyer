@@ -2,10 +2,12 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Looper
 import android.os.Parcelable
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
@@ -39,7 +41,9 @@ import org.kodein.di.DI
 import org.kodein.di.bindInstance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -88,6 +92,33 @@ class SettingsViewTest {
             assertEquals("stored-key", attached.apiTokenTextView.text.toString())
             assertEquals("stored-secret", attached.apiSecretTextView.text.toString())
             assertTrue(attached.saveButton.isEnabled)
+        }
+    }
+
+    @Test
+    fun applyingValidatedCredentialsShowsSavedConfirmation() {
+        // The Material queue can retain callbacks from activities closed by earlier tests.
+        ReflectionHelpers.setStaticField(
+            Class.forName("com.google.android.material.snackbar.SnackbarManager"), "snackbarManager", null
+        )
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            host.setTheme(R.style.AppTheme)
+            val settings = host.openSettings()
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+
+            settings.saveButton.performClick()
+            saveIo.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            val saved = testAPITokenPreference(host).read()
+            assertEquals("new-key", saved.key)
+            assertEquals("new-secret", saved.secret)
+            val message = host.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            assertEquals(host.getString(R.string.api_key_saved), message?.text?.toString())
         }
     }
 

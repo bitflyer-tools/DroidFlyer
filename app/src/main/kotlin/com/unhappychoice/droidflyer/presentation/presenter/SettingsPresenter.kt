@@ -1,8 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
 import android.view.View
-import com.github.unhappychoice.rxsnackbar.subscribeNextWithSnackBar
-import com.github.unhappychoice.rxsnackbar.withErrorSnackBar
+import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
@@ -23,6 +22,7 @@ import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.CompletableSubject
 import mortar.ViewPresenter
+import retrofit2.HttpException
 
 class SettingsPresenter internal constructor(
     private val api: APIClient,
@@ -73,8 +73,12 @@ class SettingsPresenter internal constructor(
                 pendingSave = null
                 completion.onComplete()
             }
-            .withErrorSnackBar(snackbarAnchor, snackbarAnchor.context.getString(R.string.api_key_not_saved))
-            .subscribeNextWithSnackBar(snackbarAnchor, snackbarAnchor.context.getString(R.string.api_key_saved))
+            .subscribe(
+                { Snackbar.make(snackbarAnchor, R.string.api_key_saved, Snackbar.LENGTH_SHORT).show() },
+                { error ->
+                    Snackbar.make(snackbarAnchor, credentialSaveErrorMessage(error), Snackbar.LENGTH_LONG).show()
+                }
+            )
             .addTo(bag)
     }
 
@@ -88,7 +92,7 @@ class SettingsPresenter internal constructor(
     internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
         val submitted = APICredentials(key.value, secret.value)
         val generation = preference.unlinkGeneration
-        return api.client(submitted).getBalance()
+        return validateCredentials(submitted)
             .filter { generation == preference.unlinkGeneration }
             .map { balance ->
                 var changed = false
@@ -104,4 +108,17 @@ class SettingsPresenter internal constructor(
                 balance
             }
     }
+
+    private fun validateCredentials(credentials: APICredentials): Observable<List<Map<String, Any>>> =
+        api.client(credentials).getBalance().onErrorResumeNext { error: Throwable ->
+            Observable.error(CredentialValidationFailure(error))
+        }
 }
+
+internal fun credentialSaveErrorMessage(error: Throwable): Int = when {
+    error !is CredentialValidationFailure -> R.string.api_key_not_saved
+    (error.cause as? HttpException)?.code() in listOf(401, 403) -> R.string.api_key_rejected
+    else -> R.string.api_key_validation_failed
+}
+
+private class CredentialValidationFailure(cause: Throwable) : RuntimeException(cause)
