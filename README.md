@@ -33,6 +33,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 3. Open DroidFlyer and tap **Setting**. Enter the **API key** and **API secret**, then tap **Apply**. The app shows **Saved API key** when the balance request succeeds.
 4. Tap **Order**, then **Limit**, to view the bitFlyer Crypto CFD order book. You can read the bids and asks without placing a trade.
 
+See [Using DroidFlyer](docs/usage.md) for screen controls, account settings, and API permissions.
+
 ## Author
 
 [@unhappychoice](https://unhappychoice.com)
