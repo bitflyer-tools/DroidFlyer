@@ -17,7 +17,7 @@ class OrdersPresenter internal constructor(
     private val refreshOrders: () -> Unit
 ) : ViewPresenter<OrdersView>() {
     constructor(currentStatusService: CurrentStatusService) :
-        this(currentStatusService.privateState, currentStatusService::updateStatus)
+        this(currentStatusService.privateState, currentStatusService::updateActiveOrders)
 
     internal val orders = privateState.orderRows()
     internal val ordersMayBeIncomplete = privateState.ordersMayBeIncomplete
@@ -43,7 +43,7 @@ class OrdersPresenter internal constructor(
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
-                { refreshOrders() },
+                { if (privateState.isCurrent(row)) refreshOrders() },
                 { failedCancellations.onNext(row.order) }
             )
             .addTo(bag)

@@ -67,7 +67,7 @@ internal class PrivateTradingState(
         }
     }
 
-    fun refresh(): Completable = Completable.defer {
+    fun refreshPositionsAndCollateral(): Completable = Completable.defer {
         if (disposed) return@defer Completable.complete()
 
         val current = session
@@ -78,11 +78,18 @@ internal class PrivateTradingState(
                 val amount = response["collateral"] as? Number
                 amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
             }
-                .publishResponse { if (!disposed && current === session) collateral.value = it },
-            // Unchanged rows keep their order references for cancellation.
-            client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
-                .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+                .publishResponse { if (!disposed && current === session) collateral.value = it }
         ).takeUntil(current.ended)
+    }
+
+    fun refreshActiveOrders(): Completable = Completable.defer {
+        if (disposed) return@defer Completable.complete()
+
+        val current = session
+        val client = current.client ?: return@defer Completable.complete()
+        client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
+            .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+            .takeUntil(current.ended)
     }
 
     fun getMyExecutions(count: Int, before: Long?): Single<List<PrivateExecution>> {
@@ -138,9 +145,11 @@ internal class PrivateTradingState(
         )
     }
 
+    fun isCurrent(row: OrderRow): Boolean = !disposed && row.session === session
+
     fun cancelOrder(row: OrderRow): Completable? {
         val current = session
-        if (disposed || row.session !== current) return null
+        if (!isCurrent(row)) return null
         val order = orders.value.firstOrNull {
             it.productCode == row.order.productCode &&
                 it.childOrderAcceptanceId == row.order.childOrderAcceptanceId

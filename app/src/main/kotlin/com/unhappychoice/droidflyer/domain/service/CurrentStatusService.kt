@@ -58,6 +58,7 @@ class CurrentStatusService internal constructor(
     private val bag = CompositeDisposable()
     private var accountChanged = CompletableSubject.create()
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
+    private val activeOrderRefresh = StatusRefreshCoordinator(privateState::refreshActiveOrders)
     private val boardFallback = OrderBookFallback()
     private val boardRefresh = StatusRefreshCoordinator(::refreshBoard)
     private val fundingStatus = AtomicReference(FundingStatus())
@@ -101,6 +102,7 @@ class CurrentStatusService internal constructor(
     fun dispose() {
         bag.dispose()
         statusRefresh.dispose()
+        activeOrderRefresh.dispose()
         boardRefresh.dispose()
         privateState.dispose()
     }
@@ -109,8 +111,11 @@ class CurrentStatusService internal constructor(
 
     fun pollStatus() = requestRefresh(followUp = false)
 
+    internal fun updateActiveOrders() = activeOrderRefresh.request(followUp = true)
+
     private fun requestRefresh(followUp: Boolean) {
         statusRefresh.request(followUp)
+        activeOrderRefresh.request(followUp)
         boardRefresh.request(followUp = false)
     }
 
@@ -165,7 +170,7 @@ class CurrentStatusService internal constructor(
 
     private fun refreshStatus(): Completable = Completable.ambArray(
         accountChanged,
-        privateState.refresh()
+        privateState.refreshPositionsAndCollateral()
     )
 
     private fun refreshBoard(): Completable =
