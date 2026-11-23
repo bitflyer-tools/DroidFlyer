@@ -14,6 +14,15 @@ internal class RealtimeSession(
 ) {
     private val subscriptions = CompositeDisposable()
 
+    init {
+        client.preference.accountUnlinked
+            .subscribeNext {
+                client.updateAccount {}
+                status.switchAccount(null)
+            }
+            .addTo(subscriptions)
+    }
+
     fun notifyExecutions(onExecution: (ChildOrderEvent) -> Unit) {
         client.childOrderEvents
             .subscribeOnIoObserveOnUI()

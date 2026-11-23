@@ -36,6 +36,7 @@ class CurrentStatusServiceTest {
     private val responses = PublishSubject.create<Board>()
     private val snapshots = PublishSubject.create<Board>()
     private val deltas = PublishSubject.create<Board>()
+    private val disconnects = PublishSubject.create<Unit>()
     private val orderEvents = PublishSubject.create<PrivateEvent<*>>()
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
@@ -60,7 +61,10 @@ class CurrentStatusServiceTest {
         `when`(api.getPositions()).thenReturn(Observable.empty())
         `when`(api.getCollateral()).thenReturn(Observable.empty())
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
-        service = CurrentStatusService(api, Observable.empty(), boardUpdates(snapshots, deltas), orderEvents)
+        service = CurrentStatusService(
+            api, Observable.empty(), boardUpdates(snapshots, deltas), orderEvents,
+            publicFeedDisconnects = disconnects
+        )
         scheduler.triggerActions()
     }
 
@@ -95,6 +99,26 @@ class CurrentStatusServiceTest {
         responses.onNext(initialBook)
         scheduler.advanceTimeBy(300, MILLISECONDS)
         assertBook(updatedBook, 110)
+    }
+
+    @Test
+    fun disconnectRejectsEarlierFallbackAndWaitsForASnapshotBeforeApplyingDeltas() {
+        snapshots.onNext(initialBook)
+        disconnects.onNext(Unit)
+        responses.onNext(initialBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(Board(0.0, emptyList(), emptyList()), 0)
+
+        service.pollStatus()
+        scheduler.triggerActions()
+        deltas.onNext(initialBook.copy(asks = listOf(Order(90, 1.0))))
+        scheduler.triggerActions()
+        assertEquals(0L, service.buyPrice.value)
+
+        responses.onNext(updatedBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(updatedBook, 110)
+        assertEquals(2, boardRequests)
     }
 
     @Test

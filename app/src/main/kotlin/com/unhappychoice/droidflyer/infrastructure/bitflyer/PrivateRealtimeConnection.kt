@@ -6,10 +6,14 @@ import com.google.gson.reflect.TypeToken
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import io.socket.client.Ack
+import io.reactivex.disposables.Disposable
+import io.reactivex.schedulers.Schedulers
+import io.socket.client.AckWithTimeout
 import io.socket.client.Socket
+import io.socket.thread.EventThread
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 internal class PrivateEvent<T>(val value: T, val isCurrent: () -> Boolean)
 
@@ -21,6 +25,7 @@ internal class PrivateRealtimeConnection(
 ) {
     private var closed = false
     private var attempt: Any? = null
+    private var retry: Disposable? = null
     @Volatile private var authenticated: Any? = null
 
     fun canReuse(other: APICredentials): Boolean =
@@ -32,7 +37,12 @@ internal class PrivateRealtimeConnection(
     ) {
         listen("child_order_events", object : TypeToken<List<ChildOrderEvent>>() {}, childOrders)
         listen("parent_order_events", object : TypeToken<List<ParentOrderEvent>>() {}, parentOrders)
-        socket.on(Socket.EVENT_CONNECT) { synchronized(lock) { authenticate() } }
+        socket.on(Socket.EVENT_CONNECT) {
+            synchronized(lock) {
+                invalidate()
+                authenticate(INITIAL_RETRY_SECONDS)
+            }
+        }
         socket.on(Socket.EVENT_DISCONNECT) { synchronized(lock) { invalidate() } }
         socket.connect()
     }
@@ -44,15 +54,39 @@ internal class PrivateRealtimeConnection(
         socket.disconnect()
     }
 
-    private fun authenticate() {
+    private fun authenticate(retrySeconds: Long) {
         if (closed) return
         val request = Any()
-        authenticated = null
         attempt = request
         val params = RealtimeAuthParams.create(credentials.key, credentials.secret)
-        socket.emit("auth", JSONObject(gson.toJson(params)), Ack { args ->
-            synchronized(lock) { onAuthenticated(request, args) }
+        socket.emit("auth", JSONObject(gson.toJson(params)), object : AckWithTimeout(AUTH_TIMEOUT_MILLIS) {
+            override fun onSuccess(vararg args: Any?) {
+                synchronized(lock) { onAuthenticated(request, args) }
+            }
+
+            override fun onTimeout() {
+                cancelTimer()
+                synchronized(lock) { scheduleRetry(request, retrySeconds) }
+            }
         })
+    }
+
+    private fun scheduleRetry(request: Any, delaySeconds: Long) {
+        if (attempt !== request) return
+        attempt = null
+        if (!socket.connected()) return
+        val retryToken = Any()
+        attempt = retryToken
+        retry = Schedulers.computation().scheduleDirect({
+            EventThread.exec {
+                synchronized(lock) {
+                    if (attempt === retryToken && socket.connected()) {
+                        retry = null
+                        authenticate((delaySeconds * 2).coerceAtMost(MAX_RETRY_SECONDS))
+                    }
+                }
+            }
+        }, delaySeconds, TimeUnit.SECONDS)
     }
 
     private fun onAuthenticated(request: Any, args: Array<out Any?>) {
@@ -84,5 +118,13 @@ internal class PrivateRealtimeConnection(
     private fun invalidate() {
         attempt = null
         authenticated = null
+        retry?.dispose()
+        retry = null
+    }
+
+    private companion object {
+        const val AUTH_TIMEOUT_MILLIS = 5_000L
+        const val INITIAL_RETRY_SECONDS = 1L
+        const val MAX_RETRY_SECONDS = 30L
     }
 }
