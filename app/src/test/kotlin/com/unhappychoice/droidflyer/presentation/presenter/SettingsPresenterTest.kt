@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import com.google.gson.Gson
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
@@ -133,7 +134,14 @@ class SettingsPresenterTest {
     @Test
     fun rejectedCredentialsKeepTheSavedPair() {
         validationStatus = 401
-        presenter.saveCredentials().test().assertError(HttpException::class.java)
+        assertSaveFailure(R.string.api_key_rejected) { it.cause is HttpException }
+        assertSavedPairStillActive()
+    }
+
+    @Test
+    fun forbiddenBalanceRequestReportsCredentialRejection() {
+        validationStatus = 403
+        assertSaveFailure(R.string.api_key_rejected) { it.cause is HttpException }
         assertSavedPairStillActive()
     }
 
@@ -141,7 +149,14 @@ class SettingsPresenterTest {
     fun failedValidationRequestKeepsTheSavedPair() {
         val failure = IOException("Connection failed")
         validationFailure = failure
-        presenter.saveCredentials().test().assertError(failure)
+        assertSaveFailure(R.string.api_key_validation_failed) { it.cause === failure }
+        assertSavedPairStillActive()
+    }
+
+    @Test
+    fun serverFailureDoesNotReportCredentialRejection() {
+        validationStatus = 503
+        assertSaveFailure(R.string.api_key_validation_failed) { it.cause is HttpException }
         assertSavedPairStillActive()
     }
 
@@ -191,7 +206,7 @@ class SettingsPresenterTest {
         preference.read() // Migrate the old pair before simulating a failed write.
         failNextCommit = true
 
-        presenter.saveCredentials().test().assertNoValues().assertError(IOException::class.java)
+        assertSaveFailure(R.string.api_key_not_saved) { it is IOException }
         assertSavedPairStillActive()
     }
 
@@ -237,7 +252,7 @@ class SettingsPresenterTest {
         presenter.secret.value = "submitted-secret"
 
         validationStatus = 401
-        presenter.saveCredentials().test().assertError(HttpException::class.java)
+        assertSaveFailure(R.string.api_key_rejected) { it.cause is HttpException }
         assertEquals(originalEntries, stored.all)
         assertEquals(emptyList<APIClientV1?>(), switched)
         assertEquals(emptyList<Pair<String, String>>(), authenticated)
@@ -353,6 +368,12 @@ class SettingsPresenterTest {
             createStatus().dispose()
         }
         assertEquals(List(2) { "/v1/board" }, requestPaths())
+    }
+
+    private fun assertSaveFailure(message: Int, matchesError: (Throwable) -> Boolean) {
+        presenter.saveCredentials().test().assertNoValues().assertError {
+            matchesError(it) && credentialSaveErrorMessage(it) == message
+        }
     }
 
     private fun createStatus() = CurrentStatusService(
