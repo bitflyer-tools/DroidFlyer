@@ -15,15 +15,12 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
-import com.unhappychoice.droidflyer.presentation.view.OrderView
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
-import mortar.MortarScope
-import mortar.bundler.BundleServiceRunner
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -328,13 +325,15 @@ class SettingsPresenterTest {
         val status = createStatus()
         timer.triggerActions()
         assertEquals(listOf("/v1/board"), requestPaths())
-        val scope = MortarScope.buildRootScope()
-            .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
-            .build("order_status_test")
+        val order = OrderPresenter(status)
         try {
-            OrderPresenter(status).takeView(OrderView(scope.createContext(context), null))
+            order.startPolling()
+            timer.triggerActions()
+            assertEquals(List(2) { "/v1/board" }, requestPaths())
+
             timer.advanceTimeBy(18, TimeUnit.SECONDS)
-            assertEquals(List(4) { "/v1/board" }, requestPaths())
+            val publicReads = List(5) { "/v1/board" }
+            assertEquals(publicReads, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
             val settings = SettingsPresenter(api, preference, status::switchAccount, accountPreference) { it() }
@@ -349,15 +348,15 @@ class SettingsPresenterTest {
                     "/v1/me/getbalance", "/v1/me/getpositions",
                     "/v1/me/getcollateral", "/v1/me/getchildorders", "/v1/board"
                 ),
-                requestPaths().drop(4)
+                requestPaths().drop(publicReads.size)
             )
-            val privateRequests = requests.drop(4).filter { it.url.encodedPath.startsWith("/v1/me/") }
+            val privateRequests = requests.drop(publicReads.size).filter { it.url.encodedPath.startsWith("/v1/me/") }
             privateRequests.forEach { assertSignedWith(it, "submitted-key", "submitted-secret") }
             assertEquals("ACTIVE", privateRequests.last().url.queryParameter("child_order_state"))
             assertEquals(250L, status.tradingTotals.blockingFirst().balance)
         } finally {
+            order.stopPolling()
             status.dispose()
-            scope.destroy()
         }
     }
 
