@@ -2,6 +2,8 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.R
@@ -17,6 +19,10 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
     val presenter: OrderPresenter by instance()
     private val binding by lazy { OrderViewBinding.bind(this) }
     private var pagerConfigured = false
+    private val pollingObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) = presenter.startPolling()
+        override fun onStop(owner: LifecycleOwner) = presenter.stopPolling()
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -28,9 +34,12 @@ class OrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr
             setupPager()
             pagerConfigured = true
         }
+        activity.lifecycle.addObserver(pollingObserver)
     }
 
     override fun onDetachedFromWindow() {
+        activity.lifecycle.removeObserver(pollingObserver)
+        presenter.stopPolling()
         presenter.dropView(this)
         super.onDetachedFromWindow()
     }

@@ -3,6 +3,9 @@
 
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="no_active_orders">No active child orders.</string>
+    <string name="active_orders_unavailable">Could not load active child orders.</string>
+    <string name="active_orders_stale">Could not refresh active child orders. The child orders shown may be out of date.</string>
     <string name="active_orders_may_be_incomplete">Some active orders may be missing because the request limit was reached.</string>
     <string name="order_cancellation_failed">Could not cancel order %1$s</string>
 

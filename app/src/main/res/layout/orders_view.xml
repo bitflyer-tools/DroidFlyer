@@ -25,6 +25,14 @@
             android:visibility="gone"/>
 
         <TextView
+            android:id="@+id/activeOrdersStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:padding="8dp"
+            android:visibility="gone"/>
+
+        <TextView
             android:id="@+id/orderLimitWarning"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

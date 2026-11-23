@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -13,11 +14,14 @@ import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
+import retrofit2.HttpException
+import retrofit2.Response
 import java.lang.reflect.Proxy
 
 class PrivateTradingStateTest {
@@ -32,13 +36,65 @@ class PrivateTradingStateTest {
     )
 
     @Test
+    fun initialFailureIsUnavailableAndSuccessfulEmptyResponseClearsIt() {
+        assertEquals(ActiveOrdersStatus.INITIAL, state.activeOrdersStatus.value)
+        failOrdersRefresh()
+        assertEquals(ActiveOrdersStatus.UNAVAILABLE, state.activeOrdersStatus.value)
+        assertEquals(emptyList<ChildOrder>(), state.orders.value)
+
+        publishOrders()
+        assertEquals(ActiveOrdersStatus.EMPTY, state.activeOrdersStatus.value)
+        assertEquals(emptyList<ChildOrder>(), state.orders.value)
+    }
+
+    @Test
+    fun failedRefreshKeepsRowsAndSuccessfulRefreshReplacesThem() {
+        publishOrders(order)
+        val row = displayedRows().single()
+
+        failOrdersRefresh()
+        assertEquals(ActiveOrdersStatus.STALE, state.activeOrdersStatus.value)
+        assertSame(row.order, displayedRows().single().order)
+
+        val updatedOrder = order.copy(price = 120)
+        publishOrders(updatedOrder)
+        assertEquals(ActiveOrdersStatus.AVAILABLE, state.activeOrdersStatus.value)
+        assertEquals(updatedOrder, displayedRows().single().order)
+    }
+
+    @Test
+    fun unchangedSuccessfulResponseClearsStaleStatusAndKeepsOrderReference() {
+        publishOrders(order)
+        failOrdersRefresh()
+
+        publishOrders(order.copy())
+        assertEquals(ActiveOrdersStatus.AVAILABLE, state.activeOrdersStatus.value)
+        assertSame(order, displayedRows().single().order)
+    }
+
+    @Test
+    fun switchingAccountsClearsStaleStatusAndIgnoresQueuedFailure() {
+        publishOrders(order)
+        failOrdersRefresh()
+        state.refreshActiveOrders().test()
+        scheduler.triggerActions()
+        accountA.orders.onError(ordersUnavailable())
+
+        state.switchAccount(accountB.client)
+        scheduler.triggerActions()
+
+        assertEquals(ActiveOrdersStatus.INITIAL, state.activeOrdersStatus.value)
+        assertEquals(emptyList<ChildOrder>(), state.orders.value)
+    }
+
+    @Test
     fun rejectedCollateralStaysUnavailableUntilZeroIsLoaded() {
         accountA.client.getBalance().test().assertValue(emptyList()).assertComplete()
         val totals = observeTradingTotals(
             Observable.just(MarketPrice(120.0)), state.position.asObservable(), state.collateral.asObservable(), scheduler
         ).test()
 
-        val rejected = state.refresh().test()
+        val rejected = refreshAll().test()
         scheduler.triggerActions()
         accountA.positions.onNext(emptyList())
         accountA.orders.onNext(emptyList())
@@ -49,7 +105,7 @@ class PrivateTradingStateTest {
         totals.assertValue(unavailable)
 
         accountA.collateral = PublishSubject.create()
-        val loaded = state.refresh().test()
+        val loaded = refreshAll().test()
         scheduler.triggerActions()
         accountA.collateral.onNext(mapOf("collateral" to 0))
         accountA.positions.onNext(emptyList())
@@ -61,7 +117,7 @@ class PrivateTradingStateTest {
 
     @Test
     fun switchingClearsAllPrivateDataAndIgnoresResponsesFromThePreviousAccount() {
-        val initial = state.refresh().test()
+        val initial = refreshAll().test()
         scheduler.triggerActions()
         accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
@@ -70,12 +126,12 @@ class PrivateTradingStateTest {
         assertPrivateData(listOf(position), 10.0, listOf(order))
         val previousRow = displayedRows().single()
 
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         assertEquals(listOf(true, true, true), accountA.refreshObservers())
         state.switchAccount(accountB.client)
         assertEquals(listOf(false, false, false), accountA.refreshObservers())
-        state.refresh().test()
+        refreshAll().test()
         assertPrivateData(emptyList(), null, emptyList())
         assertNull(state.cancelOrder(previousRow))
         scheduler.triggerActions()
@@ -90,7 +146,7 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         assertPrivateData(listOf(newPosition), 20.0, listOf(newOrder))
         val displayedRow = displayedRows().single()
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         accountB.publish(newPosition, 20.0, newOrder.copy())
         scheduler.triggerActions()
@@ -105,12 +161,12 @@ class PrivateTradingStateTest {
 
     @Test
     fun disposalCancelsPrivateRefreshesAndPreventsAnotherRefresh() {
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         assertEquals(listOf(true, true, true), accountA.refreshObservers())
 
         state.dispose()
-        state.refresh().test()
+        refreshAll().test()
         state.switchAccount(accountB.client)
         scheduler.triggerActions()
 
@@ -120,14 +176,14 @@ class PrivateTradingStateTest {
 
     @Test
     fun switchingToAnUnconfiguredAccountClearsPrivateDataAndSkipsRefresh() {
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
 
         val previousRow = displayedRows().single()
         state.switchAccount(null)
-        state.refresh().test().assertComplete()
+        refreshAll().test().assertComplete()
         scheduler.triggerActions()
 
         assertNull(state.cancelOrder(previousRow))
@@ -153,14 +209,14 @@ class PrivateTradingStateTest {
 
     @Test
     fun oldConfirmationStaysInvalidEvenWhenTheNewAccountLoadsTheSamePosition() {
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         scheduler.triggerActions()
         val oldConfirmation = checkNotNull(state.closeConfirmation())
 
         state.switchAccount(accountB.client)
-        state.refresh().test()
+        refreshAll().test()
         assertNull(state.closeConfirmation())
         assertNull(state.closePosition(oldConfirmation))
 
@@ -186,7 +242,7 @@ class PrivateTradingStateTest {
 
     @Test
     fun changingPositionWithinTheSameAccountRequiresFreshConfirmation() {
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         scheduler.triggerActions()
@@ -232,14 +288,15 @@ class PrivateTradingStateTest {
 
     @Test
     fun unlinkClearsDataAndRejectsQueuedResponsesAndStaleOrderActions() {
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         accountA.publish(position, 10.0, order)
         scheduler.triggerActions()
+        assertEquals(ActiveOrdersStatus.AVAILABLE, state.activeOrdersStatus.value)
         val confirmation = checkNotNull(state.closeConfirmation())
         val unsubmitted = checkNotNull(state.closePosition(confirmation))
 
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         val row = displayedRows().single()
         val cancellation = checkNotNull(state.cancelOrder(row)).test()
@@ -248,6 +305,7 @@ class PrivateTradingStateTest {
         val submission = checkNotNull(state.submitOrder(prepared)).test()
         accountA.publish(position, 99.0, order)
         state.unlink()
+        assertEquals(ActiveOrdersStatus.INITIAL, state.activeOrdersStatus.value)
         assertPrivateData(emptyList(), null, emptyList())
         assertNull(state.closePosition(confirmation))
         assertNull(state.cancelOrder(row))
@@ -255,7 +313,7 @@ class PrivateTradingStateTest {
         assertNull(state.submitOrder(prepared))
 
         val staleOrder = unsubmitted.test()
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         assertPrivateData(emptyList(), null, emptyList())
         staleOrder.assertNoValues().assertComplete()
@@ -265,7 +323,7 @@ class PrivateTradingStateTest {
         assertEquals(emptyList<CancelChildOrderRequest>(), accountA.cancelled)
 
         state.switchAccount(accountB.client)
-        state.refresh().test()
+        refreshAll().test()
         scheduler.triggerActions()
         accountB.publish(position, 20.0, order)
         scheduler.triggerActions()
@@ -291,14 +349,28 @@ class PrivateTradingStateTest {
         assertFalse(accountA.executions.hasObservers())
     }
 
+    private fun refreshAll(): Completable =
+        Completable.mergeArray(state.refreshPositionsAndCollateral(), state.refreshActiveOrders())
+
     private fun displayedRows() = state.orderRows().blockingFirst()
 
     private fun publishOrders(vararg orders: ChildOrder) {
-        state.refresh().test()
+        state.refreshActiveOrders().test()
         scheduler.triggerActions()
         accountA.orders.onNext(orders.toList())
         scheduler.triggerActions()
     }
+
+    private fun failOrdersRefresh() {
+        val refresh = state.refreshActiveOrders().test()
+        scheduler.triggerActions()
+        accountA.orders.onError(ordersUnavailable())
+        scheduler.triggerActions()
+        refresh.assertComplete()
+        accountA.orders = PublishSubject.create()
+    }
+
+    private fun ordersUnavailable() = HttpException(Response.error<Any>(503, "".toResponseBody()))
 
     private fun assertPrivateData(positions: List<Position>, balance: Double?, orders: List<ChildOrder>) {
         assertEquals(positions, state.position.value)
@@ -309,7 +381,7 @@ class PrivateTradingStateTest {
     private class TradingApi {
         val positions = PublishSubject.create<List<Position>>()
         var collateral = PublishSubject.create<Map<String, Any>>()
-        val orders = PublishSubject.create<List<ChildOrder>>()
+        var orders = PublishSubject.create<List<ChildOrder>>()
         val executions = PublishSubject.create<List<PrivateExecution>>()
         val sent = mutableListOf<SendChildOrderRequest>()
         val cancelled = mutableListOf<CancelChildOrderRequest>()
