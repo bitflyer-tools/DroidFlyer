@@ -15,7 +15,7 @@ class OrdersPresenter internal constructor(
     private val refreshOrders: () -> Unit
 ) : ViewPresenter<OrdersView>() {
     constructor(currentStatusService: CurrentStatusService) :
-        this(currentStatusService.privateState, currentStatusService::updateStatus)
+        this(currentStatusService.privateState, currentStatusService::updateActiveOrders)
 
     internal val orders = privateState.orderRows()
     internal val activeOrdersStatus = privateState.activeOrdersStatus.asObservable().distinctUntilChanged()
@@ -40,7 +40,7 @@ class OrdersPresenter internal constructor(
         val cancellation = privateState.cancelOrder(row) ?: return
         cancellation
             .subscribe(
-                { refreshOrders() },
+                { if (privateState.isCurrent(row)) refreshOrders() },
                 { failedCancellations.onNext(row.order) }
             )
             .addTo(bag)
