@@ -2,8 +2,10 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.app.Activity
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.View
 import androidx.core.view.isVisible
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.ChartViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ExecutionPrice
 import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
@@ -44,13 +46,14 @@ class ChartViewTest {
     }
 
     @Test
-    fun reattachmentDisplaysFreshPricesImmediatelyAndAllowsRetryAfterExpiredLoadFails() {
+    fun reattachmentDisplaysFreshCandlesImmediatelyAndAllowsRetryAfterExpiredLoadFails() {
         var requests = 0
         var nowNanos = 0L
-        val presenter = ChartPresenter(nowNanos = { nowNanos }) { _, _ ->
+        val presenter = ChartPresenter(nowNanos = { nowNanos }) { _, _, before ->
+            if (before != null) return@ChartPresenter Observable.just(emptyList())
             requests++
             if (requests == 2) Observable.error(IOException("Offline"))
-            else Observable.just(listOf(ExecutionPrice(requests.toLong(), 100.0 * requests)))
+            else Observable.just(listOf(ExecutionPrice(requests.toLong(), 100.0 * requests, "2025-01-01T00:00:00")))
         }
         val module = DI { bindSingleton<ChartPresenter> { presenter } }
 
@@ -60,11 +63,23 @@ class ChartViewTest {
             runRequest()
             assertTrue(initial.chartContent.isVisible)
 
+            assertTrue(initial.chartOneMinute.isChecked)
+            initial.chartFiveMinutes.performClick()
+            assertTrue(initial.chartFiveMinutes.isChecked)
+
+            val chart = initial.priceChart
+            chart.layout(0, 0, 300, 300)
+            tap(chart, 25f)
+            assertEquals(activity.getString(R.string.chart_no_trades), initial.chartCandleDetails.text)
+            tap(chart, 275f)
+            assertTrue(initial.chartCandleDetails.text.contains("100"))
+
             activity.setContentView(View(activity))
             val reopened = activity.openChart(module)
             assertTrue(reopened.chartContent.isVisible)
             assertFalse(reopened.chartLoading.isVisible)
-            assertEquals(initial.chartPriceRange.text, reopened.chartPriceRange.text)
+            assertTrue(reopened.chartFiveMinutes.isChecked)
+            assertEquals(initial.chartCandleDetails.text, reopened.chartCandleDetails.text)
             runRequest()
             assertEquals(1, requests)
 
@@ -82,6 +97,14 @@ class ChartViewTest {
             assertEquals(3, requests)
             assertTrue(expired.chartContent.isVisible)
             assertFalse(expired.chartError.isVisible)
+        }
+    }
+
+    private fun tap(view: View, x: Float) {
+        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
+            val event = MotionEvent.obtain(0, 0, action, x, 40f, 0)
+            assertTrue(view.dispatchTouchEvent(event))
+            event.recycle()
         }
     }
 
