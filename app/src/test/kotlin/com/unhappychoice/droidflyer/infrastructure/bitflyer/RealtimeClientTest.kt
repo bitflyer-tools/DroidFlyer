@@ -279,6 +279,38 @@ class RealtimeClientTest {
     }
 
     @Test
+    fun unlinkInvalidatesPrivateEventsAndLateAuthenticationWithoutReconnectingPublicSocket() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        socket.receive(Socket.EVENT_CONNECT)
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call(JSONObject.NULL)
+        val orders = client.childOrderEvents.test()
+        val board = client.board.test()
+        val listener = account.listeners("child_order_events").single()
+        account.receive("child_order_events", JSONArray())
+        val queued = orders.values().single()
+        account.receive(Socket.EVENT_DISCONNECT)
+        account.receive(Socket.EVENT_CONNECT)
+        val lateAck = checkNotNull(account.authAck)
+
+        preference.clear()
+        client.updateAccount {}
+        lateAck.call(JSONObject.NULL)
+        listener.call(JSONArray())
+        socket.receive("lightning_board_FX_BTC_JPY", JSONObject("""{"mid_price":100,"bids":[],"asks":[]}"""))
+
+        assertFalse(queued.isCurrent())
+        assertFalse(account.hasListeners("child_order_events"))
+        assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
+        assertEquals(listOf(account), accountSockets)
+        orders.assertValueCount(1)
+        board.assertValue(Board(100.0, emptyList(), emptyList()))
+    }
+
+    @Test
     fun valuationsWaitForFirstValidExecutionAfterPrivateDataLoads() {
         val client = createClient()
         val api = mock<APIClientV1>()

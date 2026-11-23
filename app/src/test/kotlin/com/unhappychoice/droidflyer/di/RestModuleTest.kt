@@ -6,6 +6,7 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
 import io.reactivex.Observable
@@ -59,6 +60,10 @@ class RestModuleTest {
         val client = graph.direct.instance<APIClientV1>()
         try {
             assertSame(client, graph.direct.instance<APIClient>().client())
+            val preference = graph.direct.instance<APITokenPreference>()
+            assertSame(application.tokenPreference, preference)
+            assertSame(preference, graph.direct.instance<APIClient>().preference)
+            assertSame(preference, graph.direct.instance<RealtimeClient>().preference)
             assertSame(client, status.apiClient)
 
             val presenter = graph.direct.instance<LimitOrderPresenter>()

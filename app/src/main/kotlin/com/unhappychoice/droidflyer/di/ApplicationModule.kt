@@ -18,7 +18,7 @@ import org.kodein.di.instance
 fun applicationModule(application: DroidFlyerApplication) = DI.Module("application") {
     bindSingleton<Gson> { createGson() }
     bindSingleton<CryptoCfdAccountPreference> { CryptoCfdAccountPreference(application) }
-    bindSingleton<APITokenPreference> { APITokenPreference(application) }
+    bindSingleton<APITokenPreference> { application.tokenPreference }
     bindSingleton<APIClient> { APIClient(instance(), instance()) }
     bindSingleton<APIClientV1> { instance<APIClient>().client() }
     bindProvider<Style> { DefaultStyle }
