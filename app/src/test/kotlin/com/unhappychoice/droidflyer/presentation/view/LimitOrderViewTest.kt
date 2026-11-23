@@ -4,17 +4,23 @@ import android.app.Activity
 import android.app.Application
 import android.content.DialogInterface
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager.widget.PagerAdapter
+import androidx.viewpager.widget.ViewPager
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
+import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter.Companion.LIMIT_POSITION
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import io.reactivex.Observable
 import io.reactivex.plugins.RxJavaPlugins
@@ -26,6 +32,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -70,6 +77,38 @@ class LimitOrderViewTest {
     fun tearDown() {
         status.dispose()
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun publicRowsRemainReadableAndEnableOrderEntryWhenCredentialsAreSaved() {
+        status.switchAccount(null)
+        status.board.value = Board(150.0, listOf(Order(100, 1.0)), listOf(Order(200, 2.0)))
+        RxJavaPlugins.setComputationSchedulerHandler { Schedulers.trampoline() }
+
+        withLimitView(inPager = true) { view ->
+            val notice = view.findViewById<TextView>(R.id.credentialsRequired)
+            presenter.amount.value = 0.01
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertEquals(View.VISIBLE, notice.visibility)
+            assertEquals(view.context.getString(R.string.trading_credentials_required), notice.text.toString())
+            val bid = view.bindRow(R.id.bidList)
+            val ask = view.bindRow(R.id.askList)
+            assertEquals("100", bid.findViewById<TextView>(R.id.price).text.toString())
+            assertEquals("200", ask.findViewById<TextView>(R.id.price).text.toString())
+            assertFalse(bid.isClickable)
+            assertFalse(ask.isClickable)
+
+            status.switchAccount(orderClient)
+            assertEquals(View.GONE, notice.visibility)
+            presenter.amount.value = 0.0
+            assertFalse(view.bindRow(R.id.bidList).isClickable)
+            presenter.amount.value = 0.01
+            assertTrue(view.bindRow(R.id.askList).isClickable)
+            assertTrue(view.bindRow(R.id.bidList).performClick())
+            (ShadowDialog.getLatestDialog() as AlertDialog).accept()
+            verify(orderClient).sendChildOrder(request("BUY", 100, 0.01))
+        }
     }
 
     @Test
@@ -151,7 +190,7 @@ class LimitOrderViewTest {
         }
     }
 
-    private fun withLimitView(test: (LimitOrderView) -> Unit) {
+    private fun withLimitView(inPager: Boolean = false, test: (LimitOrderView) -> Unit) {
         Robolectric.buildActivity(LimitOrderHost::class.java).setup().use { controller ->
             val host = controller.get()
             host.setTheme(R.style.AppTheme)
@@ -160,9 +199,36 @@ class LimitOrderViewTest {
                 bindInstance { presenter }
                 bindInstance { status }
             })
-            host.setContentView(view)
+            if (inPager) {
+                val pager = ViewPager(host)
+                pager.adapter = object : PagerAdapter() {
+                    override fun getCount() = 2
+                    override fun isViewFromObject(view: View, item: Any) = view === item
+                    override fun instantiateItem(container: ViewGroup, position: Int): Any =
+                        (if (position == LIMIT_POSITION) view else View(host)).also { container.addView(it) }
+
+                    override fun destroyItem(container: ViewGroup, position: Int, item: Any) {
+                        container.removeView(item as View)
+                    }
+                }
+                pager.currentItem = LIMIT_POSITION
+                host.setContentView(pager)
+                val width = View.MeasureSpec.makeMeasureSpec(480, View.MeasureSpec.EXACTLY)
+                val height = View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY)
+                pager.measure(width, height)
+                pager.layout(0, 0, pager.measuredWidth, pager.measuredHeight)
+            } else {
+                host.setContentView(view)
+            }
             test(view)
         }
+    }
+
+    private fun LimitOrderView.bindRow(listId: Int): View {
+        val list = findViewById<RecyclerView>(listId)
+        val adapter = list.adapter as BoardAdapter
+        assertEquals(1, adapter.itemCount)
+        return adapter.onCreateViewHolder(list, 0).also { adapter.onBindViewHolder(it, 0) }.itemView
     }
 
     private fun LimitOrderView.clickRow(list: Int, price: Long) {
