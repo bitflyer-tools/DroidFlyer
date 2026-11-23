@@ -2,6 +2,8 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
+import com.google.android.material.snackbar.Snackbar
+import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
@@ -9,6 +11,7 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.textChanges
+import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -29,12 +32,18 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         setupStyle()
 
-        setCredentialInputsEnabled(false)
-        presenter.loadCredentials {
-            binding.apiTokenTextView.setText(presenter.key.value)
-            binding.apiSecretTextView.setText(presenter.secret.value)
-            setCredentialInputsEnabled(true)
-        }.addTo(bag)
+        val credentialLoad = SerialDisposable()
+        credentialLoad.addTo(bag)
+        presenter.accountUnlinked.startWith(Unit)
+            .subscribeNext {
+                setCredentialInputsEnabled(false)
+                credentialLoad.set(presenter.loadCredentials {
+                    binding.apiTokenTextView.setText(presenter.key.value)
+                    binding.apiSecretTextView.setText(presenter.secret.value)
+                    setCredentialInputsEnabled(true)
+                })
+            }
+            .addTo(bag)
 
         binding.apiTokenTextView.textChanges()
             .subscribeNext {
@@ -54,6 +63,13 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         binding.saveButton.clicks()
             .subscribeNext { if (binding.saveButton.isEnabled) presenter.save() }
+            .addTo(bag)
+
+        binding.unlinkButton.clicks()
+            .subscribeNext {
+                val message = if (presenter.unlink()) R.string.account_unlinked else R.string.account_unlink_failed
+                Snackbar.make(this, message, Snackbar.LENGTH_SHORT).show()
+            }
             .addTo(bag)
     }
 
@@ -76,5 +92,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         binding.apiSecretTextView.setHintTextColor(DefaultStyle.darkerAccentColor)
         binding.saveButton.setTextColor(DefaultStyle.accentColor)
         binding.saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.unlinkButton.setTextColor(DefaultStyle.accentColor)
+        binding.unlinkButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }
