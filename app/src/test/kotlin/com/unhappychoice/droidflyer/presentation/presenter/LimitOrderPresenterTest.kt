@@ -43,7 +43,12 @@ class LimitOrderPresenterTest {
     private val pending = PublishSubject.create<ChildOrderAcceptance>()
     private val scheduler = TestScheduler()
     private val state = PrivateTradingState(apiClient, scheduler, Schedulers.trampoline())
-    private val presenter = LimitOrderPresenter(state, CryptoCfdAccountPreference(RuntimeEnvironment.getApplication()))
+    private val application = RuntimeEnvironment.getApplication()
+    private val presenter = LimitOrderPresenter(
+        state,
+        CryptoCfdAccountPreference(application),
+        application.resources
+    ) { _, _ -> }
     private val scope = MortarScope.buildRootScope()
         .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
         .build("limit_order_test")
