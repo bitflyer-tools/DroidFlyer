@@ -20,6 +20,7 @@ class OrdersPresenter internal constructor(
         this(currentStatusService.privateState, currentStatusService::updateStatus)
 
     internal val orders = privateState.orderRows()
+    internal val activeOrdersStatus = privateState.activeOrdersStatus.asObservable().distinctUntilChanged()
     internal val ordersMayBeIncomplete = privateState.ordersMayBeIncomplete
 
     val cancellationFailures: Observable<ChildOrder> get() = failedCancellations.hide()

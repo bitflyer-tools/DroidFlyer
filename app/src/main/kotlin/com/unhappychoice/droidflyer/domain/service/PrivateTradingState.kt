@@ -26,9 +26,13 @@ internal class PrivateTradingState(
     private val requestScheduler: Scheduler = Schedulers.io(),
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
+    enum class ActiveOrdersStatus { INITIAL, EMPTY, AVAILABLE, UNAVAILABLE, STALE }
+
     val position = Variable<List<Position>>(emptyList())
     val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
+
+    val activeOrdersStatus = Variable(ActiveOrdersStatus.INITIAL)
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
@@ -57,6 +61,7 @@ internal class PrivateTradingState(
         val previous = session
         session = Session(client)
         orders.value = emptyList()
+        activeOrdersStatus.value = ActiveOrdersStatus.INITIAL
         position.value = emptyList()
         collateral.value = Collateral(null)
         try {
@@ -79,9 +84,7 @@ internal class PrivateTradingState(
                 amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
             }
                 .publishResponse { if (!disposed && current === session) collateral.value = it },
-            // Unchanged rows keep their order references for cancellation.
-            client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
-                .publishResponse { if (!disposed && current === session && orders.value != it) orders.value = it }
+            refreshActiveOrders(current, client)
         ).takeUntil(current.ended)
     }
 
@@ -147,6 +150,25 @@ internal class PrivateTradingState(
         } ?: return null
         return current.client?.cancelChildOrder(CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId))
     }
+
+    private fun refreshActiveOrders(current: Session, client: APIClientV1): Completable =
+        client.getChildOrders("FX_BTC_JPY", count = ACTIVE_ORDER_LIMIT)
+            .subscribeOn(requestScheduler)
+            .observeOn(stateScheduler)
+            .doOnError {
+                if (!disposed && current === session) {
+                    activeOrdersStatus.value =
+                        if (orders.value.isEmpty()) ActiveOrdersStatus.UNAVAILABLE else ActiveOrdersStatus.STALE
+                }
+            }
+            .publishStatus {
+                if (!disposed && current === session) {
+                    // Unchanged rows keep their order references for cancellation.
+                    if (orders.value != it) orders.value = it
+                    activeOrdersStatus.value =
+                        if (it.isEmpty()) ActiveOrdersStatus.EMPTY else ActiveOrdersStatus.AVAILABLE
+                }
+            }
 
     private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
         subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)

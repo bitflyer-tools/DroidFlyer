@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -10,11 +11,14 @@ import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
+import retrofit2.HttpException
+import retrofit2.Response
 import java.lang.reflect.Proxy
 
 class PrivateTradingStateTest {
@@ -27,6 +31,58 @@ class PrivateTradingStateTest {
         1, "order", "FX_BTC_JPY", "SELL", "LIMIT", 110, 0, 0.5, "ACTIVE",
         "acceptance", 0.5, 0.0, 0.0, 0.0
     )
+
+    @Test
+    fun initialFailureIsUnavailableAndSuccessfulEmptyResponseClearsIt() {
+        assertEquals(ActiveOrdersStatus.INITIAL, state.activeOrdersStatus.value)
+        failOrdersRefresh()
+        assertEquals(ActiveOrdersStatus.UNAVAILABLE, state.activeOrdersStatus.value)
+        assertEquals(emptyList<ChildOrder>(), state.orders.value)
+
+        publishOrders()
+        assertEquals(ActiveOrdersStatus.EMPTY, state.activeOrdersStatus.value)
+        assertEquals(emptyList<ChildOrder>(), state.orders.value)
+    }
+
+    @Test
+    fun failedRefreshKeepsRowsAndSuccessfulRefreshReplacesThem() {
+        publishOrders(order)
+        val row = displayedRows().single()
+
+        failOrdersRefresh()
+        assertEquals(ActiveOrdersStatus.STALE, state.activeOrdersStatus.value)
+        assertSame(row.order, displayedRows().single().order)
+
+        val updatedOrder = order.copy(price = 120)
+        publishOrders(updatedOrder)
+        assertEquals(ActiveOrdersStatus.AVAILABLE, state.activeOrdersStatus.value)
+        assertEquals(updatedOrder, displayedRows().single().order)
+    }
+
+    @Test
+    fun unchangedSuccessfulResponseClearsStaleStatusAndKeepsOrderReference() {
+        publishOrders(order)
+        failOrdersRefresh()
+
+        publishOrders(order.copy())
+        assertEquals(ActiveOrdersStatus.AVAILABLE, state.activeOrdersStatus.value)
+        assertSame(order, displayedRows().single().order)
+    }
+
+    @Test
+    fun switchingAccountsClearsStaleStatusAndIgnoresQueuedFailure() {
+        publishOrders(order)
+        failOrdersRefresh()
+        state.refresh().test()
+        scheduler.triggerActions()
+        accountA.orders.onError(ordersUnavailable())
+
+        state.switchAccount(accountB.client)
+        scheduler.triggerActions()
+
+        assertEquals(ActiveOrdersStatus.INITIAL, state.activeOrdersStatus.value)
+        assertEquals(emptyList<ChildOrder>(), state.orders.value)
+    }
 
     @Test
     fun rejectedCollateralStaysUnavailableUntilZeroIsLoaded() {
@@ -211,6 +267,19 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
     }
 
+    private fun failOrdersRefresh() {
+        val refresh = state.refresh().test()
+        scheduler.triggerActions()
+        accountA.orders.onError(ordersUnavailable())
+        accountA.positions.onNext(emptyList())
+        accountA.collateral.onNext(mapOf("collateral" to 0))
+        scheduler.triggerActions()
+        refresh.assertComplete()
+        accountA.orders = PublishSubject.create()
+    }
+
+    private fun ordersUnavailable() = HttpException(Response.error<Any>(503, "".toResponseBody()))
+
     private fun assertPrivateData(positions: List<Position>, balance: Double?, orders: List<ChildOrder>) {
         assertEquals(positions, state.position.value)
         assertEquals(balance, state.collateral.value.amount)
@@ -220,7 +289,7 @@ class PrivateTradingStateTest {
     private class TradingApi {
         val positions = PublishSubject.create<List<Position>>()
         var collateral = PublishSubject.create<Map<String, Any>>()
-        val orders = PublishSubject.create<List<ChildOrder>>()
+        var orders = PublishSubject.create<List<ChildOrder>>()
         val sent = mutableListOf<SendChildOrderRequest>()
         val cancelled = mutableListOf<CancelChildOrderRequest>()
         val client = Proxy.newProxyInstance(
