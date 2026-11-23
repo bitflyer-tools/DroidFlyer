@@ -11,7 +11,7 @@ DroidFlyer is a [bitFlyer Lightning](https://lightning.bitflyer.com) client for 
 
 ## Features
 
-- Chart recent bitFlyer Crypto CFD trade prices in JPY.
+- Chart recent bitFlyer Crypto CFD trade prices in JPY with 1-minute and 5-minute candlesticks.
 - Watch live bids and asks in the order book and adjust how price levels are grouped.
 - Place market, limit, and stop orders, and view or cancel active orders.
 

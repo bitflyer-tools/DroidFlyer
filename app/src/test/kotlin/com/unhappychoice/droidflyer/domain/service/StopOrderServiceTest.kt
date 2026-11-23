@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import io.reactivex.Observable
 import io.reactivex.subjects.PublishSubject
@@ -58,6 +59,36 @@ class StopOrderServiceTest {
         assertNull(StopOrderRequest.fromInput(StopSide.BUY, "0.01", "-1"))
         assertNull(StopOrderRequest.fromInput(StopSide.BUY, "0.01", "5000000.5"))
         assertEquals("0.01", stopRequest().size.toPlainString())
+    }
+
+    @Test
+    fun enforcesQuantityBoundsForCurrentAccountType() {
+        val maximum = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
+        val service = StopOrderService(client(), serviceScheduler, serviceScheduler, maximumOrderSize = maximum)
+            .apply { onPrivateChannelAvailability(true) }
+
+        listOf("0.000999999999999999999", "10.000000000000000001").forEach { quantity ->
+            val confirmation = service.confirmation(stopRequest(quantity))
+            assertFalse(service.submit(confirmation) { fail("Submitted an out-of-range order") })
+        }
+
+        maximum.value = CryptoCfdOrderSize.CORPORATE_MAXIMUM
+        val aboveCorporateMaximum = service.confirmation(stopRequest("40.000000000000000001"))
+        assertFalse(service.submit(aboveCorporateMaximum) { fail("Submitted above the corporate maximum") })
+        val corporateConfirmation = service.confirmation(stopRequest("40"))
+        maximum.value = CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM
+        assertFalse(service.submit(corporateConfirmation) { fail("Submitted after the maximum decreased") })
+        serviceScheduler.triggerActions()
+        assertTrue(requests.none { it.method == "POST" })
+
+        assertTrue(service.submit(service.confirmation(stopRequest("0.001"))) { assertTrue(it.isSuccess) })
+        serviceScheduler.triggerActions()
+        assertTrue(service.submit(service.confirmation(stopRequest("10"))) { assertTrue(it.isSuccess) })
+        serviceScheduler.triggerActions()
+        maximum.value = CryptoCfdOrderSize.CORPORATE_MAXIMUM
+        assertTrue(service.submit(corporateConfirmation) { assertTrue(it.isSuccess) })
+        serviceScheduler.triggerActions()
+        assertEquals(3, requests.count { it.method == "POST" })
     }
 
     @Test
@@ -1238,7 +1269,8 @@ class StopOrderServiceTest {
     private fun marketChild(size: Double, state: String = "ACTIVE") =
         """[{"child_order_type":"MARKET","child_order_state":"$state","executed_size":$size}]"""
 
-    private fun stopRequest() = requireNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+    private fun stopRequest(quantity: String = "0.01") =
+        requireNotNull(StopOrderRequest.fromInput(StopSide.SELL, quantity, "5000000"))
 
     private fun triggerEvent() = ParentOrderEvent(
         "FX_BTC_JPY", "parent-1", "acceptance-1", "2026-01-01T00:00:00Z",

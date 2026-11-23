@@ -25,13 +25,14 @@ internal class PrivateTradingState(
     client: APIClientV1?,
     private val requestScheduler: Scheduler = Schedulers.io(),
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread(),
-    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
     val position = Variable<List<Position>>(emptyList())
     val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
 
-    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler, submissionGuard)
+    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler, submissionGuard, maximumOrderSize)
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
     private var session = client?.let(::Session)

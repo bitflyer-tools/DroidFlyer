@@ -38,7 +38,8 @@ interface APIClientV1 {
     @GET("executions")
     fun getExecutionPrices(
         @Query("product_code") productCode: String,
-        @Query("count") count: Int
+        @Query("count") count: Int,
+        @Query("before") before: Long? = null
     ): Observable<List<ExecutionPrice>>
 
     @GET("getfundingrate")

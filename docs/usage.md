@@ -7,7 +7,9 @@ under **Order** → **Limit** before connecting an account.
 
 ## Screens and controls
 
-- **Chart** plots recent trade prices in JPY, from oldest to newest.
+- **Chart** displays recent Crypto CFD trades as 1-minute or 5-minute candlesticks
+  in JPY. Select a candle to see its time range and open, high, low, and close
+  prices. The oldest candle may be incomplete.
 - **Order** → **Market** submits a buy or sell market order. **Limit**
   shows the live order book and lets you select a price level for a limit
   order. Use **Grouping** to change how the book combines price levels.

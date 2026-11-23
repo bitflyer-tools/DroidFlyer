@@ -28,14 +28,16 @@ class CurrentStatusService internal constructor(
     parentEvents: Observable<PrivateEvent<List<ParentOrderEvent>>> = Observable.empty(),
     privateChannelAvailability: Observable<PrivateEvent<Boolean>> = Observable.empty(),
     submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
-    publicFeedDisconnects: Observable<Unit> = Observable.never()
+    publicFeedDisconnects: Observable<Unit> = Observable.never(),
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) :
         this(apiClient, realtimeClient, privateClient, StopSubmissionGuard.inMemory())
 
     internal constructor(
         apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?,
-        submissionGuard: StopSubmissionGuard
+        submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+        maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
     ) : this(
         apiClient,
         realtimeClient.executions,
@@ -45,10 +47,13 @@ class CurrentStatusService internal constructor(
         realtimeClient.parentOrderEvents,
         realtimeClient.privateChannelAvailability,
         submissionGuard,
-        realtimeClient.publicFeedDisconnects
+        realtimeClient.publicFeedDisconnects,
+        maximumOrderSize
     )
 
-    internal val privateState = PrivateTradingState(privateClient, submissionGuard = submissionGuard)
+    internal val privateState = PrivateTradingState(
+        privateClient, submissionGuard = submissionGuard, maximumOrderSize = maximumOrderSize
+    )
 
     internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)

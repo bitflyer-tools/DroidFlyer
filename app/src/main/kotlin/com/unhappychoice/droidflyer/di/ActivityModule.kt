@@ -7,6 +7,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.presenter.*
 import org.kodein.di.DI
@@ -25,7 +26,10 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
             val preference = instance<APITokenPreference>()
             val api = instance<APIClient>()
             val stopSubmissions = instance<StopSubmissionPreference>()
-            CurrentStatusService(instance(), instance(), null).apply {
+            CurrentStatusService(
+                instance(), instance(), null,
+                maximumOrderSize = instance<CryptoCfdAccountPreference>().maximumOrderSize
+            ).apply {
                 initializeAccount {
                     val credentials = preference.read()
                     api.privateStatusClient(credentials)?.let { client ->

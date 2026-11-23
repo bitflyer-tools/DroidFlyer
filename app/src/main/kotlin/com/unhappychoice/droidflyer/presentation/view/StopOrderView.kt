@@ -13,6 +13,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
+import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.StopOrderService
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -117,6 +118,7 @@ class StopOrderView(context: Context) : BaseView(context, null) {
         }
         val order = StopOrderRequest.fromInput(side, quantity.text.toString(), price.text.toString())
             ?: return showMessage(context.getString(R.string.stop_invalid_input))
+        orderSizeError(order)?.let { return showMessage(it) }
         val sideLabel = context.getString(if (side == StopSide.BUY) R.string.buy else R.string.sell)
         val summary = context.getString(R.string.stop_review_summary, sideLabel, order.size.toPlainString(), order.triggerPrice)
         val confirmation = stops.confirmation(order)
@@ -128,7 +130,19 @@ class StopOrderView(context: Context) : BaseView(context, null) {
             .showTradingConfirmation()
     }
 
+    private fun orderSizeError(order: StopOrderRequest): String? {
+        val maximum = stops.maximumOrderSize
+        return when {
+            !CryptoCfdOrderSize.meetsMinimum(order.size) ->
+                context.getString(R.string.minimum_order_size, CryptoCfdOrderSize.MINIMUM.toString())
+            !CryptoCfdOrderSize.isValid(order.size, maximum) ->
+                context.getString(R.string.maximum_order_size, maximum.toInt())
+            else -> null
+        }
+    }
+
     private fun submit(confirmation: StopOrderService.Confirmation) {
+        orderSizeError(confirmation.order)?.let { return showMessage(it) }
         val started = stops.submit(confirmation) { result ->
             result.onSuccess {
                 quantity.text.clear()

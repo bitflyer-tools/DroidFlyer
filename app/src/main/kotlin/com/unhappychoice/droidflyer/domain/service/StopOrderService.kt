@@ -25,7 +25,8 @@ internal class StopOrderService(
     client: APIClientV1?,
     private val io: Scheduler,
     private val main: Scheduler,
-    guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()
+    guard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
     class SubmissionRejected(cause: HttpException) : RuntimeException("bitFlyer rejected the stop order", cause)
 
@@ -35,8 +36,10 @@ internal class StopOrderService(
     val reconcilingSubmission = Variable(guard.pending() != null)
     val cancelling = Variable<Set<String>>(emptySet())
 
+    val maximumOrderSize: Double get() = accountMaximumOrderSize.value
     val orderEventsReady: Boolean get() = !privateChannelsUnavailable
 
+    private val accountMaximumOrderSize = maximumOrderSize
     private var account = Account(client, guard)
     private val requests = CompositeDisposable()
     private var enabled = false
@@ -95,7 +98,8 @@ internal class StopOrderService(
     fun submit(confirmation: Confirmation, result: (Result<String>) -> Unit): Boolean {
         val current = account
         if (confirmation.account !== current || !orderEventsReady || submitting.value ||
-            reconcilingSubmission.value || requests.isDisposed
+            reconcilingSubmission.value || requests.isDisposed ||
+            !CryptoCfdOrderSize.isValid(confirmation.order.size, maximumOrderSize)
         ) return false
         val client = current.client ?: return false
         val id = UUID.randomUUID().toString()
