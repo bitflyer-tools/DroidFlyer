@@ -53,8 +53,31 @@
         android:orientation="vertical"
         android:visibility="gone">
 
+        <RadioGroup
+            android:id="@+id/chartIntervals"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/chartOneMinute"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/chart_one_minute"
+                android:textColor="@android:color/white" />
+
+            <RadioButton
+                android:id="@+id/chartFiveMinutes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/chart_five_minutes"
+                android:textColor="@android:color/white" />
+        </RadioGroup>
+
         <TextView
-            android:id="@+id/chartPriceRange"
+            android:id="@+id/chartCandleDetails"
+            android:accessibilityLiveRegion="polite"
+            android:minLines="3"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@android:color/white" />
@@ -66,10 +89,11 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/chartPartial"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
             android:textColor="@android:color/white"
-            android:text="@string/chart_execution_order" />
+            android:text="@string/chart_partial_history" />
     </LinearLayout>
 </com.unhappychoice.droidflyer.presentation.view.ChartView>
