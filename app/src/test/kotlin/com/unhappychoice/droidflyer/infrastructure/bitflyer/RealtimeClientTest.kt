@@ -37,7 +37,6 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
-import io.socket.client.Ack
 import io.socket.client.AckWithTimeout
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -129,6 +128,69 @@ class RealtimeClientTest {
         availability.assertValue(true)
         assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
         assertEquals(3, account.authAttempts)
+    }
+
+    @Test
+    fun retriesBothPrivateSubscriptionsWhenOneAcknowledgementIsMissing() {
+        RxJavaPlugins.setComputationSchedulerHandler { time }
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
+
+        account.receive(Socket.EVENT_CONNECT)
+        checkNotNull(account.authAck).call()
+        account.subscriptionAcks.getValue("child_order_events").call()
+        val expired = account.subscriptionAcks.getValue("parent_order_events")
+        availability.assertNoValues()
+        expired.onTimeout()
+        availability.assertValue(false)
+        assertEquals(1, account.authAttempts)
+
+        advanceRetryTime(1)
+        assertEquals(2, account.authAttempts)
+        checkNotNull(account.authAck).call()
+        expired.call()
+        account.subscriptionAcks.getValue("child_order_events").call()
+        availability.assertValue(false)
+        account.subscriptionAcks.getValue("parent_order_events").call()
+        advanceRetryTime(60)
+
+        availability.assertValues(false, true)
+        assertEquals(2, account.authAttempts)
+        assertEquals(
+            listOf("child_order_events", "parent_order_events", "child_order_events", "parent_order_events"),
+            account.subscriptions
+        )
+        client.disconnect()
+    }
+
+    @Test
+    fun reapplyingCredentialsAfterSubscriptionTimeoutCancelsThePendingRetry() {
+        RxJavaPlugins.setComputationSchedulerHandler { time }
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val original = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
+        original.receive(Socket.EVENT_CONNECT)
+        checkNotNull(original.authAck).call()
+        original.subscriptionAcks.getValue("child_order_events").onTimeout()
+
+        client.updateAccount {}
+        assertEquals(2, accountSockets.size)
+        val replacement = accountSockets.last()
+        replacement.receive(Socket.EVENT_CONNECT)
+        checkNotNull(replacement.authAck).call()
+        original.subscriptionAcks.getValue("parent_order_events").onTimeout()
+        replacement.acknowledgePrivateSubscriptions()
+        advanceRetryTime(60)
+
+        assertEquals(1, original.authAttempts)
+        assertEquals(1, replacement.authAttempts)
+        availability.assertValues(false, false, true)
+        client.disconnect()
     }
 
     @Test
@@ -974,7 +1036,7 @@ class RealtimeClientTest {
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {
         val subscriptions = mutableListOf<String>()
-        val subscriptionAcks = mutableMapOf<String, Ack>()
+        val subscriptionAcks = mutableMapOf<String, AckWithTimeout>()
         var authAck: AckWithTimeout? = null
         var authAttempts = 0
         private var open = false
@@ -990,7 +1052,7 @@ class RealtimeClientTest {
                 "subscribe" -> {
                     val channel = args.first() as String
                     subscriptions.add(channel)
-                    (args.last() as? Ack)?.let { subscriptionAcks[channel] = it }
+                    (args.last() as? AckWithTimeout)?.let { subscriptionAcks[channel] = it.apply { cancelTimer() } }
                 }
                 "auth" -> {
                     authAttempts++
