@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager.widget.ViewPager
@@ -54,6 +55,8 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         askAdapter.clickItems.subscribeNext { confirmOrder(LimitOrderSide.SELL, it.price) }.addTo(bag)
         bidAdapter.clickItems.subscribeNext { confirmOrder(LimitOrderSide.BUY, it.price) }.addTo(bag)
 
+        bindOrderEntry()
+
         observeLimitOrderRows(
             observePageSelection(),
             currentStatusService.board.asObservable(),
@@ -92,6 +95,15 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         confirmationDialog = null
         presenter.dropView(this)
         super.onDetachedFromWindow()
+    }
+
+    private fun bindOrderEntry() {
+        presenter.privateClientAvailable.subscribeNext { binding.credentialsRequired.isVisible = !it }.addTo(bag)
+        presenter.orderEntryEnabled
+            .subscribeNext {
+                askAdapter.orderEntryEnabled = it
+                bidAdapter.orderEntryEnabled = it
+            }.addTo(bag)
     }
 
     private fun observePageSelection(): Observable<Boolean> {
