@@ -138,8 +138,11 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         val confirmation = presenter.stopCancellationConfirmation(order)
         cancellationDialog = AlertDialog.Builder(context, R.style.DialogStyle)
             .setTitle(R.string.stop_cancel_title)
-            .setMessage(order.acceptanceId)
-            .setPositiveButton(R.string.ok) { _, _ ->
+            .setMessage(
+                if (order.canConfirmRecovery) context.getString(R.string.stop_verify_cancel_message, order.acceptanceId)
+                else order.acceptanceId
+            )
+            .setPositiveButton(if (order.canConfirmRecovery) R.string.stop_confirm_waiting_and_cancel else R.string.ok) { _, _ ->
                 presenter.cancelStop(confirmation) { failure ->
                     showCancellationFailure(confirmation.acceptanceId, failure.message())
                 }

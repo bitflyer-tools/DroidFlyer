@@ -9,10 +9,14 @@ internal data class StopOrder(
     val triggerVerified: Boolean = true,
     val childTermination: StopOrderStatus? = null,
     val waitingConfirmed: Boolean = true,
-    val restWaitingConfirmed: Boolean = false
+    val restWaitingConfirmed: Boolean = false,
+    val recoveryAvailable: Boolean = false
 ) {
     val acceptanceId get() = parent.parentOrderAcceptanceId
     val canCancel get() = triggerPrice != null && status == StopOrderStatus.WAITING
+
+    val canConfirmRecovery get() = recoveryAvailable && triggerPrice != null && triggerVerified &&
+        status == StopOrderStatus.UNKNOWN
 
     val isPartiallyExecuted get() = parent.executedSize > 0 && parent.executedSize < parent.size
 

@@ -646,6 +646,76 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun cancellationAfterReconnectRequiresExplicitRecoveryConfirmation() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            val beforeGap = stops.cancellationConfirmation(stops.orders.value.single())
+
+            realtime.available(false)
+            scheduler.triggerActions()
+            assertFalse(stops.orders.value.single().canConfirmRecovery)
+            realtime.available(true)
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            val order = stops.orders.value.single()
+            assertEquals(StopOrderStatus.UNKNOWN, order.status)
+            assertTrue(order.canConfirmRecovery)
+            assertCancellationBlocked(stops, beforeGap)
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(stops.cancellationConfirmation(order)) { failures += it }
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            assertTrue(failures.isEmpty())
+            assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
+            assertEquals(StopOrderStatus.CANCELED, stops.orders.value.single().status)
+        }
+
+    @Test
+    fun recoveryCancellationRechecksForChildBeforePosting() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            realtime.available(false)
+            scheduler.triggerActions()
+            realtime.available(true)
+            scheduler.advanceTimeBy(28, SECONDS)
+            val order = stops.orders.value.single()
+            assertTrue(order.canConfirmRecovery)
+
+            childOrders = marketChild(0.0, "CANCELED")
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(stops.cancellationConfirmation(order)) { failures += it }
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+            assertEquals(StopOrderStatus.CANCELED, stops.orders.value.single().status)
+            assertFalse(stops.orders.value.single().canConfirmRecovery)
+        }
+
+    @Test
+    fun anotherChannelGapInvalidatesRecoveryConfirmation() =
+        withRealtimeStops { stops, realtime, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            realtime.available(false)
+            scheduler.triggerActions()
+            realtime.available(true)
+            scheduler.advanceTimeBy(28, SECONDS)
+            val order = stops.orders.value.single()
+            assertTrue(order.canConfirmRecovery)
+            val confirmation = stops.cancellationConfirmation(order)
+
+            realtime.available(false)
+            scheduler.triggerActions()
+            realtime.available(true)
+            scheduler.advanceTimeBy(28, SECONDS)
+            assertTrue(stops.orders.value.single().canConfirmRecovery)
+            assertCancellationBlocked(stops, confirmation)
+        }
+
+    @Test
     fun reconnectKeepsFullyOutstandingStopUnknownWhenRestOmitsUnfilledCanceledChild() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
@@ -702,6 +772,7 @@ class StopOrderServiceTest {
             assertEquals("ACTIVE", reconnected.parent.parentOrderState)
             assertEquals(size, reconnected.parent.outstandingSize)
             assertEquals(StopOrderStatus.UNKNOWN, reconnected.status)
+            assertFalse(reconnected.canConfirmRecovery)
             assertCancellationBlocked(stops, confirmation)
             assertFalse(stops.loadFailed.value)
 

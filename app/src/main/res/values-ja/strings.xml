@@ -83,6 +83,9 @@
     <string name="stop_expired">期限切れ</string>
     <string name="stop_rejected">受付拒否</string>
     <string name="stop_unknown">状態を取得できません</string>
+    <string name="stop_verify_cancel">確認して取消</string>
+    <string name="stop_verify_cancel_message">bitFlyer Lightning で注文 %1$s がまだ発動待ちであることを確認してから、この画面で取り消してください。</string>
+    <string name="stop_confirm_waiting_and_cancel">発動待ちを確認して取消</string>
     <string name="stop_cancel_title">このストップ注文をキャンセルしますか？</string>
     <string name="stop_cancel_account_changed">アカウントが切り替わったため、注文 %1$s を取り消せません。</string>
     <string name="stop_cancel_unavailable">注文 %1$s は現在の注文一覧にありません。</string>

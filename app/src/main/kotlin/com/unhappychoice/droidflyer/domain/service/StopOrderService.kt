@@ -46,7 +46,7 @@ internal class StopOrderService(
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
-    private var missedOrderEvents = false
+    private var channelGapCount = 0
     private val refreshRequest = SerialDisposable().apply { addTo(requests) }
     private val fallbackRefresh = SerialDisposable().apply { addTo(requests) }
     private val refreshReads = StopOrderFallbackReads(io)
@@ -66,7 +66,7 @@ internal class StopOrderService(
         pendingRealtimeRefresh = null
         privateChannelsUnavailable = true
         channelGapOpen = false
-        missedOrderEvents = false
+        channelGapCount = 0
         events.clear()
         childTerminations.clear()
         orders.value = emptyList()
@@ -133,7 +133,7 @@ internal class StopOrderService(
     }
 
     fun cancellationConfirmation(order: StopOrder): CancellationConfirmation =
-        CancellationConfirmation(account, order.acceptanceId)
+        CancellationConfirmation(account, order.acceptanceId, channelGapCount.takeIf { order.canConfirmRecovery })
 
     fun cancel(confirmation: CancellationConfirmation, failed: (CancellationFailure) -> Unit) {
         val current = account
@@ -143,7 +143,7 @@ internal class StopOrderService(
             confirmation.account !== current -> CancellationFailure.ACCOUNT_CHANGED
             requests.isDisposed || current.client == null || order == null -> CancellationFailure.UNAVAILABLE
             id in cancelling.value -> CancellationFailure.IN_PROGRESS
-            !order.canCancel -> CancellationFailure.INELIGIBLE
+            !isCancellationEligible(order, confirmation) -> CancellationFailure.INELIGIBLE
             else -> null
         }
         if (rejection != null) return failed(rejection)
@@ -153,7 +153,7 @@ internal class StopOrderService(
         val cancellation = Completable.defer {
             client.cancelParentOrder(CancelParentOrderRequest(id))
         }.subscribeOn(io)
-        verifyCancellation(client, requireNotNull(order))
+        verifyCancellation(client, requireNotNull(order), confirmation)
             .andThen(cancellation)
             .observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
@@ -203,7 +203,7 @@ internal class StopOrderService(
 
     fun onPrivateChannelAvailability(ready: Boolean) {
         if (!ready && channelGapOpen) return
-        if (!ready && orderEventsReady) missedOrderEvents = true
+        if (!ready && orderEventsReady) channelGapCount++
         if ((!ready && !privateChannelsUnavailable) || (ready && channelGapOpen)) {
             events.values.removeAll { it.eventType == "ORDER" }
         }
@@ -254,6 +254,7 @@ internal class StopOrderService(
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         val canConfirmWaitingFromRest = canUseRestWaitingEvidence
+        val canOfferRecovery = orderEventsReady && channelGapCount > 0
         refreshRequest.set(null)
         var historyFailed = false
         val parents = loadActiveParents(client, reads = refreshReads).filter(::isCryptoCfdStop).toList()
@@ -292,7 +293,10 @@ internal class StopOrderService(
                             updated.status in waitingOrUnknown &&
                             (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed ||
                                 recover || !updated.waitingConfirmed) ->
-                            reconcileMarketChild(client, updated, refreshReads)
+                            reconcileMarketChild(client, updated, refreshReads).map { reconciled ->
+                                reconciled.copy(recoveryAvailable = canOfferRecovery && activeAndOutstanding &&
+                                    reconciled.parent.isFullyOutstanding())
+                            }
                         else -> Observable.just(updated)
                     }
                 }
@@ -357,7 +361,8 @@ internal class StopOrderService(
     private fun invalidateWaitingOrder(order: StopOrder): StopOrder =
         order.copy(
             triggerVerified = order.triggerVerified && order.status != StopOrderStatus.WAITING,
-            restWaitingConfirmed = false
+            restWaitingConfirmed = false,
+            recoveryAvailable = false
         )
 
     private fun loadActiveParents(
@@ -393,7 +398,7 @@ internal class StopOrderService(
             .flatMapObservable { rows -> Observable.fromIterable(rows.sortedByDescending { it.id }.take(10)) }
 
     // The child list can omit unfilled terminal orders whose events were missed.
-    private val canUseRestWaitingEvidence get() = orderEventsReady && !missedOrderEvents
+    private val canUseRestWaitingEvidence get() = orderEventsReady && channelGapCount == 0
 
     private fun applyEvent(order: StopOrder): StopOrder {
         val event = events[order.acceptanceId]
@@ -416,17 +421,31 @@ internal class StopOrderService(
         else -> null
     }
 
-    private fun verifyCancellation(client: APIClientV1, order: StopOrder): Completable =
+    private fun isCancellationEligible(order: StopOrder, confirmation: CancellationConfirmation): Boolean =
+        if (confirmation.recoveryGap == null) order.canCancel
+        else orderEventsReady && confirmation.recoveryGap == channelGapCount &&
+            (order.canCancel || order.canConfirmRecovery)
+
+    private fun verifyCancellation(
+        client: APIClientV1,
+        order: StopOrder,
+        confirmation: CancellationConfirmation
+    ): Completable =
         loadActiveParents(client)
             .filter { it.parentOrderAcceptanceId == order.acceptanceId && isCryptoCfdStop(it) }
             .take(1)
             .concatMap { parent ->
-                reconcileMarketChild(client, order.copy(parent = parent, restWaitingConfirmed = parent.isFullyOutstanding()))
+                val fullyOutstanding = parent.isFullyOutstanding()
+                reconcileMarketChild(client, order.copy(
+                    parent = parent,
+                    restWaitingConfirmed = fullyOutstanding,
+                    recoveryAvailable = order.recoveryAvailable && fullyOutstanding
+                ))
             }
             .subscribeOn(io).observeOn(main)
             .map { verified ->
-                applyEvent(verified).canCancel && orders.value.any {
-                    it.acceptanceId == order.acceptanceId && it.canCancel
+                isCancellationEligible(applyEvent(verified), confirmation) && orders.value.any {
+                    it.acceptanceId == order.acceptanceId && isCancellationEligible(it, confirmation)
                 }
             }
             .first(false)
@@ -487,7 +506,11 @@ internal class StopOrderService(
 
     enum class CancellationFailure { ACCOUNT_CHANGED, UNAVAILABLE, IN_PROGRESS, INELIGIBLE, REQUEST_FAILED }
 
-    class CancellationConfirmation internal constructor(internal val account: Account, val acceptanceId: String)
+    class CancellationConfirmation internal constructor(
+        internal val account: Account,
+        val acceptanceId: String,
+        internal val recoveryGap: Int?
+    )
 
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
 

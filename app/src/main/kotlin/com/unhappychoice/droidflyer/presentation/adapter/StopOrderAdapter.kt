@@ -57,7 +57,8 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
                 R.string.stop_order_row, side, order.parent.size.toString(), trigger,
                 statusText(order), order.acceptanceId
             )
-            cancelButton.visibility = if (order.canCancel) View.VISIBLE else View.GONE
+            cancelButton.setText(if (order.canConfirmRecovery) R.string.stop_verify_cancel else R.string.cancel)
+            cancelButton.visibility = if (order.canCancel || order.canConfirmRecovery) View.VISIBLE else View.GONE
             cancelButton.isEnabled = order.acceptanceId !in cancelling
             cancelButton.setOnClickListener { cancel(order) }
         }
