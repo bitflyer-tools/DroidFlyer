@@ -65,7 +65,11 @@ class LimitOrderViewTest {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         whenever(orderClient.sendChildOrder(any())).thenReturn(pending, Observable.never())
         status = CurrentStatusService(mockAccount(), Observable.never(), Observable.never(), Observable.never(), orderClient)
-        presenter = LimitOrderPresenter(status.privateState, accountPreference)
+        presenter = LimitOrderPresenter(
+            status.privateState,
+            accountPreference,
+            RuntimeEnvironment.getApplication().resources
+        ) { _, _ -> }
     }
 
     @After

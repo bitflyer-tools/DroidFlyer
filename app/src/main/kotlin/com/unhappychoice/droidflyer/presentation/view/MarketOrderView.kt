@@ -36,8 +36,8 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         setupStyle()
 
         currentStatusService.apply {
-            buyPrice.asObservable().subscribeNext { binding.buyPrice.text = it.splitByComma() }.addTo(bag)
-            sellPrice.asObservable().subscribeNext { binding.sellPrice.text = it.splitByComma() }.addTo(bag)
+            buyPrice.asObservable().subscribeNext { binding.buyPrice.text = formatQuote(it) }.addTo(bag)
+            sellPrice.asObservable().subscribeNext { binding.sellPrice.text = formatQuote(it) }.addTo(bag)
         }
 
         presenter.apply {
@@ -96,6 +96,8 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         presenter.dropView(this)
         super.onDetachedFromWindow()
     }
+
+    private fun formatQuote(price: Long): String = if (price == 0L) "—" else price.splitByComma()
 
     private fun showCloseConfirmation(confirmation: CloseConfirmation) {
         val order = confirmation.order

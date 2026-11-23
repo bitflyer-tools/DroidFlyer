@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import android.content.res.Resources
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
@@ -19,7 +20,9 @@ import mortar.ViewPresenter
 
 class LimitOrderPresenter internal constructor(
     private val state: PrivateTradingState,
-    accountPreference: CryptoCfdAccountPreference
+    accountPreference: CryptoCfdAccountPreference,
+    private val resources: Resources,
+    private val showSnackbar: (String, Int) -> Unit
 ) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
     override val isLoading = Variable(false)
     override val amount = Variable(0.0)
@@ -69,19 +72,20 @@ class LimitOrderPresenter internal constructor(
     internal fun submitOrder(confirmation: LimitOrderConfirmation) {
         val order = confirmation.order
         val request = order.request
-        if (isLoading.value || !CryptoCfdOrderSize.isValid(request.size, maximumOrderSize.value)) return
-        val orderView = view ?: return
+        if (isLoading.value || view == null || !CryptoCfdOrderSize.isValid(request.size, maximumOrderSize.value)) return
         val submission = state.submitOrder(order) ?: return
-        val message = orderView.context.getString(confirmation.side.orderedMessage, request.size, request.price)
 
         isLoading.value = true
         submission.doFinally { isLoading.value = false }
             .subscribe({
-                Snackbar.make(orderView, message, Snackbar.LENGTH_SHORT).show()
+                showSnackbar(
+                    resources.getString(confirmation.side.orderedMessage, request.size, request.price),
+                    Snackbar.LENGTH_SHORT
+                )
             }, { error ->
                 val messageResId = if (error is OrderAcceptanceUncertainException) R.string.order_acceptance_uncertain
                 else R.string.limit_order_failed
-                Snackbar.make(orderView, messageResId, Snackbar.LENGTH_LONG).show()
+                showSnackbar(resources.getString(messageResId), Snackbar.LENGTH_LONG)
             })
             .addTo(bag)
     }
