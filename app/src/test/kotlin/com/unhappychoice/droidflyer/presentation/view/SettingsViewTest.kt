@@ -43,6 +43,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -103,10 +104,10 @@ class SettingsViewTest {
             settings.apiSecretTextView.setText("new-secret")
 
             settings.saveButton.performClick()
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
 
             val message = host.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
-            assertEquals(host.getString(R.string.api_key_saved), message.text.toString())
+            assertEquals(host.getString(R.string.api_key_saved), message?.text?.toString())
             val saved = testAPITokenPreference(host).read()
             assertEquals("new-key", saved.key)
             assertEquals("new-secret", saved.secret)
