@@ -34,6 +34,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 4. Tap **Order**, then **Limit**, to view the bitFlyer Crypto CFD order book. You can read the bids and asks without placing a trade.
 5. To place a Crypto CFD stop order, enable **Receive order events** on the API key in bitFlyer Lightning and apply the credentials in DroidFlyer. The app uses the private order-event channels to track and cancel orders waiting to trigger.
 
+See [Using DroidFlyer](docs/usage.md) for screen controls, account settings, and API permissions.
+
 ## Author
 
 [@unhappychoice](https://unhappychoice.com)

@@ -88,6 +88,9 @@
     <string name="stop_cancel_unavailable">注文 %1$s は現在の注文一覧にありません。</string>
     <string name="stop_cancel_in_progress">注文 %1$s の取消処理は既に進行中です。</string>
     <string name="stop_cancel_ineligible">注文 %1$s は現在取り消せない状態です。</string>
+    <string name="unlink_account">アカウント連携を解除</string>
+    <string name="account_unlinked">bitFlyerアカウントの連携を解除しました</string>
+    <string name="account_unlink_failed">認証情報を削除できませんでした。もう一度お試しください。</string>
     <string name="funding_unavailable">次回のファンディングレートを取得できません</string>
     <string name="funding_details">次回ファンディング %1$s · %2$s</string>
     <string name="funding_stale">%1$s（更新できませんでした）</string>
