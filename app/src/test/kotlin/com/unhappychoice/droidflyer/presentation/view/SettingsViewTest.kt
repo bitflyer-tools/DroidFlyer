@@ -43,7 +43,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Duration
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -97,20 +97,28 @@ class SettingsViewTest {
 
     @Test
     fun applyingValidatedCredentialsShowsSavedConfirmation() {
+        // The Material queue can retain callbacks from activities closed by earlier tests.
+        ReflectionHelpers.setStaticField(
+            Class.forName("com.google.android.material.snackbar.SnackbarManager"), "snackbarManager", null
+        )
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
+            host.setTheme(R.style.AppTheme)
             val settings = host.openSettings()
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
             settings.apiTokenTextView.setText("new-key")
             settings.apiSecretTextView.setText("new-secret")
 
             settings.saveButton.performClick()
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+            saveIo.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
 
-            val message = host.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
-            assertEquals(host.getString(R.string.api_key_saved), message?.text?.toString())
             val saved = testAPITokenPreference(host).read()
             assertEquals("new-key", saved.key)
             assertEquals("new-secret", saved.secret)
+            val message = host.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            assertEquals(host.getString(R.string.api_key_saved), message?.text?.toString())
         }
     }
 
