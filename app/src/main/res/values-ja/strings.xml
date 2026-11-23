@@ -53,8 +53,12 @@
     <string name="chart_loading">チャートを読み込み中</string>
     <string name="chart_load_error">チャートを読み込めませんでした。</string>
     <string name="chart_retry">再試行</string>
-    <string name="chart_price_range">%1$s〜%2$s 円</string>
-    <string name="chart_execution_order">直近の約定（古い順）</string>
+    <string name="chart_one_minute">1分</string>
+    <string name="chart_five_minutes">5分</string>
+    <string name="chart_no_trades">この時間帯の約定はありません</string>
+    <string name="chart_partial_history">最も古い足の約定が一部欠けている可能性があります</string>
+    <string name="chart_candle">%1$s – %2$s\n始値 %3$s · 高値 %4$s\n安値 %5$s · 終値 %6$s 円</string>
+    <string name="chart_partial_candle">一部取得: %1$s – %2$s\n始値 %3$s · 高値 %4$s\n安値 %5$s · 終値 %6$s 円</string>
     <string name="unlink_account">アカウント連携を解除</string>
     <string name="account_unlinked">bitFlyerアカウントの連携を解除しました</string>
     <string name="account_unlink_failed">認証情報を削除できませんでした。もう一度お試しください。</string>
