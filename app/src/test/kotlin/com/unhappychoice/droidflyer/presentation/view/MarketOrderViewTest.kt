@@ -57,6 +57,33 @@ class MarketOrderViewTest {
     }
 
     @Test
+    fun marketButtonsRequireCredentialsAndReactToAccountChanges() {
+        withMarketView(privateClient = null) { activity, view, presenter, status ->
+            val buy = view.findViewById<View>(R.id.buyButton)
+            val sell = view.findViewById<View>(R.id.sellButton)
+            val notice = view.findViewById<TextView>(R.id.credentialsRequired)
+
+            presenter.amount.value = 0.5
+            assertEquals(View.VISIBLE, notice.visibility)
+            assertEquals(activity.getString(R.string.trading_credentials_required), notice.text.toString())
+            assertFalse(buy.isEnabled)
+            assertFalse(sell.isEnabled)
+
+            status.switchAccount(client)
+            assertEquals(View.GONE, notice.visibility)
+            assertTrue(buy.isEnabled)
+            assertTrue(sell.isEnabled)
+            activity.window.tap(buy)
+            verify(client).sendChildOrder(request("BUY"))
+
+            status.switchAccount(null)
+            assertEquals(View.VISIBLE, notice.visibility)
+            assertFalse(buy.isEnabled)
+            assertFalse(sell.isEnabled)
+        }
+    }
+
+    @Test
     fun obscuredMarketButtonsDoNotSubmitAndClearTapsSubmitOncePerSide() {
         withMarketView { activity, view, presenter, _ ->
             presenter.amount.value = 0.5
@@ -152,7 +179,10 @@ class MarketOrderViewTest {
         }
     }
 
-    private fun withMarketView(test: (MainActivity, MarketOrderView, MarketOrderPresenter, CurrentStatusService) -> Unit) {
+    private fun withMarketView(
+        privateClient: APIClientV1? = client,
+        test: (MainActivity, MarketOrderView, MarketOrderPresenter, CurrentStatusService) -> Unit
+    ) {
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.HIDE_OVERLAY_WINDOWS)
         val paused = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { paused }
@@ -163,7 +193,9 @@ class MarketOrderViewTest {
             whenever(client.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
             whenever(client.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
             whenever(client.sendChildOrder(any())).thenReturn(Observable.just(ChildOrderAcceptance("JRF-accepted")))
-            val status = CurrentStatusService(client, Observable.never(), Observable.never(), Observable.never())
+            val status = CurrentStatusService(
+                client, Observable.never(), Observable.never(), Observable.never(), privateClient
+            )
             val presenter = MarketOrderPresenter(status, accountPreference.maximumOrderSize) {}
             val activity = controller.get()
             val view = activity.layoutInflater.inflate(R.layout.market_order_view, null) as MarketOrderView
