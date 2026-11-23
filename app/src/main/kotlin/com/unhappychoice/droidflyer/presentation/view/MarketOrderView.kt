@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view
 import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.isVisible
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
@@ -45,11 +46,17 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             unitSize.asObservable().bindTo(binding.amountSelector.size).addTo(bag)
         }
 
+        val privateClientAvailable = currentStatusService.privateState.observePrivateClientAvailability()
+        privateClientAvailable.subscribeNext { binding.credentialsRequired.isVisible = !it }.addTo(bag)
+
         Observables.combineLatest(
             presenter.amount.asObservable(),
             presenter.isLoading.asObservable(),
-            presenter.maximumOrderSize.asObservable()
-        ) { amount, isLoading, maximum -> CryptoCfdOrderSize.isValid(amount, maximum) && !isLoading }
+            presenter.maximumOrderSize.asObservable(),
+            privateClientAvailable
+        ) { amount, isLoading, maximum, available ->
+            available && !isLoading && CryptoCfdOrderSize.isValid(amount, maximum)
+        }
             .subscribeNext {
                 binding.buyButton.isEnabled = it
                 binding.sellButton.isEnabled = it
@@ -60,8 +67,11 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
 
         Observables.combineLatest(
             currentStatusService.position.asObservable(),
-            presenter.isLoading.asObservable()
-        ) { position: List<Position>, isLoading: Boolean -> position.wholeSize() != 0.0 && !isLoading }
+            presenter.isLoading.asObservable(),
+            privateClientAvailable
+        ) { position: List<Position>, isLoading: Boolean, available: Boolean ->
+            available && !isLoading && position.wholeSize() != 0.0
+        }
             .subscribeNext {
                 binding.clearButton.isEnabled = it
                 binding.clearButton.alpha = if (it) 1.0f else 0.4f

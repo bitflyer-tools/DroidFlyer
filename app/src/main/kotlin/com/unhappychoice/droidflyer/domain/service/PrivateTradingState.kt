@@ -32,6 +32,14 @@ internal class PrivateTradingState(
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
+    val hasPrivateClient: Boolean get() = !disposed && session.client != null
+
+    fun observePrivateClientAvailability(): Observable<Boolean> = Observable.defer {
+        accountChanges.map { hasPrivateClient }
+            .startWith(hasPrivateClient)
+            .distinctUntilChanged()
+    }
+
     private var session = Session(client)
     private val accountSwitches = PublishSubject.create<Unit>()
     private var disposed = false
@@ -94,7 +102,7 @@ internal class PrivateTradingState(
     }
 
     fun prepareOrder(request: SendChildOrderRequest): NewOrder? =
-        if (disposed || session.client == null) null else NewOrder(session, request)
+        if (hasPrivateClient) NewOrder(session, request) else null
 
     fun submitOrder(order: NewOrder): Observable<ChildOrderAcceptance>? {
         val current = order.session
