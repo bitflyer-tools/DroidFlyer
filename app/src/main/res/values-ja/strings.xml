@@ -55,6 +55,9 @@
     <string name="chart_retry">再試行</string>
     <string name="chart_price_range">%1$s〜%2$s 円</string>
     <string name="chart_execution_order">直近の約定（古い順）</string>
+    <string name="unlink_account">アカウント連携を解除</string>
+    <string name="account_unlinked">bitFlyerアカウントの連携を解除しました</string>
+    <string name="account_unlink_failed">認証情報を削除できませんでした。もう一度お試しください。</string>
     <string name="funding_unavailable">次回のファンディングレートを取得できません</string>
     <string name="funding_details">次回ファンディング %1$s · %2$s</string>
     <string name="funding_stale">%1$s（更新できませんでした）</string>

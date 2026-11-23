@@ -8,9 +8,13 @@ import java.util.Collections
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
 
-internal enum class BoardSource { SNAPSHOT, DELTA, REST }
+internal enum class BoardSource { SNAPSHOT, DELTA, REST, DISCONNECT }
 
-internal data class BoardUpdate(val board: Board, val source: BoardSource, val requestRevision: Long? = null)
+internal data class BoardUpdate(val board: Board, val source: BoardSource, val requestRevision: Long? = null) {
+    companion object {
+        fun disconnected() = BoardUpdate(Board(0.0, emptyList(), emptyList()), BoardSource.DISCONNECT)
+    }
+}
 
 internal fun boardUpdates(snapshots: Observable<Board>, deltas: Observable<Board>): Observable<BoardUpdate> =
     Observable.merge(
@@ -19,12 +23,28 @@ internal fun boardUpdates(snapshots: Observable<Board>, deltas: Observable<Board
     )
 
 internal class OrderBookFallback {
-    // A null revision means a realtime snapshot has arrived and REST is no longer needed.
+    private var revisionCounter = 0L
+    private var awaitingSnapshot = false
     @Volatile private var revision: Long? = 0L
 
-    @Synchronized
-    fun onRealtimeUpdate(update: BoardUpdate) {
-        revision = if (update.source == BoardSource.SNAPSHOT) null else revision?.plus(1)
+    // Calls arrive through the serialized merged board stream.
+    fun acceptUpdate(update: BoardUpdate): Boolean {
+        when (update.source) {
+            BoardSource.SNAPSHOT -> {
+                awaitingSnapshot = false
+                revision = null
+            }
+            BoardSource.DISCONNECT -> {
+                awaitingSnapshot = true
+                revision = ++revisionCounter
+            }
+            BoardSource.DELTA -> {
+                if (awaitingSnapshot) return false
+                if (revision != null) revision = ++revisionCounter
+            }
+            BoardSource.REST -> Unit
+        }
+        return true
     }
 
     fun requestRevision(): Long? = revision
@@ -49,7 +69,10 @@ internal fun observeOrderBook(
         .publish { applied ->
             Observable.merge<OrderBookEvent>(
                 applied.map { book.quotes() }.distinctUntilChanged(),
-                applied.sample(300, TimeUnit.MILLISECONDS, serialScheduler, true)
+                applied.filter { it.source == BoardSource.DISCONNECT }
+                    .map { OrderBookEvent.View(book.view()) },
+                applied.filter { it.source != BoardSource.DISCONNECT }
+                    .sample(300, TimeUnit.MILLISECONDS, serialScheduler, true)
                     .map { OrderBookEvent.View(book.view()) }
             )
         }
@@ -59,6 +82,7 @@ private class OrderBook {
     fun apply(update: BoardUpdate): Boolean {
         if (update.source == BoardSource.REST && hasRealtimeSnapshot) return false
         if (update.source == BoardSource.SNAPSHOT) hasRealtimeSnapshot = true
+        if (update.source == BoardSource.DISCONNECT) hasRealtimeSnapshot = false
         if (update.source != BoardSource.DELTA) {
             midPrice = update.board.midPrice
             bids.clear()
