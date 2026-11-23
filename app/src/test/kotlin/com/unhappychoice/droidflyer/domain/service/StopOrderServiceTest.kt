@@ -814,7 +814,7 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun newOrderEventAfterReconnectConfirmsWaitingStop() =
+    fun newOrderEventAfterReconnectStillRequiresFullyOutstandingRestOrderToCancel() =
         withRealtimeStops { stops, realtime, scheduler ->
             outstandingSize = null
             stops.refresh()
@@ -825,11 +825,12 @@ class StopOrderServiceTest {
             scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
+            var newOrderOutstandingSize: Double? = null
             activeParentPage = {
                 parentOrders().replaceFirst("[", """[
                     {"id":101,"parent_order_id":"parent-2","parent_order_acceptance_id":"acceptance-2",
                      "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"ACTIVE",
-                     "side":"SELL","size":0.01},""")
+                     "side":"SELL","size":0.01,"outstanding_size":$newOrderOutstandingSize,"cancel_size":0},""")
             }
             realtime.parent(listOf(triggerEvent().copy(
                 eventType = "ORDER", parentOrderId = "parent-2", parentOrderAcceptanceId = "acceptance-2"
@@ -841,7 +842,16 @@ class StopOrderServiceTest {
             val confirmed = orders.getValue("acceptance-2")
             assertEquals(StopOrderStatus.WAITING, confirmed.status)
             assertTrue(confirmed.canCancel)
-            stops.cancel(stops.cancellationConfirmation(confirmed)) { fail("Cancellation failed: $it") }
+            val confirmation = stops.cancellationConfirmation(confirmed)
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+
+            newOrderOutstandingSize = 0.01
+            stops.cancel(confirmation) { fail("Cancellation failed: $it") }
             scheduler.triggerActions()
 
             val cancellation = requests.single { it.url.encodedPath == "/v1/me/cancelparentorder" }

@@ -438,13 +438,9 @@ internal class StopOrderService(
         loadActiveParents(client)
             .filter { it.parentOrderAcceptanceId == order.acceptanceId && isCryptoCfdStop(it) }
             .take(1)
+            .filter { it.isFullyOutstanding() }
             .concatMap { parent ->
-                val fullyOutstanding = parent.isFullyOutstanding()
-                reconcileMarketChild(client, order.copy(
-                    parent = parent,
-                    restWaitingConfirmed = fullyOutstanding,
-                    recoveryAvailable = order.recoveryAvailable && fullyOutstanding
-                ))
+                reconcileMarketChild(client, order.copy(parent = parent, restWaitingConfirmed = true))
             }
             .subscribeOn(io).observeOn(main)
             .map { verified ->
