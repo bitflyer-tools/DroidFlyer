@@ -54,8 +54,12 @@
     <string name="chart_loading">Loading chart</string>
     <string name="chart_load_error">Could not load the chart.</string>
     <string name="chart_retry">Retry</string>
-    <string name="chart_price_range">%1$s–%2$s JPY</string>
-    <string name="chart_execution_order">Recent trades (oldest to newest)</string>
+    <string name="chart_one_minute">1 minute</string>
+    <string name="chart_five_minutes">5 minutes</string>
+    <string name="chart_no_trades">No trades in this interval</string>
+    <string name="chart_partial_history">Oldest candle may be incomplete</string>
+    <string name="chart_candle">%1$s – %2$s\nOpen %3$s · High %4$s\nLow %5$s · Close %6$s JPY</string>
+    <string name="chart_partial_candle">Partial: %1$s – %2$s\nOpen %3$s · High %4$s\nLow %5$s · Close %6$s JPY</string>
     <string name="unlink_account">Unlink account</string>
     <string name="account_unlinked">bitFlyer account unlinked</string>
     <string name="account_unlink_failed">Could not remove saved credentials. Try unlinking again.</string>
