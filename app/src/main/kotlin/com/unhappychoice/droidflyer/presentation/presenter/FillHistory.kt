@@ -15,8 +15,16 @@ internal class FillHistory(
         val nextCursor: Long? = null,
         val loading: Boolean = false,
         val loaded: Boolean = false,
-        val error: Error? = null
-    )
+        val error: Error? = null,
+        val update: Update = Update.Replace(emptyList())
+    ) {
+        // A fresh instance marks a genuine change in fills; views can detect it with a reference check
+        // instead of diffing the retained entries, since copies that only flip loading/error reuse it.
+        sealed class Update {
+            data class Replace(val fills: List<PrivateExecution>) : Update()
+            data class Append(val older: List<PrivateExecution>) : Update()
+        }
+    }
 
     enum class Error { ACCESS_DENIED, REQUEST_FAILED }
 
@@ -58,10 +66,12 @@ internal class FillHistory(
         val accepted = page.filter { before == null || it.id < before }
             .distinctBy { it.id }.sortedByDescending { it.id }
         if (before == null) pages = Pages()
+        val fills = pages.append(accepted)
         state.value = State(
-            fills = pages.append(accepted),
+            fills = fills,
             nextCursor = accepted.lastOrNull()?.id?.takeIf { page.size >= PAGE_SIZE },
-            loaded = true
+            loaded = true,
+            update = if (before == null) State.Update.Replace(fills) else State.Update.Append(accepted)
         )
     }
 
@@ -73,7 +83,7 @@ internal class FillHistory(
             if (page.isEmpty()) return snapshot
             val offset = snapshot.size
             byOffset[offset] = page
-            // Each snapshot exposes a fixed prefix that ListAdapter can diff during later appends.
+            // Backed by the page map so appending stays O(1) instead of copying the whole history.
             snapshot = object : AbstractList<PrivateExecution>() {
                 override val size = offset + page.size
 
