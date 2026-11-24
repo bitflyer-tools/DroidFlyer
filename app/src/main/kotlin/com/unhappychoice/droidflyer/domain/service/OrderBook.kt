@@ -58,6 +58,11 @@ internal sealed class OrderBookEvent {
     data class View(val board: Board) : OrderBookEvent()
 }
 
+private sealed class OrderBookSignal {
+    data class Update(val update: BoardUpdate) : OrderBookSignal()
+    data class Visibility(val visible: Boolean) : OrderBookSignal()
+}
+
 internal fun observeOrderBook(
     updates: Observable<BoardUpdate>,
     serialScheduler: Scheduler,
@@ -65,23 +70,31 @@ internal fun observeOrderBook(
     visible: Observable<Boolean> = Observable.just(true)
 ): Observable<OrderBookEvent> = Observable.defer {
     val book = OrderBook()
-    var hasObservedVisibility = false
-    updates.observeOn(serialScheduler)
-        .filter { isCurrent(it) && book.apply(it) }
-        .publish { applied ->
+    val updateSignals: Observable<OrderBookSignal> = updates.map { OrderBookSignal.Update(it) }
+    val visibilitySignals: Observable<OrderBookSignal> =
+        visible.distinctUntilChanged().map { OrderBookSignal.Visibility(it) }
+
+    // Updates and visibility are merged into one sequence before observeOn so a visibility change
+    // racing a board update is delivered in the order it was actually published, instead of each
+    // being queued on its own observeOn and letting one queue's batch run ahead of the other's.
+    Observable.merge(updateSignals, visibilitySignals)
+        .observeOn(serialScheduler)
+        .publish { signals ->
+            // Shared so the update is applied to the mutable book exactly once, no matter how many
+            // of the branches below (quotes, disconnect view, sampled view) subscribe to it.
+            val applied = signals.ofType(OrderBookSignal.Update::class.java)
+                .map { it.update }
+                .filter { isCurrent(it) && book.apply(it) }
+                .share()
+            val visibility = signals.ofType(OrderBookSignal.Visibility::class.java).map { it.visible }
+
             Observable.merge<OrderBookEvent>(
                 applied.map { book.quotes() }.distinctUntilChanged(),
-                visible.distinctUntilChanged().observeOn(serialScheduler).switchMap { isVisible ->
-                    // The first visibility value reflects the starting state, not a transition into view.
-                    val isTransitionIntoView = isVisible && hasObservedVisibility
-                    hasObservedVisibility = true
+                // The first visibility value reflects the starting state, not a transition into view.
+                visibility.skip(1).filter { it }.map { OrderBookEvent.View(book.view()) },
+                visibility.switchMap { isVisible ->
                     if (!isVisible) return@switchMap Observable.empty<OrderBookEvent>()
                     Observable.merge(
-                        if (isTransitionIntoView) {
-                            Observable.just(OrderBookEvent.View(book.view()))
-                        } else {
-                            Observable.empty<OrderBookEvent>()
-                        },
                         applied.filter { it.source == BoardSource.DISCONNECT }
                             .map { OrderBookEvent.View(book.view()) },
                         applied.filter { it.source != BoardSource.DISCONNECT }
