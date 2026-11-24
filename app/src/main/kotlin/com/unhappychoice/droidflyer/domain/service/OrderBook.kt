@@ -24,25 +24,26 @@ internal fun boardUpdates(snapshots: Observable<Board>, deltas: Observable<Board
 
 internal class OrderBookFallback {
     private var revisionCounter = 0L
-    private var awaitingSnapshot = false
+    // Cold start has no full book yet, so deltas must wait until a REST or realtime snapshot seeds one.
+    private var awaitingBaseline = true
     @Volatile private var revision: Long? = 0L
 
     // Calls arrive through the serialized merged board stream.
     fun acceptUpdate(update: BoardUpdate): Boolean {
         when (update.source) {
             BoardSource.SNAPSHOT -> {
-                awaitingSnapshot = false
+                awaitingBaseline = false
                 revision = null
             }
             BoardSource.DISCONNECT -> {
-                awaitingSnapshot = true
+                awaitingBaseline = true
                 revision = ++revisionCounter
             }
             BoardSource.DELTA -> {
-                if (awaitingSnapshot) return false
+                if (awaitingBaseline) return false
                 if (revision != null) revision = ++revisionCounter
             }
-            BoardSource.REST -> Unit
+            BoardSource.REST -> if (isCurrent(update)) awaitingBaseline = false
         }
         return true
     }
