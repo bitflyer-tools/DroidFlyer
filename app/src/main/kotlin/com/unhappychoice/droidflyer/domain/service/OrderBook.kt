@@ -65,17 +65,23 @@ internal fun observeOrderBook(
     visible: Observable<Boolean> = Observable.just(true)
 ): Observable<OrderBookEvent> = Observable.defer {
     val book = OrderBook()
+    var hasObservedVisibility = false
     updates.observeOn(serialScheduler)
         .filter { isCurrent(it) && book.apply(it) }
         .publish { applied ->
-            val visibility = visible.distinctUntilChanged().observeOn(serialScheduler)
             Observable.merge<OrderBookEvent>(
                 applied.map { book.quotes() }.distinctUntilChanged(),
-                // The first visibility value reflects the starting state, not a transition into view.
-                visibility.skip(1).filter { it }.map { OrderBookEvent.View(book.view()) },
-                visibility.switchMap { isVisible ->
+                visible.distinctUntilChanged().observeOn(serialScheduler).switchMap { isVisible ->
+                    // The first visibility value reflects the starting state, not a transition into view.
+                    val isTransitionIntoView = isVisible && hasObservedVisibility
+                    hasObservedVisibility = true
                     if (!isVisible) return@switchMap Observable.empty<OrderBookEvent>()
                     Observable.merge(
+                        if (isTransitionIntoView) {
+                            Observable.just(OrderBookEvent.View(book.view()))
+                        } else {
+                            Observable.empty<OrderBookEvent>()
+                        },
                         applied.filter { it.source == BoardSource.DISCONNECT }
                             .map { OrderBookEvent.View(book.view()) },
                         applied.filter { it.source != BoardSource.DISCONNECT }
