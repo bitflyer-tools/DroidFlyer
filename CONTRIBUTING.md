@@ -15,9 +15,10 @@ Run the same build and test tasks used by [CircleCI](.circleci/config.yml) befor
 ```sh
 ./gradlew assembleDebug assembleDebugUnitTest
 ./gradlew jacoco
+python3 scripts/ci/report-coverage.py app/build/reports/jacoco/jacoco/jacoco.xml
 ```
 
-The `jacoco` task runs the debug unit tests and generates coverage reports. CircleCI requires at least 87% line coverage.
+The `jacoco` task runs the debug unit tests and generates coverage reports. `scripts/ci/report-coverage.py` then enforces the same 87% line coverage threshold CircleCI requires, so a report that falls short exits with a non-zero status locally too.
 
 ## Open a pull request
 
