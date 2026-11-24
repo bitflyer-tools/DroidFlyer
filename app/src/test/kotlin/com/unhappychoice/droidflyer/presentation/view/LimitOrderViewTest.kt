@@ -79,6 +79,15 @@ class LimitOrderViewTest {
     }
 
     @Test
+    fun attachingWhileLimitIsSelectedKeepsTheBoardVisibleAndDetachingHidesIt() {
+        withLimitView(inPager = true) { view ->
+            assertTrue(status.limitVisible.value)
+            (view.parent as ViewGroup).removeView(view)
+            assertFalse(status.limitVisible.value)
+        }
+    }
+
+    @Test
     fun publicRowsRemainReadableAndEnableOrderEntryWhenCredentialsAreSaved() {
         status.switchAccount(null)
         status.board.value = Board(150.0, listOf(Order(100, 1.0)), listOf(Order(200, 2.0)))
