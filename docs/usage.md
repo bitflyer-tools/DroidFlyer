@@ -19,6 +19,9 @@ under **Order** → **Limit** before connecting an account.
 - **Order** → **Orders** → **Active** lists active orders and lets you cancel them.
   **Fills** shows recent executions for your account. Tap **Refresh** to
   reload them or **Load older fills** to see earlier executions.
+- **Order** → **Market** → **Clear all positions** reads your open positions,
+  submits a market order to close them, then reads the submitted child order
+  by its acceptance ID to confirm the fill.
 
 ## Account settings
 
