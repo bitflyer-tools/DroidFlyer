@@ -25,7 +25,8 @@ class CurrentStatusService internal constructor(
     boardUpdates: Observable<BoardUpdate>,
     orderEvents: Observable<PrivateEvent<*>>,
     privateClient: APIClientV1? = apiClient,
-    publicFeedDisconnects: Observable<Unit> = Observable.never()
+    publicFeedDisconnects: Observable<Unit> = Observable.never(),
+    private val now: () -> Long = System::currentTimeMillis
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
         apiClient,
@@ -147,9 +148,16 @@ class CurrentStatusService internal constructor(
     internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
         Observable.defer {
             visibility.distinctUntilChanged()
-                .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
-                .map(::updateFundingStatus)
-                .startWith(fundingStatus.get())
+                .switchMap { visible ->
+                    if (visible) {
+                        Observable.merge(pollFunding().map(::updateFundingStatus), expiryTicks())
+                            .startWith(unexpiredFundingStatus())
+                    } else {
+                        Observable.empty()
+                    }
+                }
+                .map { unexpiredFundingStatus() }
+                .startWith(unexpiredFundingStatus())
                 .distinctUntilChanged()
         }
 
@@ -160,6 +168,17 @@ class CurrentStatusService internal constructor(
             if (fundingStatus.compareAndSet(previous, next)) return next
         } while (true)
     }
+
+    private fun unexpiredFundingStatus(): FundingStatus {
+        val status = fundingStatus.get()
+        val funding = status.funding
+        return if (funding != null && funding.isExpired(now())) status.copy(funding = null) else status
+    }
+
+    private fun expiryTicks(): Observable<FundingStatus> =
+        Observable.interval(1, TimeUnit.SECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
+            .map { unexpiredFundingStatus() }
 
     private fun pollFunding(): Observable<FundingStatus> =
         Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }
