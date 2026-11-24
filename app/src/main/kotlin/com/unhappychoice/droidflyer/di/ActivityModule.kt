@@ -34,7 +34,9 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         ChartPresenter(SystemClock::elapsedRealtimeNanos, instance<APIClientV1>()::getExecutionPrices)
     }
     bindSingleton<OrderPresenter> { OrderPresenter(instance()) }
-    bindSingleton<MarketOrderPresenter> { MarketOrderPresenter(instance(), accountPreference = instance()) }
+    bindSingleton<MarketOrderPresenter> {
+        MarketOrderPresenter(instance(), accountPreference = instance(), activity.resources, activity::showSnackbar)
+    }
     bindSingleton<LimitOrderPresenter> {
         LimitOrderPresenter(
             instance<CurrentStatusService>().privateState,

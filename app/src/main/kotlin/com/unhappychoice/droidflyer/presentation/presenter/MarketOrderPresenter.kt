@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import android.content.res.Resources
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
@@ -22,15 +23,20 @@ import mortar.ViewPresenter
 class MarketOrderPresenter internal constructor(
     private val currentStatusService: CurrentStatusService,
     internal val maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
-    private val notify: MarketOrderPresenter.(Int) -> Unit
+    private val notify: (Int) -> Unit
 ) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
     constructor(
         currentStatusService: CurrentStatusService,
-        accountPreference: CryptoCfdAccountPreference
+        accountPreference: CryptoCfdAccountPreference,
+        resources: Resources,
+        showSnackbar: (String, Int) -> Unit
     ) : this(
         currentStatusService,
         accountPreference.maximumOrderSize,
-        notify = MarketOrderPresenter::showMessage
+        notify = { message ->
+            val duration = if (message == R.string.market_order_accepted) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
+            showSnackbar(resources.getString(message), duration)
+        }
     )
 
     override val isLoading = Variable(false)
@@ -95,11 +101,5 @@ class MarketOrderPresenter internal constructor(
                 notify(message)
             })
             .addTo(bag)
-    }
-
-    private fun showMessage(message: Int) {
-        val currentView = view ?: return
-        val duration = if (message == R.string.market_order_accepted) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
-        Snackbar.make(currentView, message, duration).show()
     }
 }
