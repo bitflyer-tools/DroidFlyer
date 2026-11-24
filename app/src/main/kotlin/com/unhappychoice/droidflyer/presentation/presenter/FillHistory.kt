@@ -17,16 +17,16 @@ internal class FillHistory(
         val loaded: Boolean = false,
         val error: Error? = null,
         val update: Update = Update.Replace(emptyList())
-    )
+    ) {
+        // A fresh instance marks a genuine change in fills; views can detect it with a reference check
+        // instead of diffing the retained entries, since copies that only flip loading/error reuse it.
+        sealed class Update {
+            data class Replace(val fills: List<PrivateExecution>) : Update()
+            data class Append(val older: List<PrivateExecution>) : Update()
+        }
+    }
 
     enum class Error { ACCESS_DENIED, REQUEST_FAILED }
-
-    // A fresh instance marks a genuine change in fills; views can detect it with a reference check
-    // instead of diffing the retained entries, since copies that only flip loading/error reuse it.
-    sealed class Update {
-        data class Replace(val fills: List<PrivateExecution>) : Update()
-        data class Append(val older: List<PrivateExecution>) : Update()
-    }
 
     val state = Variable(State())
 
@@ -71,7 +71,7 @@ internal class FillHistory(
             fills = fills,
             nextCursor = accepted.lastOrNull()?.id?.takeIf { page.size >= PAGE_SIZE },
             loaded = true,
-            update = if (before == null) Update.Replace(fills) else Update.Append(accepted)
+            update = if (before == null) State.Update.Replace(fills) else State.Update.Append(accepted)
         )
     }
 
