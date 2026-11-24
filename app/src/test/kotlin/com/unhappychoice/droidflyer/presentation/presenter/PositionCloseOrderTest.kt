@@ -41,6 +41,18 @@ class PositionCloseOrderTest {
         assertNull(reconfirmed)
     }
 
+    @Test
+    fun rejectsPositionsBelowTheMinimumOrderSize() {
+        assertNull(PositionCloseOrder.from(0.00099999))
+        assertNull(PositionCloseOrder.from(-0.00099999))
+    }
+
+    @Test
+    fun acceptsAPositionAtExactlyTheMinimumOrderSize() {
+        assertEquals(0.001, requireNotNull(PositionCloseOrder.from(0.001)).size, 0.0)
+        assertEquals(0.001, requireNotNull(PositionCloseOrder.from(-0.001)).size, 0.0)
+    }
+
     private fun confirm(
         confirmedSize: Double,
         currentSize: Double
