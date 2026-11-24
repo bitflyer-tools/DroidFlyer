@@ -7,9 +7,9 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
@@ -75,8 +75,6 @@ class SettingsPresenterTest {
     })
     private val requests = mutableListOf<Request>()
     private val credentialsDuringValidation = mutableListOf<Pair<String, String>>()
-    private val authenticated = mutableListOf<Pair<String, String>>()
-    private val switched = mutableListOf<APIClientV1?>()
     private var validationStatus = 200
     private var validationFailure: IOException? = null
     private var expectedSavedCredentials = "saved-key" to "saved-secret"
@@ -104,10 +102,7 @@ class SettingsPresenterTest {
                 .build()
         }.build())
     private val accountPreference = CryptoCfdAccountPreference(context)
-    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }, accountPreference) { save ->
-        save()
-        authenticated.add(savedCredentials())
-    }
+    private val presenter = SettingsPresenter(api, preference, accountPreference)
 
     @Before
     fun setUp() {
@@ -167,13 +162,12 @@ class SettingsPresenterTest {
 
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
         assertEquals(listOf("saved-key" to "saved-secret"), credentialsDuringValidation)
-        assertEquals(listOf(savedCredentials()), authenticated)
         assertSignedWith(requests[0], "submitted-key", "submitted-secret")
         assertSignedWith(requests[1], "submitted-key", "submitted-secret")
     }
 
     @Test
-    fun savesAndUpdatesRealtimeOnIoBeforeSwitchingAndEmittingSuccessOnMain() {
+    fun savesOnIoBeforeEmittingSuccessOnMain() {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
@@ -188,12 +182,9 @@ class SettingsPresenterTest {
         assertEquals(listOf("/v1/me/getbalance"), requestPaths())
         assertFalse(stored.contains("key"))
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
-        assertEquals(emptyList<APIClientV1?>(), switched)
-        assertEquals(listOf("submitted-key" to "submitted-secret"), authenticated)
         result.assertNoValues().assertNotComplete()
 
         main.triggerActions()
-        assertEquals(1, switched.size)
         result.assertValueCount(1).assertComplete()
     }
 
@@ -250,42 +241,41 @@ class SettingsPresenterTest {
         validationStatus = 401
         assertSaveFailure(R.string.api_key_rejected) { it.cause is HttpException }
         assertEquals(originalEntries, stored.all)
-        assertEquals(emptyList<APIClientV1?>(), switched)
-        assertEquals(emptyList<Pair<String, String>>(), authenticated)
 
         validationStatus = 200
         presenter.saveCredentials().test().assertValueCount(1).assertComplete()
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
-        assertEquals(1, switched.size)
-        assertEquals(listOf(savedCredentials()), authenticated)
     }
 
     @Test
-    fun switchedClientKeepsTheValidatedCredentials() {
-        presenter.saveCredentials().test().assertComplete()
-        preference.save(APICredentials("other-key", "other-secret"))
+    fun savingDifferentCredentialsNotifiesOtherLiveSessionsAndBumpsTheGeneration() {
+        val generation = preference.credentialsGeneration
+        val changes = preference.accountChanged.test()
 
-        requireNotNull(switched.single()).getPermissions().blockingFirst()
+        presenter.saveCredentials().test().assertValueCount(1).assertComplete()
 
-        assertSignedWith(requests[1], "submitted-key", "submitted-secret")
+        changes.assertValue(Unit)
+        assertEquals(generation + 1, preference.credentialsGeneration)
     }
 
     @Test
-    fun savingTheSameCredentialsKeepsTheCurrentSession() {
+    fun savingTheSameCredentialsKeepsTheCurrentSessionAndNeverNotifies() {
         presenter.key.value = "saved-key"
         presenter.secret.value = "saved-secret"
+        val generation = preference.credentialsGeneration
+        val changes = preference.accountChanged.test()
 
         presenter.saveCredentials().test().assertComplete()
 
-        assertEquals(emptyList<APIClientV1?>(), switched)
-        assertEquals(listOf(savedCredentials()), authenticated)
+        changes.assertNoValues()
+        assertEquals(generation, preference.credentialsGeneration)
     }
 
     @Test
     fun unlinkWorksOfflineAndDropsValidationAlreadyWaitingForTheMainThread() {
         val main = TestScheduler()
         RxAndroidPlugins.setMainThreadSchedulerHandler { main }
-        val unlinks = preference.accountUnlinked.test()
+        val changes = preference.accountChanged.test()
         val pendingSave = presenter.saveCredentials().test()
         assertEquals(1, requests.size)
         assertEquals("submitted-key" to "submitted-secret", savedCredentials())
@@ -295,11 +285,10 @@ class SettingsPresenterTest {
 
         pendingSave.assertNoValues().assertComplete()
         assertEquals(1, requests.size)
-        unlinks.assertValue(Unit)
+        // One emission for the save that just applied, one for the unlink that followed it.
+        changes.assertValueCount(2)
         assertEquals("" to "", savedCredentials())
         assertEquals("" to "", presenter.key.value to presenter.secret.value)
-        assertEquals(listOf("submitted-key" to "submitted-secret"), authenticated)
-        assertTrue(switched.isEmpty())
 
         presenter.key.value = "new-key"
         presenter.secret.value = "new-secret"
@@ -309,8 +298,7 @@ class SettingsPresenterTest {
 
         relink.assertValueCount(1).assertComplete()
         assertEquals("new-key" to "new-secret", savedCredentials())
-        assertEquals(1, switched.size)
-        assertEquals(listOf("submitted-key" to "submitted-secret", savedCredentials()), authenticated)
+        changes.assertValueCount(3)
     }
 
     @Test
@@ -332,12 +320,17 @@ class SettingsPresenterTest {
             assertEquals(publicReads, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, status::switchAccount, accountPreference) { it() }
+            val settings = SettingsPresenter(api, preference, accountPreference)
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
+            // Mirrors how RealtimeSession reacts to a credential replacement in a live activity.
+            val wiring = preference.accountChanged.subscribeNext {
+                status.applyAccountChange { api.privateStatusClient(preference.read()) }
+            }
             val saved = settings.saveCredentials().test()
             timer.triggerActions()
             saved.assertValueCount(1).assertComplete()
+            wiring.dispose()
 
             assertEquals(
                 listOf(
@@ -381,8 +374,6 @@ class SettingsPresenterTest {
     private fun assertSavedPairStillActive() {
         api.client().getPermissions().blockingFirst()
         assertEquals("saved-key" to "saved-secret", savedCredentials())
-        assertEquals(emptyList<Pair<String, String>>(), authenticated)
-        assertEquals(emptyList<APIClientV1?>(), switched)
         assertSignedWith(requests[0], "submitted-key", "submitted-secret")
         assertSignedWith(requests[1], "saved-key", "saved-secret")
     }

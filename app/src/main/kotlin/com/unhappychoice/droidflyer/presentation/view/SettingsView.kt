@@ -34,7 +34,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         val credentialLoad = SerialDisposable()
         credentialLoad.addTo(bag)
-        presenter.accountUnlinked.startWith(Unit)
+        presenter.accountChanged.startWith(Unit)
             .subscribeNext {
                 setCredentialInputsEnabled(false)
                 credentialLoad.set(presenter.loadCredentials {

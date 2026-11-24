@@ -12,7 +12,9 @@ import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
 import com.unhappychoice.droidflyer.di.activityModule
 import com.unhappychoice.droidflyer.di.applicationModule
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.executionMessage
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
@@ -41,7 +43,11 @@ class MainActivity : AppCompatActivity() {
 
     val binding by lazy { ActivityMainBinding.inflate(layoutInflater) }
 
-    private val realtimeSession = lazy { RealtimeSession(module.direct.instance(), module.direct.instance()) }
+    private val realtimeSession = lazy {
+        val api = module.direct.instance<APIClient>()
+        val preference = module.direct.instance<APITokenPreference>()
+        RealtimeSession(module.direct.instance(), module.direct.instance()) { api.privateStatusClient(preference.read()) }
+    }
 
     private val chartScreen by lazy { ChartScreen() }
     private val bottomNavigationScreens by lazy {

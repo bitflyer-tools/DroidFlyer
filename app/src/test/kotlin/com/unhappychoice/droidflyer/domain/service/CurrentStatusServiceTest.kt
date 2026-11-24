@@ -273,6 +273,30 @@ class CurrentStatusServiceTest {
     }
 
     @Test
+    fun applyAccountChangeSwitchesToNoAccountWhenLoadedClientIsNull() {
+        assertTrue(service.privateState.hasPrivateClient)
+
+        service.applyAccountChange { null }
+        scheduler.triggerActions()
+
+        assertFalse(service.privateState.hasPrivateClient)
+    }
+
+    @Test
+    fun applyAccountChangeIgnoresALoadThatResolvesAfterANewerSwitch() {
+        val newAccount = mock(APIClientV1::class.java)
+        `when`(newAccount.getPositions()).thenReturn(Observable.empty())
+        `when`(newAccount.getCollateral()).thenReturn(Observable.empty())
+        `when`(newAccount.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+
+        service.applyAccountChange { null }
+        service.switchAccount(newAccount)
+        scheduler.triggerActions()
+
+        assertTrue(service.privateState.hasPrivateClient)
+    }
+
+    @Test
     fun refreshesAndAccountSwitchShareAnInFlightFallback() {
         service.pollStatus()
         service.updateStatus()

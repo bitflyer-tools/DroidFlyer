@@ -132,6 +132,17 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
     }
 
+    /** Unlike [initializeAccount], this also switches to no account when [loadClient] resolves to null. */
+    internal fun applyAccountChange(loadClient: () -> APIClientV1?) {
+        val initialAccount = accountChanged
+        Observable.fromCallable { listOfNotNull(loadClient()) }
+            .subscribeOnIoObserveOnUI()
+            .subscribeNext { clients ->
+                if (accountChanged === initialAccount) switchAccount(clients.singleOrNull())
+            }
+            .addTo(bag)
+    }
+
     internal fun switchAccount(client: APIClientV1?) {
         if (bag.isDisposed) return
 

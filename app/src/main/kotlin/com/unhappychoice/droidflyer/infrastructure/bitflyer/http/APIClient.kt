@@ -49,12 +49,12 @@ class APIClient internal constructor(
     private val defaultClient by lazy { createClient(null) }
 
     private fun authenticatedTransport(credentials: APICredentials?): OkHttpClient {
-        val generation = preference.unlinkGeneration
+        val generation = preference.credentialsGeneration
         return okHttp.newBuilder()
             .apply {
                 interceptors().add(0, Interceptor { chain ->
-                    if (credentials != null && generation != preference.unlinkGeneration) {
-                        throw IOException("bitFlyer account was unlinked")
+                    if (credentials != null && generation != preference.credentialsGeneration) {
+                        throw IOException("bitFlyer account credentials were unlinked or replaced")
                     }
                     chain.proceed(authenticatedRequest(chain.request(), credentials))
                 })

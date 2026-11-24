@@ -161,7 +161,9 @@ class RealtimeSessionTest {
             TestSocket().also(accountSockets::add)
         }.also { accountSockets.single().authenticate() }
         val status = CurrentStatusService(api, client, api)
-        val lifecycle = RealtimeSession(client, status).apply { notifyExecutions { notifications++ } }
+        val lifecycle = RealtimeSession(client, status) {
+            preference.read().takeIf { it.isConfigured }?.let { api }
+        }.apply { notifyExecutions { notifications++ } }
     }
 
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
