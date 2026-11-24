@@ -57,8 +57,11 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
 
         bindOrderEntry()
 
-        val pageSelection = observePageSelection()
-        pageSelection.distinctUntilChanged()
+        // replay(1).autoConnect() so both subscribers below share one ViewPager listener while each
+        // still receives the current page state immediately, like two independent subscriptions would.
+        // The connection is tied to bag so the listener is removed on detach instead of leaking.
+        val pageSelection = observePageSelection().distinctUntilChanged().replay(1).autoConnect(1) { it.addTo(bag) }
+        pageSelection
             .subscribeNext { currentStatusService.limitVisible.value = it }
             .addTo(bag)
 

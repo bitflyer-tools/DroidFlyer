@@ -80,9 +80,12 @@ internal fun observeOrderBook(
     Observable.merge(updateSignals, visibilitySignals)
         .observeOn(serialScheduler)
         .publish { signals ->
+            // Shared so the update is applied to the mutable book exactly once, no matter how many
+            // of the branches below (quotes, disconnect view, sampled view) subscribe to it.
             val applied = signals.ofType(OrderBookSignal.Update::class.java)
                 .map { it.update }
                 .filter { isCurrent(it) && book.apply(it) }
+                .share()
             val visibility = signals.ofType(OrderBookSignal.Visibility::class.java).map { it.visible }
 
             Observable.merge<OrderBookEvent>(
