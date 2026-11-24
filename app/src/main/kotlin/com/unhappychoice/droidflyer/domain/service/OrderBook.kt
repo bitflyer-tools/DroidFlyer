@@ -68,22 +68,26 @@ internal fun observeOrderBook(
     updates.observeOn(serialScheduler)
         .filter { isCurrent(it) && book.apply(it) }
         .publish { applied ->
-            val visibility = visible.distinctUntilChanged().observeOn(serialScheduler)
-            Observable.merge<OrderBookEvent>(
-                applied.map { book.quotes() }.distinctUntilChanged(),
-                // The first visibility value reflects the starting state, not a transition into view.
-                visibility.skip(1).filter { it }.map { OrderBookEvent.View(book.view()) },
-                visibility.switchMap { isVisible ->
-                    if (!isVisible) return@switchMap Observable.empty<OrderBookEvent>()
-                    Observable.merge(
-                        applied.filter { it.source == BoardSource.DISCONNECT }
-                            .map { OrderBookEvent.View(book.view()) },
-                        applied.filter { it.source != BoardSource.DISCONNECT }
-                            .sample(300, TimeUnit.MILLISECONDS, serialScheduler, true)
-                            .map { OrderBookEvent.View(book.view()) }
+            // Shared via publish so the skip(1) and switchMap consumers below observe the
+            // exact same visibility transitions, instead of each independently re-subscribing.
+            visible.distinctUntilChanged().observeOn(serialScheduler)
+                .publish { visibility ->
+                    Observable.merge<OrderBookEvent>(
+                        applied.map { book.quotes() }.distinctUntilChanged(),
+                        // The first visibility value reflects the starting state, not a transition into view.
+                        visibility.skip(1).filter { it }.map { OrderBookEvent.View(book.view()) },
+                        visibility.switchMap { isVisible ->
+                            if (!isVisible) return@switchMap Observable.empty<OrderBookEvent>()
+                            Observable.merge(
+                                applied.filter { it.source == BoardSource.DISCONNECT }
+                                    .map { OrderBookEvent.View(book.view()) },
+                                applied.filter { it.source != BoardSource.DISCONNECT }
+                                    .sample(300, TimeUnit.MILLISECONDS, serialScheduler, true)
+                                    .map { OrderBookEvent.View(book.view()) }
+                            )
+                        }
                     )
                 }
-            )
         }
 }
 
