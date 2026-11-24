@@ -2,7 +2,6 @@ package com.unhappychoice.droidflyer.presentation.adapter
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
@@ -10,12 +9,30 @@ import com.unhappychoice.droidflyer.databinding.FillListItemBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 
-internal class FillAdapter : ListAdapter<PrivateExecution, FillAdapter.ViewHolder>(fillDiff) {
+internal class FillAdapter : RecyclerView.Adapter<FillAdapter.ViewHolder>() {
+    private val items = mutableListOf<PrivateExecution>()
+
+    override fun getItemCount() = items.size
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
         ViewHolder(FillListItemBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        holder.bind(items[position])
+    }
+
+    fun replaceAll(fills: List<PrivateExecution>) {
+        val diff = DiffUtil.calculateDiff(FillDiff(items, fills))
+        items.clear()
+        items.addAll(fills)
+        diff.dispatchUpdatesTo(this)
+    }
+
+    fun appendOlder(older: List<PrivateExecution>) {
+        if (older.isEmpty()) return
+        val start = items.size
+        items.addAll(older)
+        notifyItemRangeInserted(start, older.size)
     }
 
     class ViewHolder(private val binding: FillListItemBinding) : RecyclerView.ViewHolder(binding.root) {
@@ -35,10 +52,15 @@ internal class FillAdapter : ListAdapter<PrivateExecution, FillAdapter.ViewHolde
         }
     }
 
-    private companion object {
-        val fillDiff = object : DiffUtil.ItemCallback<PrivateExecution>() {
-            override fun areItemsTheSame(old: PrivateExecution, new: PrivateExecution) = old.id == new.id
-            override fun areContentsTheSame(old: PrivateExecution, new: PrivateExecution) = old == new
-        }
+    private class FillDiff(
+        private val old: List<PrivateExecution>,
+        private val new: List<PrivateExecution>
+    ) : DiffUtil.Callback() {
+        override fun getOldListSize() = old.size
+        override fun getNewListSize() = new.size
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+            old[oldItemPosition].id == new[newItemPosition].id
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+            old[oldItemPosition] == new[newItemPosition]
     }
 }
