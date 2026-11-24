@@ -34,6 +34,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 4. Tap **Order**, then **Limit**, to view the bitFlyer Crypto CFD order book. You can read the bids and asks without placing a trade.
 
 See [Using DroidFlyer](docs/usage.md) for screen controls, account settings, and API permissions.
+See [FAQ and troubleshooting](docs/troubleshooting.md) if credentials, orders, or fills don't work as expected.
 
 ## Author
 

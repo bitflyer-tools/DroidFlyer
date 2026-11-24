@@ -47,3 +47,5 @@ Lightning API.
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
 | Clear all positions | `GET /v1/me/getpositions`, `POST /v1/me/sendchildorder`, `GET /v1/me/getchildorders` |
+
+See [FAQ and troubleshooting](troubleshooting.md) for what each in-app error message means and how to fix it.
