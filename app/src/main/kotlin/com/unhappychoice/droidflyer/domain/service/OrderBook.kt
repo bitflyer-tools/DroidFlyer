@@ -61,19 +61,28 @@ internal sealed class OrderBookEvent {
 internal fun observeOrderBook(
     updates: Observable<BoardUpdate>,
     serialScheduler: Scheduler,
-    isCurrent: (BoardUpdate) -> Boolean = { true }
+    isCurrent: (BoardUpdate) -> Boolean = { true },
+    visible: Observable<Boolean> = Observable.just(true)
 ): Observable<OrderBookEvent> = Observable.defer {
     val book = OrderBook()
     updates.observeOn(serialScheduler)
         .filter { isCurrent(it) && book.apply(it) }
         .publish { applied ->
+            val visibility = visible.distinctUntilChanged().observeOn(serialScheduler)
             Observable.merge<OrderBookEvent>(
                 applied.map { book.quotes() }.distinctUntilChanged(),
-                applied.filter { it.source == BoardSource.DISCONNECT }
-                    .map { OrderBookEvent.View(book.view()) },
-                applied.filter { it.source != BoardSource.DISCONNECT }
-                    .sample(300, TimeUnit.MILLISECONDS, serialScheduler, true)
-                    .map { OrderBookEvent.View(book.view()) }
+                // The first visibility value reflects the starting state, not a transition into view.
+                visibility.skip(1).filter { it }.map { OrderBookEvent.View(book.view()) },
+                visibility.switchMap { isVisible ->
+                    if (!isVisible) return@switchMap Observable.empty<OrderBookEvent>()
+                    Observable.merge(
+                        applied.filter { it.source == BoardSource.DISCONNECT }
+                            .map { OrderBookEvent.View(book.view()) },
+                        applied.filter { it.source != BoardSource.DISCONNECT }
+                            .sample(300, TimeUnit.MILLISECONDS, serialScheduler, true)
+                            .map { OrderBookEvent.View(book.view()) }
+                    )
+                }
             )
         }
 }

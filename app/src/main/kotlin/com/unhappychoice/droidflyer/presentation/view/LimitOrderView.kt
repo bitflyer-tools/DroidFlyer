@@ -57,8 +57,13 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
 
         bindOrderEntry()
 
+        val pageSelection = observePageSelection()
+        pageSelection.distinctUntilChanged()
+            .subscribeNext { currentStatusService.limitVisible.value = it }
+            .addTo(bag)
+
         observeLimitOrderRows(
-            observePageSelection(),
+            pageSelection,
             currentStatusService.board.asObservable(),
             presenter.groupingSize.asObservable(),
             currentStatusService.orders.asObservable(),
@@ -94,6 +99,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
         confirmationDialog?.dismiss()
         confirmationDialog = null
         presenter.dropView(this)
+        currentStatusService.limitVisible.value = false
         super.onDetachedFromWindow()
     }
 
