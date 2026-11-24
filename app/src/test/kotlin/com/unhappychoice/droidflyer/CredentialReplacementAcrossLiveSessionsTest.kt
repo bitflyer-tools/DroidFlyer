@@ -94,8 +94,9 @@ class CredentialReplacementAcrossLiveSessionsTest {
         val settingsInInstance2 = SettingsPresenter(api, preference, CryptoCfdAccountPreference(RuntimeEnvironment.getApplication()))
         settingsInInstance2.key.value = "account-b-key"
         settingsInInstance2.secret.value = "account-b-secret"
-        settingsInInstance2.saveCredentials().test().assertValueCount(1).assertComplete()
+        val saved = settingsInInstance2.saveCredentials().test()
         main.triggerActions()
+        saved.assertValueCount(1).assertComplete()
 
         // The order queued under account A can no longer be submitted from the first activity.
         assertNull(instance1.status.privateState.submitOrder(pendingOrderOnA))
