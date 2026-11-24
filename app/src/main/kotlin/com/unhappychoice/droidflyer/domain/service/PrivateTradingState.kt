@@ -27,11 +27,14 @@ internal class PrivateTradingState(
     private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
 ) {
     enum class ActiveOrdersStatus { INITIAL, EMPTY, AVAILABLE, UNAVAILABLE, STALE }
+    enum class ReadStatus { INITIAL, AVAILABLE, STALE, UNAVAILABLE }
 
     val position = Variable<List<Position>>(emptyList())
     val collateral = Variable(Collateral(null))
     val orders = Variable<List<ChildOrder>>(emptyList())
 
+    val positionStatus = Variable(ReadStatus.INITIAL)
+    val collateralStatus = Variable(ReadStatus.INITIAL)
     val activeOrdersStatus = Variable(ActiveOrdersStatus.INITIAL)
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
@@ -80,12 +83,29 @@ internal class PrivateTradingState(
         val current = session ?: return@defer Completable.complete()
         val client = current.client
         Completable.mergeArray(
-            client.getPositions().publishResponse { if (!disposed && current === session) position.value = it },
+            client.getPositions()
+                .subscribeOn(requestScheduler)
+                .observeOn(stateScheduler)
+                .doOnError { if (!disposed && current === session) positionStatus.value = positionStatus.value.toFailed() }
+                .publishStatus {
+                    if (!disposed && current === session) {
+                        position.value = it
+                        positionStatus.value = ReadStatus.AVAILABLE
+                    }
+                },
             client.getCollateral().flatMapMaybe { response ->
                 val amount = response["collateral"] as? Number
                 amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
             }
-                .publishResponse { if (!disposed && current === session) collateral.value = it }
+                .subscribeOn(requestScheduler)
+                .observeOn(stateScheduler)
+                .doOnError { if (!disposed && current === session) collateralStatus.value = collateralStatus.value.toFailed() }
+                .publishStatus {
+                    if (!disposed && current === session) {
+                        collateral.value = it
+                        collateralStatus.value = ReadStatus.AVAILABLE
+                    }
+                }
         ).takeUntil(current.ended.firstElement().ignoreElement())
     }
 
@@ -175,6 +195,8 @@ internal class PrivateTradingState(
         activeOrdersStatus.value = ActiveOrdersStatus.INITIAL
         position.value = emptyList()
         collateral.value = Collateral(null)
+        positionStatus.value = ReadStatus.INITIAL
+        collateralStatus.value = ReadStatus.INITIAL
         try {
             onSwitched()
         } finally {
@@ -187,8 +209,8 @@ internal class PrivateTradingState(
             .observeOn(stateScheduler)
             .takeUntil(current.ended)
 
-    private fun <T : Any> Observable<T>.publishResponse(publish: (T) -> Unit): Completable =
-        subscribeOn(requestScheduler).observeOn(stateScheduler).publishStatus(publish)
+    private fun ReadStatus.toFailed(): ReadStatus =
+        if (this == ReadStatus.AVAILABLE || this == ReadStatus.STALE) ReadStatus.STALE else ReadStatus.UNAVAILABLE
 
     class NewOrder internal constructor(internal val session: Session, val request: SendChildOrderRequest) {
         val sessionEnded: Completable get() = session.ended.firstElement().ignoreElement()

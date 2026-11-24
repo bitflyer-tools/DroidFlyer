@@ -68,4 +68,7 @@
     <string name="funding_unavailable">次回のファンディングレートを取得できません</string>
     <string name="funding_details">次回ファンディング %1$s · %2$s</string>
     <string name="funding_stale">%1$s（更新できませんでした）</string>
+    <string name="stale_value">%1$s（更新できませんでした）</string>
+    <string name="position_unavailable">建玉を取得できませんでした</string>
+    <string name="balance_unavailable">残高を取得できませんでした</string>
 </resources>

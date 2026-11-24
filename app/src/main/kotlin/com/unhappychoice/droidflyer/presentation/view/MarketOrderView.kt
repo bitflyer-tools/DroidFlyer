@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -67,10 +68,11 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
 
         Observables.combineLatest(
             currentStatusService.position.asObservable(),
+            currentStatusService.positionStatus.asObservable(),
             presenter.isLoading.asObservable(),
             privateClientAvailable
-        ) { position: List<Position>, isLoading: Boolean, available: Boolean ->
-            available && !isLoading && position.wholeSize() != 0.0
+        ) { position: List<Position>, positionStatus: ReadStatus, isLoading: Boolean, available: Boolean ->
+            available && !isLoading && positionStatus == ReadStatus.AVAILABLE && position.wholeSize() != 0.0
         }
             .subscribeNext {
                 binding.clearButton.isEnabled = it

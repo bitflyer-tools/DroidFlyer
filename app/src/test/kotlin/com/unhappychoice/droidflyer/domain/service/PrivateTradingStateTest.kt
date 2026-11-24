@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -15,6 +16,7 @@ import io.reactivex.subjects.PublishSubject
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -111,6 +113,81 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         loaded.assertComplete()
         totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L, 120L)).assertNoErrors()
+    }
+
+    @Test
+    fun initialPositionAndCollateralFailuresAreUnavailable() {
+        assertEquals(ReadStatus.INITIAL, state.positionStatus.value)
+        assertEquals(ReadStatus.INITIAL, state.collateralStatus.value)
+
+        val refresh = refreshAll().test()
+        scheduler.triggerActions()
+        accountA.positions.onError(ordersUnavailable())
+        accountA.collateral.onError(ordersUnavailable())
+        accountA.orders.onNext(emptyList())
+        scheduler.triggerActions()
+
+        refresh.assertComplete()
+        assertEquals(ReadStatus.UNAVAILABLE, state.positionStatus.value)
+        assertEquals(ReadStatus.UNAVAILABLE, state.collateralStatus.value)
+    }
+
+    @Test
+    fun positionFailureAfterSuccessMarksItStaleWhileCollateralStaysCurrent() {
+        refreshAll().test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(listOf(position))
+        accountA.collateral.onNext(mapOf("collateral" to 10.0))
+        accountA.orders.onNext(emptyList())
+        scheduler.triggerActions()
+        assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+
+        accountA.positions = PublishSubject.create()
+        accountA.collateral = PublishSubject.create()
+        accountA.orders = PublishSubject.create()
+        val refresh = refreshAll().test()
+        scheduler.triggerActions()
+        accountA.positions.onError(ordersUnavailable())
+        accountA.collateral.onNext(mapOf("collateral" to 20.0))
+        accountA.orders.onNext(emptyList())
+        scheduler.triggerActions()
+
+        refresh.assertComplete()
+        assertEquals(ReadStatus.STALE, state.positionStatus.value)
+        assertEquals(listOf(position), state.position.value)
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+        assertEquals(20.0, state.collateral.value.amount)
+        assertNotNull(state.closeConfirmation())
+    }
+
+    @Test
+    fun collateralFailureAfterSuccessMarksItStaleWhilePositionStaysCurrent() {
+        refreshAll().test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(listOf(position))
+        accountA.collateral.onNext(mapOf("collateral" to 10.0))
+        accountA.orders.onNext(emptyList())
+        scheduler.triggerActions()
+        assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+
+        accountA.positions = PublishSubject.create()
+        accountA.collateral = PublishSubject.create()
+        accountA.orders = PublishSubject.create()
+        val refresh = refreshAll().test()
+        scheduler.triggerActions()
+        val updatedPosition = position.copy(size = 1.0)
+        accountA.positions.onNext(listOf(updatedPosition))
+        accountA.collateral.onError(ordersUnavailable())
+        accountA.orders.onNext(emptyList())
+        scheduler.triggerActions()
+
+        refresh.assertComplete()
+        assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
+        assertEquals(listOf(updatedPosition), state.position.value)
+        assertEquals(ReadStatus.STALE, state.collateralStatus.value)
+        assertEquals(10.0, state.collateral.value.amount)
     }
 
     @Test
@@ -354,7 +431,7 @@ class PrivateTradingStateTest {
     }
 
     private class TradingApi {
-        val positions = PublishSubject.create<List<Position>>()
+        var positions = PublishSubject.create<List<Position>>()
         var collateral = PublishSubject.create<Map<String, Any>>()
         var orders = PublishSubject.create<List<ChildOrder>>()
         val executions = PublishSubject.create<List<PrivateExecution>>()

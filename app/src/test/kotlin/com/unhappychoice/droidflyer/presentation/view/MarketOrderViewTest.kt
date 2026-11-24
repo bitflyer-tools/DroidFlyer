@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.MainActivityNavigationTest
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
@@ -128,6 +129,26 @@ class MarketOrderViewTest {
     }
 
     @Test
+    fun clearButtonIsDisabledWithoutACurrentPositionSnapshot() {
+        withMarketView { _, view, _, status ->
+            val positions = listOf(Position("FX_BTC_JPY", "BUY", 1000000L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0))
+            val clearButton = view.findViewById<View>(R.id.clearButton)
+
+            status.position.value = positions
+            assertFalse(clearButton.isEnabled)
+
+            status.positionStatus.value = ReadStatus.UNAVAILABLE
+            assertFalse(clearButton.isEnabled)
+
+            status.positionStatus.value = ReadStatus.STALE
+            assertFalse(clearButton.isEnabled)
+
+            status.positionStatus.value = ReadStatus.AVAILABLE
+            assertTrue(clearButton.isEnabled)
+        }
+    }
+
+    @Test
     fun obscuredCloseConfirmationDoesNotSubmitAndClearTapSubmitsOnce() {
         val positions = listOf(Position("FX_BTC_JPY", "BUY", 1000000L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0))
 
@@ -135,6 +156,7 @@ class MarketOrderViewTest {
             whenever(client.getPositions()).thenReturn(Observable.just(positions))
             whenever(client.getChildOrders("FX_BTC_JPY", null, "JRF-accepted")).thenReturn(Observable.never())
             status.position.value = positions
+            status.positionStatus.value = ReadStatus.AVAILABLE
             activity.window.tap(view.findViewById(R.id.clearButton))
             val dialog = ShadowDialog.getLatestDialog() as AlertDialog
             val button = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
@@ -171,6 +193,7 @@ class MarketOrderViewTest {
     private fun assertCloseConfirmation(summary: String, disclosure: String) {
         withMarketView { activity, view, _, status ->
             status.position.value = listOf(Position("FX_BTC_JPY", "BUY", 100, 5.0, 0.0, 0.0, 0.0, 1, 0.0))
+            status.positionStatus.value = ReadStatus.AVAILABLE
             activity.window.tap(view.findViewById(R.id.clearButton))
 
             val dialog = ShadowDialog.getLatestDialog() as AlertDialog

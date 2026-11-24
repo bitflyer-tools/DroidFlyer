@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.Collateral
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.MarketPrice
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import io.reactivex.Observable
@@ -139,6 +140,81 @@ class CurrentStatusViewTest {
 
             assertEquals("No position", summary.text.toString())
             assertFalse(profit.isVisible)
+        }
+    }
+
+    @Test
+    fun failedPositionRefreshAfterASuccessfulReadMarksThePositionStale() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            val summary = view.findViewById<TextView>(R.id.position)
+
+            val long = Position("FX_BTC_JPY", "BUY", 100L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0)
+            service.position.value = listOf(long)
+            service.privateState.positionStatus.value = ReadStatus.AVAILABLE
+            scheduler.triggerActions()
+            assertEquals("100 JPY / 0.5 ɃFX", summary.text.toString())
+
+            service.privateState.positionStatus.value = ReadStatus.STALE
+            scheduler.triggerActions()
+            assertEquals("100 JPY / 0.5 ɃFX (stale)", summary.text.toString())
+        }
+    }
+
+    @Test
+    fun unavailablePositionHidesTheCachedPositionSummary() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            val summary = view.findViewById<TextView>(R.id.position)
+
+            service.position.value = listOf(Position("FX_BTC_JPY", "BUY", 100L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0))
+            service.privateState.positionStatus.value = ReadStatus.UNAVAILABLE
+            scheduler.triggerActions()
+
+            assertEquals("Position unavailable", summary.text.toString())
+        }
+    }
+
+    @Test
+    fun failedCollateralRefreshAfterASuccessfulReadMarksTheBalanceStale() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            val balance = view.findViewById<TextView>(R.id.balance)
+
+            service.privateState.collateral.value = Collateral(100.0)
+            service.privateState.collateralStatus.value = ReadStatus.AVAILABLE
+            scheduler.triggerActions()
+            assertEquals("100 JPY", balance.text.toString())
+
+            service.privateState.collateralStatus.value = ReadStatus.STALE
+            scheduler.triggerActions()
+            assertEquals("100 JPY (stale)", balance.text.toString())
+        }
+    }
+
+    @Test
+    fun unavailableCollateralHidesTheCachedBalance() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            val balance = view.findViewById<TextView>(R.id.balance)
+
+            service.privateState.collateral.value = Collateral(100.0)
+            service.privateState.collateralStatus.value = ReadStatus.UNAVAILABLE
+            scheduler.triggerActions()
+
+            assertEquals("Balance unavailable", balance.text.toString())
         }
     }
 }
