@@ -65,3 +65,17 @@ Tap **Refresh** to retry.
 **Active orders show "Could not refresh active orders. The orders shown may be out of date."**
 A refresh request failed after an earlier load succeeded. The list keeps showing the last orders
 it loaded; tap into **Active** again or reopen the Order screen to retry.
+
+## Order fill notifications
+
+**I'm not getting a notification when an order fills.**
+Check that notifications are allowed for DroidFlyer in Android's app settings; the permission is
+requested the first time you link an account, but it can be denied or revoked later. Also check
+that battery optimization isn't preventing the app from running in the background, and that the
+device has a network connection, since the notification depends on DroidFlyer's realtime
+connection to bitFlyer.
+
+**Does watching for fills use more battery or data?**
+Yes. While an account is linked, DroidFlyer keeps a background connection open so it can notify
+you of fills even when the app isn't open. Unlinking the account under **Setting** stops this
+connection.

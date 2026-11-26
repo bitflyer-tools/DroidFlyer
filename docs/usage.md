@@ -28,6 +28,17 @@ account limits** to raise the app's maximum quantity for market and limit
 order entry from 10 to 40 BTC-CFD. This setting is saved when toggled and
 does not change your account type at bitFlyer.
 
+## Order fill notifications
+
+While an account is linked, DroidFlyer runs a background service that posts a
+system notification for each order fill, even while the app is backgrounded
+or the screen is off. The first time you link an account, Android asks you to
+allow notifications; allow it so fills are shown. The service keeps a
+private realtime connection open as long as an account is linked, which uses
+some extra battery and data; it stops as soon as you unlink the account
+under **Setting**. See [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications)
+if fills aren't showing up.
+
 ## Private REST API permissions
 
 Enable the permissions for the features you use on your bitFlyer API key.

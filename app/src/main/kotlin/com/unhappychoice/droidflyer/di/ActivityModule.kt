@@ -28,7 +28,12 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         }
     }
     bindSingleton<SettingsPresenter> {
-        SettingsPresenter(instance(), instance(), instance(), realtimeClient = instance(), accountPreference = instance())
+        SettingsPresenter(
+            instance(), instance(), instance(),
+            realtimeClient = instance(),
+            accountPreference = instance(),
+            requestNotificationPermission = activity::requestNotificationPermission
+        )
     }
     bindSingleton<ChartPresenter> {
         ChartPresenter(SystemClock::elapsedRealtimeNanos, instance<APIClientV1>()::getExecutionPrices)

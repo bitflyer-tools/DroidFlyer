@@ -74,4 +74,8 @@
     <string name="funding_unavailable">Next funding rate unavailable</string>
     <string name="funding_details">Next funding %1$s · %2$s</string>
     <string name="funding_stale">%1$s (stale)</string>
+    <string name="order_fill_notification_channel_name">Order fills</string>
+    <string name="order_fill_notification_channel_description">Notifies you when a Crypto CFD order fills while DroidFlyer is in the background.</string>
+    <string name="order_fill_service_channel_name">Watching for order fills</string>
+    <string name="order_fill_service_notification_title">Watching for Crypto CFD order fills</string>
 </resources>

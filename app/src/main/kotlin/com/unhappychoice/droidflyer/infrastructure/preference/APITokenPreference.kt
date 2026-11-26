@@ -15,6 +15,10 @@ class APITokenPreference internal constructor(
     private val unlinks = PublishSubject.create<Unit>()
     internal val accountUnlinked = unlinks.hide()
 
+    private val changes = PublishSubject.create<Unit>()
+    /** Emitted whenever the saved credentials may have changed, including on unlink. */
+    internal val credentialsChanged = changes.hide()
+
     @Volatile
     internal var unlinkGeneration = 0L
         private set
@@ -25,6 +29,7 @@ class APITokenPreference internal constructor(
             preferences.edit().remove(encryptedEntry).remove("key").remove("secret").commit()
         }
         unlinks.onNext(Unit)
+        changes.onNext(Unit)
         return cleared
     }
 
@@ -46,20 +51,23 @@ class APITokenPreference internal constructor(
         changed
     }
 
-    fun save(credentials: APICredentials) = synchronized(lock) {
-        val encrypted = cipher.encrypt(credentials)
-        val previous = preferences.all
-        try {
-            persist(encrypted, null, null)
-        } catch (failure: Exception) {
-            // A failed commit can still update the in-memory preferences.
+    fun save(credentials: APICredentials) {
+        synchronized(lock) {
+            val encrypted = cipher.encrypt(credentials)
+            val previous = preferences.all
             try {
-                persist(previous[encryptedEntry] as? String, previous["key"] as? String, previous["secret"] as? String)
-            } catch (restoreFailure: Exception) {
-                if (restoreFailure !== failure) failure.addSuppressed(restoreFailure)
+                persist(encrypted, null, null)
+            } catch (failure: Exception) {
+                // A failed commit can still update the in-memory preferences.
+                try {
+                    persist(previous[encryptedEntry] as? String, previous["key"] as? String, previous["secret"] as? String)
+                } catch (restoreFailure: Exception) {
+                    if (restoreFailure !== failure) failure.addSuppressed(restoreFailure)
+                }
+                throw failure
             }
-            throw failure
         }
+        changes.onNext(Unit)
     }
 
     private fun migrateLegacy(credentials: APICredentials) {

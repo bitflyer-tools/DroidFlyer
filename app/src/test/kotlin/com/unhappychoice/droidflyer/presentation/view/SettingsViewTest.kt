@@ -98,6 +98,43 @@ class SettingsViewTest {
     }
 
     @Test
+    fun applyingValidatedCredentialsRequestsNotificationPermission() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+
+            settings.saveButton.performClick()
+            saveIo.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertEquals(1, host.notificationPermissionRequests)
+        }
+    }
+
+    @Test
+    fun failedApplyDoesNotRequestNotificationPermission() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            host.failNextApply = true
+            val settings = host.openSettings()
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+
+            settings.saveButton.performClick()
+            saveIo.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertEquals(0, host.notificationPermissionRequests)
+        }
+    }
+
+    @Test
     fun applyingValidatedCredentialsShowsSavedConfirmation() {
         // The Material queue can retain callbacks from activities closed by earlier tests.
         ReflectionHelpers.setStaticField(
@@ -357,6 +394,9 @@ class SettingsViewTest {
             private set
         var credentialReads = 0
             private set
+        var notificationPermissionRequests = 0
+            private set
+        var failNextApply = false
 
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
             val preferences = super.getSharedPreferences(name, mode)
@@ -380,10 +420,12 @@ class SettingsViewTest {
             }
             val transport = OkHttpClient.Builder().addInterceptor { chain ->
                 applyRequests++
+                val failed = failNextApply
+                failNextApply = false
                 Response.Builder()
                     .request(chain.request())
                     .protocol(Protocol.HTTP_1_1)
-                    .code(200)
+                    .code(if (failed) 401 else 200)
                     .message("Test response")
                     .body("[]".toResponseBody())
                     .build()
@@ -393,7 +435,8 @@ class SettingsViewTest {
                 preference,
                 switchAccount = {},
                 accountPreference = CryptoCfdAccountPreference(this),
-                updateRealtimeAccount = { it() }
+                updateRealtimeAccount = { it() },
+                requestNotificationPermission = { notificationPermissionRequests++ }
             )
             DI { bindInstance { presenter } }
         }
