@@ -10,10 +10,11 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Completable
 import io.reactivex.Observable
-import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
@@ -56,8 +57,8 @@ class CurrentStatusServiceTest {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
         RxJavaPlugins.setSingleSchedulerHandler { scheduler }
-        RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
 
         `when`(api.getBoard("FX_BTC_JPY"))
             .thenReturn(responses.take(1).doOnSubscribe { boardRequests++ })

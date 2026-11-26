@@ -11,6 +11,7 @@ import com.unhappychoice.droidflyer.databinding.CurrentStatusViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.FundingStatus
 import com.unhappychoice.droidflyer.domain.service.TradingHeaderState
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
@@ -18,7 +19,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.subjects.PublishSubject
 import java.text.DateFormat
@@ -47,7 +47,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         updateFundingVisibility()
 
         currentStatusService.tradingHeader
-            .observeOn(AndroidSchedulers.mainThread())
+            .observeOn(androidMainThreadScheduler())
             .subscribeNext(::renderTradingHeader)
             .addTo(bag)
     }
