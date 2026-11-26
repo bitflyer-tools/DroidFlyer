@@ -105,10 +105,13 @@ class SettingsPresenterTest {
                 .build()
         }.build())
     private val accountPreference = CryptoCfdAccountPreference(context)
-    private val presenter = SettingsPresenter(api, preference, { switched.add(it) }, accountPreference) { save ->
-        save()
-        authenticated.add(savedCredentials())
-    }
+    private val presenter = SettingsPresenter(
+        api, preference, { switched.add(it) }, accountPreference,
+        updateRealtimeAccount = { save ->
+            save()
+            authenticated.add(savedCredentials())
+        }
+    )
 
     @Before
     fun setUp() {
@@ -336,7 +339,10 @@ class SettingsPresenterTest {
             assertEquals(publicReads, requestPaths())
             assertEquals(100.0, status.board.value.midPrice, 0.0)
 
-            val settings = SettingsPresenter(api, preference, status::switchAccount, accountPreference) { it() }
+            val settings = SettingsPresenter(
+                api, preference, status::switchAccount, accountPreference,
+                updateRealtimeAccount = { it() }
+            )
             settings.key.value = "submitted-key"
             settings.secret.value = "submitted-secret"
             val saved = settings.saveCredentials().test()
