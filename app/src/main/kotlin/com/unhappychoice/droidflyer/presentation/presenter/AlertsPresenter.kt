@@ -11,7 +11,8 @@ class AlertsPresenter internal constructor(
     private val preference: PriceAlertPreference,
     private val startMonitoring: () -> Unit
 ) : ViewPresenter<AlertsView>() {
-    internal val alerts: Observable<List<PriceAlert>> = preference.alertsChanged.startWith(preference.read())
+    internal val alerts: Observable<List<PriceAlert>> =
+        preference.alertsChanged.startWith(Observable.fromCallable { preference.read() })
     internal val maximumAlerts = PriceAlertPreference.MAX_ALERTS
 
     internal fun addAlert(targetPrice: Long, direction: PriceAlertDirection): Boolean {

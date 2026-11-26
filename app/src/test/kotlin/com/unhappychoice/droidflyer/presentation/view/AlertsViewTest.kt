@@ -8,6 +8,8 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.AlertsViewBinding
 import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
 import com.unhappychoice.droidflyer.presentation.presenter.AlertsPresenter
+import mortar.MortarScope
+import mortar.bundler.BundleServiceRunner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -70,7 +72,7 @@ class AlertsViewTest {
         ReflectionHelpers.setStaticField(
             Class.forName("com.google.android.material.snackbar.SnackbarManager"), "snackbarManager", null
         )
-        val host = Robolectric.setupActivity(Activity::class.java)
+        val host = Robolectric.setupActivity(AlertsHost::class.java)
         host.setTheme(R.style.AppTheme)
         val binding = AlertsViewBinding.inflate(host.layoutInflater)
         binding.root.inject(DI { bindInstance { AlertsPresenter(preference) { monitoringStarts++ } } })
@@ -92,7 +94,7 @@ class AlertsViewTest {
     }
 
     private fun open(): AlertsViewBinding {
-        val host = Robolectric.setupActivity(Activity::class.java)
+        val host = Robolectric.setupActivity(AlertsHost::class.java)
         host.setTheme(R.style.AppTheme)
         val binding = AlertsViewBinding.inflate(host.layoutInflater)
         binding.root.inject(DI { bindInstance { presenter } })
@@ -106,5 +108,21 @@ class AlertsViewTest {
         return alerts.createViewHolder(this, alerts.getItemViewType(0)).also {
             alerts.bindViewHolder(it, 0)
         }.itemView
+    }
+
+    class AlertsHost : Activity() {
+        private val scope by lazy {
+            MortarScope.buildRootScope()
+                .withService(BundleServiceRunner.SERVICE_NAME, BundleServiceRunner())
+                .build("alerts_view_test")
+        }
+
+        override fun getSystemService(name: String): Any? =
+            if (scope.hasService(name)) scope.getService(name) else super.getSystemService(name)
+
+        override fun onDestroy() {
+            super.onDestroy()
+            scope.destroy()
+        }
     }
 }
