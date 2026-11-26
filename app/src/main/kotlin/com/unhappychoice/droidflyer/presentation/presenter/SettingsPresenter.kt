@@ -13,6 +13,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import io.reactivex.Completable
 import io.reactivex.Observable
@@ -26,17 +27,20 @@ import retrofit2.HttpException
 class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
-    private val switchAccount: (APIClientV1?) -> Unit,
+    private val switchAccount: (APIClientV1?, APICredentials) -> Unit,
     internal val accountPreference: CryptoCfdAccountPreference,
     private val updateRealtimeAccount: (() -> Unit) -> Unit
 ) : ViewPresenter<SettingsView>() {
-    constructor(
+    internal constructor(
         api: APIClient,
         preference: APITokenPreference,
         currentStatusService: CurrentStatusService,
         realtimeClient: RealtimeClient,
-        accountPreference: CryptoCfdAccountPreference
-    ) : this(api, preference, currentStatusService::switchAccount, accountPreference, realtimeClient::updateAccount)
+        accountPreference: CryptoCfdAccountPreference,
+        stopSubmissions: StopSubmissionPreference
+    ) : this(api, preference, { client, credentials ->
+        currentStatusService.switchAccount(client, stopSubmissions.forApiKey(credentials.key))
+    }, accountPreference, realtimeClient::updateAccount)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
@@ -99,7 +103,7 @@ class SettingsPresenter internal constructor(
             .subscribeOnIoObserveOnUI()
             .filter { generation == preference.unlinkGeneration }
             .map { (balance, changed) ->
-                if (changed) switchAccount(api.privateStatusClient(submitted))
+                if (changed) switchAccount(api.privateStatusClient(submitted), submitted)
                 balance
             }
     }
