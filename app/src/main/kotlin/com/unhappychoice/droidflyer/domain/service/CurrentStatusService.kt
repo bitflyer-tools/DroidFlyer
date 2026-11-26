@@ -55,6 +55,7 @@ class CurrentStatusService internal constructor(
     )
     val tradingTotals = tradingHeader.map { it.totals }.distinctUntilChanged()
     val board = Variable(Board(0.0, listOf(), listOf()))
+    val limitVisible = Variable(true)
     val orders = privateState.orders
 
     private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
@@ -80,7 +81,7 @@ class CurrentStatusService internal constructor(
 
         val realtimeBoards = Observable.merge(boardUpdates, publicFeedDisconnects.map { BoardUpdate.disconnected() })
         val boards = Observable.merge(realtimeBoards, restBoards).filter(boardFallback::acceptUpdate)
-        observeOrderBook(boards, Schedulers.single(), boardFallback::isCurrent)
+        observeOrderBook(boards, Schedulers.single(), boardFallback::isCurrent, limitVisible.asObservable())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribeNext { event ->
                 when (event) {

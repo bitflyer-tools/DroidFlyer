@@ -6,7 +6,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
-import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
@@ -47,17 +46,9 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             unitSize.asObservable().bindTo(binding.amountSelector.size).addTo(bag)
         }
 
-        val privateClientAvailable = currentStatusService.privateState.observePrivateClientAvailability()
-        privateClientAvailable.subscribeNext { binding.credentialsRequired.isVisible = !it }.addTo(bag)
+        presenter.privateClientAvailable.subscribeNext { binding.credentialsRequired.isVisible = !it }.addTo(bag)
 
-        Observables.combineLatest(
-            presenter.amount.asObservable(),
-            presenter.isLoading.asObservable(),
-            presenter.maximumOrderSize.asObservable(),
-            privateClientAvailable
-        ) { amount, isLoading, maximum, available ->
-            available && !isLoading && CryptoCfdOrderSize.isValid(amount, maximum)
-        }
+        presenter.orderEntryEnabled
             .subscribeNext {
                 binding.buyButton.isEnabled = it
                 binding.sellButton.isEnabled = it
@@ -70,7 +61,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             currentStatusService.position.asObservable(),
             currentStatusService.positionStatus.asObservable(),
             presenter.isLoading.asObservable(),
-            privateClientAvailable
+            presenter.privateClientAvailable
         ) { position: List<Position>, positionStatus: ReadStatus, isLoading: Boolean, available: Boolean ->
             available && !isLoading && positionStatus == ReadStatus.AVAILABLE && position.wholeSize() != 0.0
         }
