@@ -10,6 +10,7 @@ import androidx.viewpager.widget.ViewPager
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.LimitOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
@@ -22,7 +23,6 @@ import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.Observable
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
 
@@ -70,7 +70,7 @@ class LimitOrderView(context: Context, attr: AttributeSet?) : BaseView(context, 
             currentStatusService.board.asObservable(),
             presenter.groupingSize.asObservable(),
             currentStatusService.orders.asObservable(),
-            AndroidSchedulers.mainThread()
+            androidMainThreadScheduler()
         )
             .subscribeNext { (rows, orders) ->
                 askAdapter.applyRows(rows.asks, rows.groupingSize, orders)
