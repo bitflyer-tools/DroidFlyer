@@ -27,7 +27,6 @@ class SettingsPresenter internal constructor(
 ) : ViewPresenter<SettingsView>() {
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
-    internal val accountChanged = preference.accountChanged
     private val bag = CompositeDisposable()
     private var pendingSave: CompletableSubject? = null
 
@@ -65,10 +64,10 @@ class SettingsPresenter internal constructor(
             .addTo(bag)
     }
 
-    fun unlink(): Boolean {
+    fun unlink(onLoaded: () -> Unit = {}): Boolean {
         bag.clear()
         val cleared = preference.clear()
-        loadCredentials()
+        loadCredentials(onLoaded).addTo(bag)
         return cleared
     }
 

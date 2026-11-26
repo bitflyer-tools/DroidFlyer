@@ -34,16 +34,12 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         val credentialLoad = SerialDisposable()
         credentialLoad.addTo(bag)
-        presenter.accountChanged.startWith(Unit)
-            .subscribeNext {
-                setCredentialInputsEnabled(false)
-                credentialLoad.set(presenter.loadCredentials {
-                    binding.apiTokenTextView.setText(presenter.key.value)
-                    binding.apiSecretTextView.setText(presenter.secret.value)
-                    setCredentialInputsEnabled(true)
-                })
-            }
-            .addTo(bag)
+        setCredentialInputsEnabled(false)
+        credentialLoad.set(presenter.loadCredentials {
+            binding.apiTokenTextView.setText(presenter.key.value)
+            binding.apiSecretTextView.setText(presenter.secret.value)
+            setCredentialInputsEnabled(true)
+        })
 
         binding.apiTokenTextView.textChanges()
             .subscribeNext {
@@ -67,7 +63,13 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
         binding.unlinkButton.clicks()
             .subscribeNext {
-                val message = if (presenter.unlink()) R.string.account_unlinked else R.string.account_unlink_failed
+                setCredentialInputsEnabled(false)
+                val cleared = presenter.unlink {
+                    binding.apiTokenTextView.setText(presenter.key.value)
+                    binding.apiSecretTextView.setText(presenter.secret.value)
+                    setCredentialInputsEnabled(true)
+                }
+                val message = if (cleared) R.string.account_unlinked else R.string.account_unlink_failed
                 Snackbar.make(this, message, Snackbar.LENGTH_SHORT).show()
             }
             .addTo(bag)
