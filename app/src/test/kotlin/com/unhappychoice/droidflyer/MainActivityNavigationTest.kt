@@ -441,7 +441,7 @@ class MainActivityNavigationTest {
             val orderScheduler = TestScheduler()
             val state = PrivateTradingState(apiClient, requestScheduler = orderScheduler)
             val presenter = LimitOrderPresenter(
-                state, activity.module.direct.instance(), activity.resources, activity::showSnackbar
+                state, activity.module.direct.instance(), {}, activity.resources, activity::showSnackbar
             )
             presenter.takeView(page)
             presenter.amount.value = 0.001
