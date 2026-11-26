@@ -11,8 +11,9 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
-import io.reactivex.android.plugins.RxAndroidPlugins
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Ack
@@ -70,7 +71,7 @@ class CredentialReplacementAcrossLiveSessionsTest {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxJavaPlugins.setSingleSchedulerHandler { Schedulers.trampoline() }
         RxJavaPlugins.setComputationSchedulerHandler { main }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
     }
 
     @After
