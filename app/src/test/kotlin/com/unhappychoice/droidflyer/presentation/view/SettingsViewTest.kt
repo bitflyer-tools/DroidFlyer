@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.app.Activity
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Looper
 import android.os.Parcelable
@@ -293,6 +294,44 @@ class SettingsViewTest {
         }
     }
 
+    @Test
+    fun unlinkReloadsCredentialsOnceAndKeepsEditedValuesAfterFieldsAreEnabled() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val settings = host.openSettings()
+            val readsBeforeUnlink = host.credentialReads
+            val io = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { io }
+
+            settings.unlinkButton.performClick()
+            assertFalse(settings.apiTokenTextView.isEnabled)
+
+            io.triggerActions()
+            assertEquals(readsBeforeUnlink + 1, host.credentialReads)
+            assertTrue(settings.apiTokenTextView.isEnabled)
+            assertEquals("", settings.apiTokenTextView.text.toString())
+            assertEquals("", settings.apiSecretTextView.text.toString())
+
+            settings.apiTokenTextView.setText("new-key")
+            settings.apiSecretTextView.setText("new-secret")
+
+            // Any leftover scheduled work from the unlink must not revert the edited pair.
+            io.triggerActions()
+            assertEquals(readsBeforeUnlink + 1, host.credentialReads)
+            assertEquals("new-key", settings.apiTokenTextView.text.toString())
+            assertEquals("new-secret", settings.apiSecretTextView.text.toString())
+
+            val saveIo = TestScheduler()
+            RxJavaPlugins.setIoSchedulerHandler { saveIo }
+            settings.saveButton.performClick()
+            saveIo.triggerActions()
+
+            val saved = testAPITokenPreference(host).read()
+            assertEquals("new-key", saved.key)
+            assertEquals("new-secret", saved.secret)
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun assertCredentialsOmitted(settings: SettingsViewBinding, activityState: Bundle, flowState: State) {
         val hierarchy = activityState.getBundle("android:viewHierarchyState")
@@ -315,6 +354,19 @@ class SettingsViewTest {
     class SettingsHost : Activity() {
         var applyRequests = 0
             private set
+        var credentialReads = 0
+            private set
+
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+            val preferences = super.getSharedPreferences(name, mode)
+            if (name != "api_token") return preferences
+            return object : SharedPreferences by preferences {
+                override fun getAll(): MutableMap<String, *> {
+                    credentialReads++
+                    return preferences.all
+                }
+            }
+        }
 
         private val scope by lazy {
             MortarScope.buildRootScope()
