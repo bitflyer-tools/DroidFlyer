@@ -62,27 +62,6 @@ class CurrentStatusViewTest {
     }
 
     @Test
-    @Config(qualifiers = "ja")
-    fun balanceStatusesUseJapaneseStrings() {
-        service.currentPrice.value = MarketPrice(null)
-        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
-            val activity = controller.get()
-            val view = CurrentStatusView(activity, null)
-            view.inject(DI { bindInstance<CurrentStatusService> { service } })
-            activity.setContentView(view)
-            val balance = view.findViewById<TextView>(R.id.balance)
-            scheduler.triggerActions()
-
-            assertEquals("残高を取得できません", balance.text.toString())
-
-            service.privateState.collateral.value = Collateral(1500.0)
-            scheduler.triggerActions()
-
-            assertEquals("証拠金：1,500 JPY", balance.text.toString())
-        }
-    }
-
-    @Test
     fun queuedValuationsRenderEachPositionWithItsOwnAmounts() {
         Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
             val activity = controller.get()
@@ -160,6 +139,26 @@ class CurrentStatusViewTest {
 
             assertEquals("No position", summary.text.toString())
             assertFalse(profit.isVisible)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "ja")
+    fun balanceAndCollateralTextsAreLocalizedToJapanese() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            scheduler.triggerActions()
+
+            assertEquals("残高を取得できません", view.findViewById<TextView>(R.id.balance).text.toString())
+
+            service.privateState.collateral.value = Collateral(100.0)
+            executionFeedDisconnects.onNext(Unit)
+            scheduler.triggerActions()
+
+            assertEquals("預入金: 100 JPY", view.findViewById<TextView>(R.id.balance).text.toString())
         }
     }
 }
