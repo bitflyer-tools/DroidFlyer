@@ -63,7 +63,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         binding.balance.text = totals.balance?.let {
             val balance = "${it.splitByComma()} JPY"
             if (totals.price == null) context.getString(R.string.status_collateral, balance) else balance
-        } ?: "Balance unavailable"
+        } ?: context.getString(R.string.balance_unavailable)
     }
 
     private fun positionSummary(positions: List<Position>): String {
