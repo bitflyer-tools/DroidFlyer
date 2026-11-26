@@ -74,4 +74,19 @@
     <string name="funding_unavailable">Next funding rate unavailable</string>
     <string name="funding_details">Next funding %1$s · %2$s</string>
     <string name="funding_stale">%1$s (stale)</string>
+
+    <string name="price_alerts">Price Alerts</string>
+    <string name="alert_target_price_hint">Target price (JPY)</string>
+    <string name="alert_direction_above">Above</string>
+    <string name="alert_direction_below">Below</string>
+    <string name="add_alert">Add alert</string>
+    <string name="remove_alert">Remove</string>
+    <string name="no_alerts">No price alerts set.</string>
+    <string name="alert_limit_reached">You can have at most %1$d price alerts</string>
+    <string name="price_alert_description">%1$s %2$d JPY</string>
+    <string name="price_alert_channel_name">Price alerts</string>
+    <string name="price_alert_channel_description">Notifies you when Crypto CFD crosses a target price</string>
+    <string name="price_alert_service_title">Watching Crypto CFD price alerts</string>
+    <string name="price_alert_triggered_title">DroidFlyer price alert</string>
+    <string name="price_alert_triggered_body">Crypto CFD crossed %1$s %2$d JPY</string>
 </resources>

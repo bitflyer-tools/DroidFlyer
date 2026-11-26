@@ -5,8 +5,10 @@ import android.util.AttributeSet
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
+import com.unhappychoice.droidflyer.extension.goTo
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
+import com.unhappychoice.droidflyer.presentation.screen.AlertsScreen
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
@@ -61,6 +63,10 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
             .subscribeNext { if (binding.saveButton.isEnabled) presenter.save() }
             .addTo(bag)
 
+        binding.priceAlertsButton.clicks()
+            .subscribeNext { presenter.goTo(context, AlertsScreen()) }
+            .addTo(bag)
+
         binding.unlinkButton.clicks()
             .subscribeNext {
                 setCredentialInputsEnabled(false)
@@ -96,5 +102,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         binding.saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         binding.unlinkButton.setTextColor(DefaultStyle.accentColor)
         binding.unlinkButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.priceAlertsButton.setTextColor(DefaultStyle.accentColor)
+        binding.priceAlertsButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }

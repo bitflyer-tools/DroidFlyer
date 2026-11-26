@@ -67,10 +67,7 @@ class CurrentStatusService internal constructor(
 
     init {
         Observable.merge(
-            executions.map { batch ->
-                val execution = batch.firstOrNull { it.price.isFinite() && it.price > 0.0 }
-                MarketPrice(execution?.price)
-            }.filter { it.yen != null },
+            executions.map(::latestMarketPrice).filter { it.yen != null },
             publicFeedDisconnects.map { MarketPrice(null) }
         )
             .observeOn(androidMainThreadScheduler())

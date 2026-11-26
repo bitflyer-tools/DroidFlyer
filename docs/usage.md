@@ -28,6 +28,19 @@ account limits** to raise the app's maximum quantity for market and limit
 order entry from 10 to 40 BTC-CFD. This setting is saved when toggled and
 does not change your account type at bitFlyer.
 
+## Price alerts
+
+Under **Setting** → **Price Alerts**, enter a target price in JPY, choose
+**Above** or **Below**, and tap **Add alert** to watch the Crypto CFD
+(BTC-CFD/JPY) market price. You can have up to 10 alerts at a time.
+
+An alert fires a system notification the moment the market crosses the
+target price and is then removed automatically; set a new alert if you
+want to watch the same level again. Alerts only cover Crypto CFD and keep
+watching the price in the background through a foreground service, so
+you do not need to keep the app open or the screen on. Allow DroidFlyer
+to post notifications when prompted, or alerts will not be shown.
+
 ## Private REST API permissions
 
 Enable the permissions for the features you use on your bitFlyer API key.

@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
@@ -16,6 +17,9 @@ internal data class TradingHeaderState(val positions: List<Position>, val totals
 internal data class MarketPrice(val yen: Double?)
 
 internal data class Collateral(val amount: Double?)
+
+internal fun latestMarketPrice(executions: List<Execution>): MarketPrice =
+    MarketPrice(executions.firstOrNull { it.price.isFinite() && it.price > 0.0 }?.price)
 
 internal fun observeTradingTotals(
     prices: Observable<MarketPrice>,

@@ -1,7 +1,10 @@
 package com.unhappychoice.droidflyer
 
 import android.app.Application
+import com.unhappychoice.droidflyer.infrastructure.notification.createPriceAlertNotificationChannel
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
+import com.unhappychoice.droidflyer.infrastructure.service.PriceAlertService
 import mortar.MortarScope
 
 class DroidFlyerApplication : Application() {
@@ -9,6 +12,12 @@ class DroidFlyerApplication : Application() {
 
     private val scope by lazy {
         MortarScope.buildRootScope().build("root_scope")
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        createPriceAlertNotificationChannel()
+        if (PriceAlertPreference(this).read().isNotEmpty()) PriceAlertService.start(this)
     }
 
     override fun getSystemService(name: String): Any? {

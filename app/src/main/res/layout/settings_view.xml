@@ -44,6 +44,12 @@
         android:layout_height="wrap_content"
         android:text="@string/unlink_account"/>
 
+    <Button
+        android:id="@+id/priceAlertsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/price_alerts"/>
+
     <CheckBox
         android:id="@+id/corporateAccount"
         android:layout_width="wrap_content"
