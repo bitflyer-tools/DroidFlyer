@@ -171,7 +171,7 @@ dependencies {
     implementation 'com.squareup.retrofit2:retrofit'
     implementation 'com.squareup.retrofit2:converter-gson'
     implementation 'io.reactivex.rxjava2:rxkotlin:2.4.0'
-    implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
+    implementation 'io.reactivex.rxjava3:rxandroid:3.0.2'
     implementation 'io.socket:socket.io-client:2.1.2'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.4.21'
     implementation 'org.jetbrains.kotlin:kotlin-reflect:2.4.21'
