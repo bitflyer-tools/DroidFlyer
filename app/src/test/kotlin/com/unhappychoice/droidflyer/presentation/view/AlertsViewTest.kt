@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.view
 
 import android.app.Activity
+import android.os.Looper
 import android.view.View
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
@@ -20,6 +21,7 @@ import org.kodein.di.bindInstance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
 
@@ -84,6 +86,7 @@ class AlertsViewTest {
 
         binding.alertPriceTextView.setText("999")
         binding.addAlertButton.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
 
         val message = host.findViewById<android.widget.TextView>(com.google.android.material.R.id.snackbar_text)
         assertEquals(
