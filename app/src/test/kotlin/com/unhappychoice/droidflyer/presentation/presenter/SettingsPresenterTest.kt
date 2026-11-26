@@ -7,8 +7,10 @@ import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopSubmissionGuard
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
@@ -199,6 +201,26 @@ class SettingsPresenterTest {
     }
 
     @Test
+    fun restoresPendingStopAndRealtimeReadinessWhenLoadingStartupCredentials() {
+        val status = CurrentStatusService(
+            api.client(), Observable.empty(), Observable.empty(), Observable.empty(), null,
+            privateChannelAvailability = Observable.just(PrivateEvent(true) { true })
+        )
+        try {
+            val guard = StopSubmissionGuard.inMemory().apply { reserve("pending-stop") }
+            status.initializeAccount {
+                api.privateStatusClient(preference.read())?.let { it to guard }
+            }
+
+            val stopOrders = status.privateState.stopOrders
+            assertTrue(stopOrders.reconcilingSubmission.value)
+            assertTrue(stopOrders.orderEventsReady)
+        } finally {
+            status.dispose()
+        }
+    }
+
+    @Test
     fun ignoresStartupCredentialsWhenAnAccountHasAlreadyBeenApplied() {
         val io = TestScheduler()
         val main = TestScheduler()
@@ -207,7 +229,10 @@ class SettingsPresenterTest {
         val status = CurrentStatusService(api.client(), Observable.empty(), Observable.empty(), Observable.empty(), null)
         try {
             val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
-            status.initializeAccount { api.privateStatusClient(preference.read()) }
+            val startupGuard = StopSubmissionGuard.inMemory().apply { reserve("pending-stop") }
+            status.initializeAccount {
+                api.privateStatusClient(preference.read())?.let { it to startupGuard }
+            }
             assertEquals("saved-key", stored.getString("key", null))
 
             io.triggerActions()
@@ -219,6 +244,7 @@ class SettingsPresenterTest {
             io.triggerActions()
             val privateRequests = requests.filter { it.url.encodedPath.startsWith("/v1/me/") }
             assertEquals(3, privateRequests.size)
+            assertFalse(status.privateState.stopOrders.reconcilingSubmission.value)
             privateRequests.forEach { assertSignedWith(it, "new-key", "new-secret") }
         } finally {
             status.dispose()

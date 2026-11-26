@@ -230,8 +230,8 @@ class MainActivityNavigationTest {
                 parent.addView(order.root)
 
                 assertEquals(adapter, order.viewPager.adapter)
-                assertEquals(3, order.tabLayout.tabCount)
-                assertEquals(3, order.viewPager.adapter?.count)
+                assertEquals(4, order.tabLayout.tabCount)
+                assertEquals(4, order.viewPager.adapter?.count)
                 assertEquals(1, ReflectionHelpers.getField<List<TabLayout.OnTabSelectedListener>>(
                     order.tabLayout, "selectedListeners"
                 ).size)
@@ -441,7 +441,7 @@ class MainActivityNavigationTest {
             val orderScheduler = TestScheduler()
             val state = PrivateTradingState(apiClient, requestScheduler = orderScheduler)
             val presenter = LimitOrderPresenter(
-                state, activity.module.direct.instance(), activity.resources, activity::showSnackbar
+                state, activity.module.direct.instance(), {}, activity.resources, activity::showSnackbar
             )
             presenter.takeView(page)
             presenter.amount.value = 0.001

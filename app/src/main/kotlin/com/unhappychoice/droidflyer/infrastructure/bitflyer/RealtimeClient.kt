@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEve
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.schedulers.Schedulers
+import io.reactivex.subjects.BehaviorSubject
 import io.reactivex.subjects.PublishSubject
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -39,6 +40,8 @@ class RealtimeClient internal constructor(
     internal val childOrderEvents = childEvents.hide()
     internal val parentOrderEvents = parentEvents.hide()
 
+    private val availability = BehaviorSubject.create<PrivateEvent<Boolean>>()
+    internal val privateChannelAvailability = availability.hide()
     private val publicDisconnects = PublishSubject.create<Unit>().toSerialized()
     internal val publicFeedDisconnects = publicDisconnects.hide()
 
@@ -105,7 +108,7 @@ class RealtimeClient internal constructor(
         // Private channel messages carry no account identity, so each account needs its own socket.
         val connection = PrivateRealtimeConnection(gson, credentials, createPrivateSocket(), accountLock)
         account = connection
-        connection.connect(childEvents::onNext, parentEvents::onNext)
+        connection.connect(childEvents::onNext, parentEvents::onNext, availability::onNext)
     }
 
     private fun closeAccount() {

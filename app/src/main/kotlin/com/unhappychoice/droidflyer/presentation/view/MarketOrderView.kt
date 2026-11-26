@@ -6,6 +6,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
+import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.bindTo
@@ -20,6 +21,7 @@ import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
+import kotlin.math.abs
 import org.kodein.di.instance
 
 class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
@@ -61,11 +63,18 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             presenter.isLoading.asObservable(),
             presenter.privateClientAvailable
         ) { position: List<Position>, isLoading: Boolean, available: Boolean ->
-            available && !isLoading && position.wholeSize() != 0.0
+            val size = abs(position.wholeSize())
+            val belowMinimum = size != 0.0 && !CryptoCfdOrderSize.meetsMinimum(size)
+            Pair(available && !isLoading && CryptoCfdOrderSize.meetsMinimum(size), belowMinimum)
         }
-            .subscribeNext {
-                binding.clearButton.isEnabled = it
-                binding.clearButton.alpha = if (it) 1.0f else 0.4f
+            .subscribeNext { (enabled, belowMinimum) ->
+                binding.clearButton.isEnabled = enabled
+                binding.clearButton.alpha = if (enabled) 1.0f else 0.4f
+                binding.clearPositionMessage.isVisible = belowMinimum
+                if (belowMinimum) {
+                    binding.clearPositionMessage.text =
+                        context.getString(R.string.minimum_order_size, CryptoCfdOrderSize.MINIMUM.toString())
+                }
             }.addTo(bag)
 
         binding.amountSelector.apply {
