@@ -1,10 +1,12 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import android.content.res.Resources
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
@@ -16,26 +18,49 @@ import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
 import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
 class MarketOrderPresenter internal constructor(
-    private val currentStatusService: CurrentStatusService,
+    private val state: PrivateTradingState,
     internal val maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
-    private val notify: MarketOrderPresenter.(Int) -> Unit
+    private val updateStatus: () -> Unit,
+    private val notify: (Int) -> Unit
 ) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
     constructor(
         currentStatusService: CurrentStatusService,
-        accountPreference: CryptoCfdAccountPreference
+        maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
+        notify: (Int) -> Unit
+    ) : this(currentStatusService.privateState, maximumOrderSize, currentStatusService::updateStatus, notify)
+
+    constructor(
+        currentStatusService: CurrentStatusService,
+        accountPreference: CryptoCfdAccountPreference,
+        resources: Resources,
+        showSnackbar: (String, Int) -> Unit
     ) : this(
         currentStatusService,
         accountPreference.maximumOrderSize,
-        notify = MarketOrderPresenter::showMessage
+        notify = { message ->
+            val duration = if (message == R.string.market_order_accepted) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
+            showSnackbar(resources.getString(message), duration)
+        }
     )
 
     override val isLoading = Variable(false)
     override val unitSize = Variable(1.0)
     override val amount = Variable(0.0)
+
+    internal val privateClientAvailable = state.observePrivateClientAvailability()
+
+    internal val orderEntryEnabled = Observables.combineLatest(
+        privateClientAvailable,
+        isLoading.asObservable(),
+        amount.asObservable(),
+        maximumOrderSize.asObservable(),
+        ::isOrderEntryEnabled
+    ).distinctUntilChanged()
 
     private val bag = CompositeDisposable()
 
@@ -48,15 +73,13 @@ class MarketOrderPresenter internal constructor(
 
     fun sell() = submit("SELL", amount.value)
 
-    internal fun positionCloseOrder(): CloseConfirmation? =
-        currentStatusService.privateState.closeConfirmation()
+    internal fun positionCloseOrder(): CloseConfirmation? = state.closeConfirmation()
 
     internal fun clearPosition(
         confirmed: CloseConfirmation,
         reconfirm: (CloseConfirmation) -> Unit
     ) {
         if (isLoading.value) return
-        val state = currentStatusService.privateState
         val close = state.closePosition(confirmed, onAccepted = {
             androidMainThreadScheduler().scheduleDirect {
                 if (state.isCurrent(confirmed)) notify(R.string.market_order_accepted)
@@ -73,7 +96,7 @@ class MarketOrderPresenter internal constructor(
             }
             .startLoading()
             .subscribeNext { message ->
-                currentStatusService.updateStatus()
+                updateStatus()
                 notify(message)
             }
             .addTo(bag)
@@ -82,13 +105,12 @@ class MarketOrderPresenter internal constructor(
     private fun submit(side: String, size: Double) {
         if (isLoading.value || !CryptoCfdOrderSize.isValid(size, maximumOrderSize.value)) return
         val request = SendChildOrderRequest("FX_BTC_JPY", "MARKET", side, null, size)
-        val state = currentStatusService.privateState
         val order = state.prepareOrder(request) ?: return
         val submission = state.submitOrder(order) ?: return
         submission.startLoading()
             .subscribe({
                 notify(R.string.market_order_accepted)
-                currentStatusService.updateStatus()
+                updateStatus()
             }, { error ->
                 val message = if (error is OrderAcceptanceUncertainException) R.string.order_acceptance_uncertain
                 else R.string.market_order_failed
@@ -97,9 +119,6 @@ class MarketOrderPresenter internal constructor(
             .addTo(bag)
     }
 
-    private fun showMessage(message: Int) {
-        val currentView = view ?: return
-        val duration = if (message == R.string.market_order_accepted) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
-        Snackbar.make(currentView, message, duration).show()
-    }
+    private fun isOrderEntryEnabled(available: Boolean, loading: Boolean, amount: Double, maximum: Double): Boolean =
+        available && !loading && CryptoCfdOrderSize.isValid(amount, maximum)
 }

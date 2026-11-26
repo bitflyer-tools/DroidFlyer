@@ -93,6 +93,22 @@ class CurrentStatusServiceTest {
     }
 
     @Test
+    fun deltaBeforeAnyBaselineLeavesQuotesUnavailableAndDoesNotInvalidateTheFallback() {
+        deltas.onNext(Board(0.0, emptyList(), listOf(Order(120, 1.0))))
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(Board(0.0, emptyList(), emptyList()), 0)
+        assertEquals(0L, service.sellPrice.value)
+
+        responses.onNext(initialBook)
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(initialBook, 100)
+
+        deltas.onNext(initialBook.copy(asks = listOf(Order(100, 0.0))))
+        scheduler.advanceTimeBy(300, MILLISECONDS)
+        assertBook(updatedBook, 110)
+    }
+
+    @Test
     fun delayedRefreshDoesNotReplaceARealtimeSnapshot() {
         snapshots.onNext(updatedBook)
         scheduler.triggerActions()

@@ -61,6 +61,33 @@ class MarketOrderPresenterTest {
     }
 
     @Test
+    fun orderEntryEnabledReflectsCredentialAvailabilityLoadingAndAmount() {
+        val orderEntryEnabled = presenter.orderEntryEnabled.test()
+        orderEntryEnabled.assertValue(false)
+
+        presenter.amount.value = 0.5
+        orderEntryEnabled.assertValues(false, true)
+
+        status.switchAccount(null)
+        orderEntryEnabled.assertValues(false, true, false)
+
+        status.switchAccount(apiClient)
+        orderEntryEnabled.assertValues(false, true, false, true)
+
+        presenter.amount.value = 0.0001
+        orderEntryEnabled.assertValues(false, true, false, true, false)
+    }
+
+    @Test
+    fun privateClientAvailableTracksAccountSwitches() {
+        val privateClientAvailable = presenter.privateClientAvailable.test()
+        privateClientAvailable.assertValue(true)
+
+        status.switchAccount(null)
+        privateClientAvailable.assertValues(true, false)
+    }
+
+    @Test
     fun invalidQuantitiesDoNotSubmitMarketOrders() {
         listOf(0.0001, -0.001, Double.NaN, Double.POSITIVE_INFINITY).forEach { size ->
             presenter.amount.value = size

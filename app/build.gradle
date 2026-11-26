@@ -155,18 +155,14 @@ dependencyLocking {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:1.8.0"
 
     implementation "androidx.recyclerview:recyclerview:1.4.0"
-    implementation 'com.github.rahatarmanahmed:circularprogressview:2.5.0'
     implementation 'org.kodein.di:kodein-di:7.33.0'
-    implementation 'com.github.unhappychoice:rxsnackbar:2.0.1'
     implementation 'com.google.android.material:material:1.14.0'
     implementation 'com.google.code.gson:gson:2.15.0'
     implementation 'com.jakewharton.rxbinding4:rxbinding:4.0.0'
     implementation 'com.github.akarnokd:rxjava3-bridge:3.0.2'
-    implementation 'com.pubnub:pubnub-gson:14.2.0'
     implementation 'com.squareup.flow:flow:1.0.0-alpha3'
     implementation 'com.squareup.mortar:mortar:0.20'
     implementation 'com.squareup.okhttp3:logging-interceptor:5.5.1'
@@ -177,7 +173,6 @@ dependencies {
     implementation 'io.reactivex.rxjava2:rxkotlin:2.4.0'
     implementation 'io.reactivex.rxjava3:rxandroid:3.0.2'
     implementation 'io.socket:socket.io-client:2.1.2'
-    implementation 'com.github.takuji31:koreference:2.0.0'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.4.21'
     implementation 'org.jetbrains.kotlin:kotlin-reflect:2.4.21'
 
