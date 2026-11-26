@@ -20,9 +20,10 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.CurrentStatusView
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Observable
-import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
@@ -399,7 +400,7 @@ class RealtimeClientTest {
 
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(clock) }
         try {
             val service = CurrentStatusService(api, client, api)
             socket.receive(Socket.EVENT_CONNECT)
@@ -457,7 +458,7 @@ class RealtimeClientTest {
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxJavaPlugins.setSingleSchedulerHandler { clock }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(clock) }
         val service = CurrentStatusService(api, client, null)
         val snapshots = "lightning_board_snapshot_FX_BTC_JPY"
         try {
@@ -522,7 +523,7 @@ class RealtimeClientTest {
 
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(clock) }
         try {
             val service = CurrentStatusService(api, client, api)
             clock.triggerActions()
