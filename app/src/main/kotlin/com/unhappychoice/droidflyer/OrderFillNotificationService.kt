@@ -17,6 +17,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.executionMessage
 import org.kodein.di.direct
 import org.kodein.di.instance
@@ -102,9 +103,15 @@ class OrderFillNotificationService : Service() {
             val module = application.module
             val preference = module.direct.instance<APITokenPreference>()
             val api = module.direct.instance<APIClient>()
+            val stopSubmissions = StopSubmissionPreference(application)
             val client = RealtimeClient(module.direct.instance(), preference)
             val status = CurrentStatusService(module.direct.instance<APIClientV1>(), client, null).apply {
-                initializeAccount { api.privateStatusClient(preference.read()) }
+                initializeAccount {
+                    val credentials = preference.read()
+                    api.privateStatusClient(credentials)?.let { client ->
+                        client to stopSubmissions.forApiKey(credentials.key)
+                    }
+                }
             }
             return RealtimeSession(client, status)
         }
