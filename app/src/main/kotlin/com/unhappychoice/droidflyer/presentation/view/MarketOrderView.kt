@@ -6,7 +6,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
-import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
 import com.unhappychoice.droidflyer.extension.bindTo
@@ -47,17 +46,9 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
             unitSize.asObservable().bindTo(binding.amountSelector.size).addTo(bag)
         }
 
-        val privateClientAvailable = currentStatusService.privateState.observePrivateClientAvailability()
-        privateClientAvailable.subscribeNext { binding.credentialsRequired.isVisible = !it }.addTo(bag)
+        presenter.privateClientAvailable.subscribeNext { binding.credentialsRequired.isVisible = !it }.addTo(bag)
 
-        Observables.combineLatest(
-            presenter.amount.asObservable(),
-            presenter.isLoading.asObservable(),
-            presenter.maximumOrderSize.asObservable(),
-            privateClientAvailable
-        ) { amount, isLoading, maximum, available ->
-            available && !isLoading && CryptoCfdOrderSize.isValid(amount, maximum)
-        }
+        presenter.orderEntryEnabled
             .subscribeNext {
                 binding.buyButton.isEnabled = it
                 binding.sellButton.isEnabled = it
@@ -69,7 +60,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
         Observables.combineLatest(
             currentStatusService.position.asObservable(),
             presenter.isLoading.asObservable(),
-            privateClientAvailable
+            presenter.privateClientAvailable
         ) { position: List<Position>, isLoading: Boolean, available: Boolean ->
             val size = abs(position.wholeSize())
             val belowMinimum = size != 0.0 && !CryptoCfdOrderSize.meetsMinimum(size)
