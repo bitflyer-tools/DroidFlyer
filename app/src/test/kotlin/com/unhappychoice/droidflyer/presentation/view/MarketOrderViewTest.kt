@@ -128,6 +128,27 @@ class MarketOrderViewTest {
     }
 
     @Test
+    fun clearButtonIsDisabledWithExplanationBelowTheMinimumCloseSizeAndEnabledAtExactlyTheMinimum() {
+        withMarketView { activity, view, _, status ->
+            val clearButton = view.findViewById<View>(R.id.clearButton)
+            val message = view.findViewById<TextView>(R.id.clearPositionMessage)
+
+            status.position.value = listOf(Position("FX_BTC_JPY", "BUY", 1000000L, 0.00099999, 0.0, 0.0, 0.0, 1L, 0.0))
+            assertFalse(clearButton.isEnabled)
+            assertEquals(View.VISIBLE, message.visibility)
+            assertEquals(activity.getString(R.string.minimum_order_size, "0.001"), message.text.toString())
+
+            status.position.value = listOf(Position("FX_BTC_JPY", "SELL", 1000000L, 0.00099999, 0.0, 0.0, 0.0, 1L, 0.0))
+            assertFalse(clearButton.isEnabled)
+            assertEquals(View.VISIBLE, message.visibility)
+
+            status.position.value = listOf(Position("FX_BTC_JPY", "BUY", 1000000L, 0.001, 0.0, 0.0, 0.0, 1L, 0.0))
+            assertTrue(clearButton.isEnabled)
+            assertEquals(View.GONE, message.visibility)
+        }
+    }
+
+    @Test
     fun obscuredCloseConfirmationDoesNotSubmitAndClearTapSubmitsOnce() {
         val positions = listOf(Position("FX_BTC_JPY", "BUY", 1000000L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0))
 
