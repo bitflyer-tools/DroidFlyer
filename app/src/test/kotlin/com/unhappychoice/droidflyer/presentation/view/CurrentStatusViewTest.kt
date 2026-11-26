@@ -156,7 +156,7 @@ class CurrentStatusViewTest {
             assertEquals("残高を取得できません", view.findViewById<TextView>(R.id.balance).text.toString())
 
             service.privateState.collateral.value = Collateral(100.0)
-            executionFeedDisconnects.onNext(Unit)
+            publicFeedDisconnects.onNext(Unit)
             scheduler.triggerActions()
 
             assertEquals("預入金: 100 JPY", view.findViewById<TextView>(R.id.balance).text.toString())
