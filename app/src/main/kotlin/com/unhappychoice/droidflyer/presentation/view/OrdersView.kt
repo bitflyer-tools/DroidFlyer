@@ -34,6 +34,7 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     private val orderAdapter by lazy { OrderAdapter(context) }
     private val fillAdapter = FillAdapter()
     private val subscriptions = CompositeDisposable()
+    private var appliedFillsUpdate: FillHistory.State.Update? = null
 
     private val stopAdapter by lazy { StopOrderAdapter(::confirmStopCancellation) }
     private var cancellationDialog: AlertDialog? = null
@@ -130,7 +131,13 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     }
 
     private fun renderFills(state: FillHistory.State) {
-        fillAdapter.submitList(state.fills.ifEmpty { null })
+        if (state.update !== appliedFillsUpdate) {
+            when (val update = state.update) {
+                is FillHistory.State.Update.Replace -> fillAdapter.replaceAll(update.fills)
+                is FillHistory.State.Update.Append -> fillAdapter.appendOlder(update.older)
+            }
+            appliedFillsUpdate = state.update
+        }
         binding.refreshFills.isEnabled = !state.loading
         binding.loadOlderFills.isVisible = state.nextCursor != null
         binding.loadOlderFills.isEnabled = !state.loading

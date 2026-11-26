@@ -26,8 +26,10 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
+import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
 import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
+import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import flow.Flow
@@ -303,6 +305,83 @@ class MainActivityNavigationTest {
     }
 
     @Test
+    fun delayedMarketOrderAcceptanceShowsOnChart() {
+        assertMarketOrderFeedbackAfterNavigation(R.id.chartIcon, { getString(R.string.market_order_accepted) }) {
+            onNext(ChildOrderAcceptance("test"))
+            onComplete()
+        }
+    }
+
+    @Test
+    fun delayedMarketOrderRejectionShowsOnSettings() {
+        assertMarketOrderFeedbackAfterNavigation(R.id.settingsIcon, { getString(R.string.market_order_failed) }) {
+            onError(HttpException(Response.error<ChildOrderAcceptance>(400, "Order rejected".toResponseBody())))
+        }
+    }
+
+    @Test
+    fun delayedPositionCloseAcceptanceShowsOnSettings() {
+        val apiClient = mock<APIClientV1>()
+        val positions = listOf(Position("FX_BTC_JPY", "BUY", 1000000L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0))
+        val pending = PublishSubject.create<ChildOrderAcceptance>()
+        val filledOrder = ChildOrder(
+            1, "child", "FX_BTC_JPY", "SELL", "MARKET", 0, 0, 0.5,
+            "COMPLETED", "JRF-close", 0.0, 0.0, 0.5, 0.0
+        )
+        whenever(apiClient.getPositions("FX_BTC_JPY")).thenReturn(Observable.never())
+        whenever(apiClient.sendChildOrder(any())).thenReturn(pending)
+        whenever(apiClient.getChildOrders("FX_BTC_JPY", null, "JRF-close")).thenReturn(Observable.just(listOf(filledOrder)))
+        whenever(apiClient.getCollateral()).thenReturn(Observable.never())
+        whenever(apiClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.never())
+        whenever(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.never())
+
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.tapTab(R.id.orderIcon)
+            val order = OrderViewBinding.bind(activity.binding.containerView.getChildAt(0))
+            val pager = order.viewPager
+            val page = pager.children.filterIsInstance<MarketOrderView>().firstOrNull()
+                ?: pager.adapter!!.instantiateItem(pager, 0) as MarketOrderView
+
+            val status = CurrentStatusService(apiClient, Observable.never(), Observable.never(), Observable.never(), apiClient)
+            background.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            status.position.value = positions
+            val presenter = MarketOrderPresenter(
+                status, activity.module.direct.instance(), activity.resources, activity::showSnackbar
+            )
+            presenter.takeView(page)
+
+            // The close flow reads getPositions twice: the confirmed open size, then the freshly emptied position.
+            whenever(apiClient.getPositions("FX_BTC_JPY")).thenReturn(Observable.just(positions), Observable.just(emptyList()))
+            val confirmed = requireNotNull(presenter.positionCloseOrder())
+            presenter.clearPosition(confirmed) { error("Unexpected reconfirmation") }
+            background.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertTrue(presenter.isLoading.value)
+            assertTrue(page.isAttachedToWindow)
+            activity.tapTab(R.id.settingsIcon)
+            assertFalse(page.isAttachedToWindow)
+            presenter.dropView(page)
+            assertTrue(presenter.isLoading.value)
+
+            pending.onNext(ChildOrderAcceptance("JRF-close"))
+            pending.onComplete()
+            background.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertFalse(presenter.isLoading.value)
+            val message = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            assertEquals(activity.getString(R.string.cleared_all_positions), message?.text?.toString())
+            verify(apiClient).sendChildOrder(
+                SendChildOrderRequest("FX_BTC_JPY", "MARKET", "SELL", null, 0.5, timeInForce = "IOC")
+            )
+        }
+    }
+
+    @Test
     fun recreationFinishesWhileCredentialSaveIsInProgress() {
         val ioStarted = CountDownLatch(1)
         val resumeIo = CountDownLatch(1)
@@ -383,6 +462,53 @@ class MainActivityNavigationTest {
             assertEquals(activity.expectedMessage(), message?.text?.toString())
             verify(apiClient).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "LIMIT", "BUY", 100, 0.001))
             verifyNoMoreInteractions(apiClient)
+        }
+    }
+
+    private fun assertMarketOrderFeedbackAfterNavigation(
+        destination: Int,
+        expectedMessage: MainActivity.() -> String,
+        completeOrder: PublishSubject<ChildOrderAcceptance>.() -> Unit
+    ) {
+        val apiClient = mock<APIClientV1>()
+        val pending = PublishSubject.create<ChildOrderAcceptance>()
+        whenever(apiClient.sendChildOrder(any())).thenReturn(pending)
+        whenever(apiClient.getPositions()).thenReturn(Observable.never())
+        whenever(apiClient.getCollateral()).thenReturn(Observable.never())
+        whenever(apiClient.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.never())
+        whenever(apiClient.getBoard("FX_BTC_JPY")).thenReturn(Observable.never())
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.tapTab(R.id.orderIcon)
+            val order = OrderViewBinding.bind(activity.binding.containerView.getChildAt(0))
+            val pager = order.viewPager
+            val page = pager.children.filterIsInstance<MarketOrderView>().firstOrNull()
+                ?: pager.adapter!!.instantiateItem(pager, 0) as MarketOrderView
+
+            val status = CurrentStatusService(apiClient, Observable.never(), Observable.never(), Observable.never(), apiClient)
+            val presenter = MarketOrderPresenter(
+                status, activity.module.direct.instance(), activity.resources, activity::showSnackbar
+            )
+            presenter.takeView(page)
+            presenter.amount.value = 0.001
+            presenter.buy()
+            background.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+
+            assertTrue(presenter.isLoading.value)
+            assertTrue(page.isAttachedToWindow)
+            activity.tapTab(destination)
+            assertFalse(page.isAttachedToWindow)
+            presenter.dropView(page)
+            assertTrue(presenter.isLoading.value)
+
+            pending.completeOrder()
+            background.triggerActions()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertFalse(presenter.isLoading.value)
+            val message = activity.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            assertEquals(activity.expectedMessage(), message?.text?.toString())
+            verify(apiClient).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 0.001))
         }
     }
 
