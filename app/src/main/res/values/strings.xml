@@ -70,6 +70,7 @@
     <string name="account_unlinked">bitFlyer account unlinked</string>
     <string name="account_unlink_failed">Could not remove saved credentials. Try unlinking again.</string>
     <string name="status_collateral">Collateral: %1$s</string>
+    <string name="balance_unavailable">Balance unavailable</string>
     <string name="funding_unavailable">Next funding rate unavailable</string>
     <string name="funding_details">Next funding %1$s · %2$s</string>
     <string name="funding_stale">%1$s (stale)</string>
