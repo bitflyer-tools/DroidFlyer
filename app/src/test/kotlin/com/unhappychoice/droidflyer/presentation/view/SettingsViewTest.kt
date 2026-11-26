@@ -19,8 +19,9 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
-import io.reactivex.android.plugins.RxAndroidPlugins
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import mortar.MortarScope
@@ -52,7 +53,7 @@ class SettingsViewTest {
     @Before
     fun setSchedulers() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
     }
 
     @After
@@ -75,7 +76,7 @@ class SettingsViewTest {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
 
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
@@ -390,7 +391,7 @@ class SettingsViewTest {
             val presenter = SettingsPresenter(
                 APIClient(Gson(), preference, transport),
                 preference,
-                switchAccount = {},
+                switchAccount = { _, _ -> },
                 accountPreference = CryptoCfdAccountPreference(this),
                 updateRealtimeAccount = { it() }
             )

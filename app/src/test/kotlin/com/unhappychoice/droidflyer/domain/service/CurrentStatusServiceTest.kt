@@ -5,14 +5,16 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Completable
 import io.reactivex.Observable
-import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
@@ -41,7 +43,7 @@ class CurrentStatusServiceTest {
     private val snapshots = PublishSubject.create<Board>()
     private val deltas = PublishSubject.create<Board>()
     private val disconnects = PublishSubject.create<Unit>()
-    private val orderEvents = PublishSubject.create<PrivateEvent<*>>()
+    private val orderEvents = PublishSubject.create<PrivateEvent<List<ChildOrderEvent>>>()
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
     private val activeOrder = ChildOrder(
@@ -58,8 +60,8 @@ class CurrentStatusServiceTest {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
         RxJavaPlugins.setSingleSchedulerHandler { scheduler }
-        RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
 
         `when`(api.getBoard("FX_BTC_JPY"))
             .thenReturn(responses.take(1).doOnSubscribe { boardRequests++ })
@@ -277,7 +279,7 @@ class CurrentStatusServiceTest {
         service.updateStatus()
         scheduler.triggerActions()
 
-        orderEvents.onNext(PrivateEvent(Unit) { true })
+        orderEvents.onNext(PrivateEvent(emptyList()) { true })
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
         verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
 

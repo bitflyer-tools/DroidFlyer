@@ -3,9 +3,9 @@
 
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
-    <string name="no_active_orders">No active orders.</string>
-    <string name="active_orders_unavailable">Could not load active orders.</string>
-    <string name="active_orders_stale">Could not refresh active orders. The orders shown may be out of date.</string>
+    <string name="no_active_orders">No active child orders.</string>
+    <string name="active_orders_unavailable">Could not load active child orders.</string>
+    <string name="active_orders_stale">Could not refresh active child orders. The child orders shown may be out of date.</string>
     <string name="active_orders_may_be_incomplete">Some active orders may be missing because the request limit was reached.</string>
     <string name="order_cancellation_failed">Could not cancel order %1$s</string>
 
@@ -23,7 +23,7 @@
     <string name="api_secret">API secret</string>
     <string name="apply">Apply</string>
     <string name="grouping">Grouping</string>
-    <string name="help_api_key">https://lightning.bitflyer.jp/developer</string>
+    <string name="help_api_key">https://lightning.bitflyer.com/developer</string>
 
     <string name="clear_all_positions">Clear all positions?</string>
     <string name="create_limit_order">Create limit order?</string>
@@ -66,6 +66,45 @@
     <string name="chart_partial_history">Oldest candle may be incomplete</string>
     <string name="chart_candle">%1$s – %2$s\nOpen %3$s · High %4$s\nLow %5$s · Close %6$s JPY</string>
     <string name="chart_partial_candle">Partial: %1$s – %2$s\nOpen %3$s · High %4$s\nLow %5$s · Close %6$s JPY</string>
+
+    <string name="stop">Stop</string>
+    <string name="stop_quantity">Quantity (BTC)</string>
+    <string name="stop_trigger_price">Trigger price (JPY)</string>
+    <string name="stop_choose_side">Choose Buy or Sell</string>
+    <string name="stop_invalid_input">Enter a positive quantity and a whole JPY trigger price</string>
+    <string name="stop_order_events_unavailable">Order events unavailable</string>
+    <string name="stop_order_events_setup">Stop orders require a live connection to bitFlyer order events so DroidFlyer can track and cancel orders waiting to trigger. In bitFlyer Lightning, open the API page and enable “Receive order events” on your API key, or create a key with that permission. In DroidFlyer, open Setting, enter the key and secret, and tap Apply. Once connected, review your order again.</string>
+    <string name="stop_review">Review stop order</string>
+    <string name="stop_review_summary">Crypto CFD · %1$s %2$s BTC\nTrigger price: %3$,d JPY\n\nWhen the trigger price is reached, bitFlyer submits a market order. The execution price may differ from the trigger price.</string>
+    <string name="stop_submit">Submit stop</string>
+    <string name="stop_accepted">Exchange accepted stop %1$s</string>
+    <string name="stop_submit_reconciling">The stop order submission result is unknown. Check its status in bitFlyer Lightning and confirm before resuming.</string>
+    <string name="stop_submit_recovery">Check order status and resume</string>
+    <string name="stop_submit_recovery_warning">Check open orders and order history in bitFlyer Lightning, including orders that may have already triggered. Resume only if you have confirmed that the stop order was not accepted. Sending it again could create a duplicate.</string>
+    <string name="stop_submit_recovery_confirm">I checked, resume</string>
+    <string name="stop_submit_rejected">bitFlyer rejected your stop order. You can try again.</string>
+    <string name="stop_review_again">Review the stop again before submitting</string>
+    <string name="stop_load_retry">Could not load stop orders. Tap to retry.</string>
+    <string name="stop_price">Trigger: %1$,d JPY</string>
+    <string name="stop_price_unavailable">Trigger price unavailable</string>
+    <string name="stop_status_with_executed_size">%1$s (%2$s BTC executed)</string>
+    <string name="stop_order_row">Stop · %1$s %2$s BTC\n%3$s · %4$s\n%5$s</string>
+    <string name="stop_waiting">Accepted · waiting for trigger</string>
+    <string name="stop_triggered">Triggered</string>
+    <string name="stop_partially_executed">Partially executed</string>
+    <string name="stop_executed">Executed</string>
+    <string name="stop_canceled">Canceled</string>
+    <string name="stop_expired">Expired</string>
+    <string name="stop_rejected">Rejected</string>
+    <string name="stop_unknown">Status unavailable</string>
+    <string name="stop_verify_cancel">Verify to cancel</string>
+    <string name="stop_verify_cancel_message">Confirm in bitFlyer Lightning that order %1$s is still waiting to trigger before canceling it here.</string>
+    <string name="stop_confirm_waiting_and_cancel">Still waiting — cancel order</string>
+    <string name="stop_cancel_title">Cancel this stop order?</string>
+    <string name="stop_cancel_account_changed">The account changed. Order %1$s was not canceled.</string>
+    <string name="stop_cancel_unavailable">Order %1$s is no longer available.</string>
+    <string name="stop_cancel_in_progress">Cancellation of order %1$s is already in progress.</string>
+    <string name="stop_cancel_ineligible">Order %1$s is no longer eligible for cancellation.</string>
     <string name="unlink_account">Unlink account</string>
     <string name="account_unlinked">bitFlyer account unlinked</string>
     <string name="account_unlink_failed">Could not remove saved credentials. Try unlinking again.</string>

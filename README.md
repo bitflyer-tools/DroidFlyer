@@ -13,7 +13,7 @@ DroidFlyer is a [bitFlyer Lightning](https://lightning.bitflyer.com) client for 
 
 - Chart recent bitFlyer Crypto CFD trade prices in JPY with 1-minute and 5-minute candlesticks.
 - Watch live bids and asks in the order book and adjust how price levels are grouped.
-- Place market and limit orders, and view or cancel active orders.
+- Place market, limit, and stop orders, and view or cancel active orders.
 
 ## Installation
 
@@ -32,6 +32,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 2. Sign in to bitFlyer Lightning and create an API key and secret on the [developer page](https://lightning.bitflyer.com/developer). Give the key permission to retrieve your asset balance so DroidFlyer can verify it. To show your CFD collateral balance on the Order screen, also grant [Get Margin Status](https://lightning.bitflyer.com/docs?lang=en#get-margin-status) permission (`GET /v1/me/getcollateral`).
 3. Open DroidFlyer and tap **Setting**. Enter the **API key** and **API secret**, then tap **Apply**. The app shows **Saved API key** after the balance request succeeds and the credentials are saved on the device.
 4. Tap **Order**, then **Limit**, to view the bitFlyer Crypto CFD order book. You can read the bids and asks without placing a trade.
+5. To place a Crypto CFD stop order, enable **Receive order events** on the API key in bitFlyer Lightning and apply the credentials in DroidFlyer. The app uses the private order-event channels to track and cancel orders waiting to trigger.
 
 See [Using DroidFlyer](docs/usage.md) for screen controls, account settings, and API permissions.
 See [FAQ and troubleshooting](docs/troubleshooting.md) if credentials, orders, or fills don't work as expected.

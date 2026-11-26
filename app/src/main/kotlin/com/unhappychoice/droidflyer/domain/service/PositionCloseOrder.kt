@@ -17,6 +17,6 @@ internal class PositionCloseOrder private constructor(val positionSize: Double) 
 
     companion object {
         fun from(size: Double): PositionCloseOrder? =
-            if (size == 0.0) null else PositionCloseOrder(size)
+            if (CryptoCfdOrderSize.meetsMinimum(Math.abs(size))) PositionCloseOrder(size) else null
     }
 }

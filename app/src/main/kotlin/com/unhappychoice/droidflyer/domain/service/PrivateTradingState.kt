@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -15,7 +16,6 @@ import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.subjects.PublishSubject
 import io.reactivex.subjects.ReplaySubject
@@ -24,7 +24,9 @@ import io.reactivex.subjects.ReplaySubject
 internal class PrivateTradingState(
     client: APIClientV1?,
     private val requestScheduler: Scheduler = Schedulers.io(),
-    private val stateScheduler: Scheduler = AndroidSchedulers.mainThread()
+    private val stateScheduler: Scheduler = androidMainThreadScheduler(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
     enum class ActiveOrdersStatus { INITIAL, EMPTY, AVAILABLE, UNAVAILABLE, STALE }
 
@@ -33,6 +35,8 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     val activeOrdersStatus = Variable(ActiveOrdersStatus.INITIAL)
+
+    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler, submissionGuard, maximumOrderSize)
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
@@ -60,19 +64,25 @@ internal class PrivateTradingState(
 
     fun dispose() {
         disposed = true
+        stopOrders.dispose()
         replaceSession(null)
     }
 
-    fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
+    fun switchAccount(
+        client: APIClientV1?,
+        guard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+        onSwitched: () -> Unit = {}
+    ) {
         if (disposed) return
 
         replaceSession(client?.let(::Session)) {
+            stopOrders.switchAccount(client, guard)
             accountSwitches.onNext(Unit)
             onSwitched()
         }
     }
 
-    fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched)
+    fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched = onSwitched)
 
     fun refreshPositionsAndCollateral(): Completable = Completable.defer {
         if (disposed) return@defer Completable.complete()

@@ -11,9 +11,10 @@ import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.MarketPrice
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Observable
-import io.reactivex.android.plugins.RxAndroidPlugins
 import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import org.junit.After
@@ -35,7 +36,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class, qualifiers = "en")
 class CurrentStatusViewTest {
     private val scheduler = TestScheduler()
-    private val executionFeedDisconnects = PublishSubject.create<Unit>()
+    private val publicFeedDisconnects = PublishSubject.create<Unit>()
     private lateinit var service: CurrentStatusService
 
     @Before
@@ -43,13 +44,14 @@ class CurrentStatusViewTest {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setSingleSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
 
         val api = mock<APIClientV1>()
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
         whenever(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.empty())
         service = CurrentStatusService(
-            api, Observable.empty(), Observable.empty(), Observable.empty(), null, executionFeedDisconnects
+            api, Observable.empty(), Observable.empty(), Observable.empty(), null,
+            publicFeedDisconnects = publicFeedDisconnects
         )
         service.currentPrice.value = MarketPrice(150.0)
     }
@@ -125,7 +127,7 @@ class CurrentStatusViewTest {
             assertFalse(spread.isVisible)
 
             service.privateState.collateral.value = Collateral(100.0)
-            executionFeedDisconnects.onNext(Unit)
+            publicFeedDisconnects.onNext(Unit)
             scheduler.triggerActions()
 
             assertEquals("—", view.findViewById<TextView>(R.id.currentPrice).text.toString())
@@ -155,7 +157,7 @@ class CurrentStatusViewTest {
             assertEquals("残高を取得できません", view.findViewById<TextView>(R.id.balance).text.toString())
 
             service.privateState.collateral.value = Collateral(100.0)
-            executionFeedDisconnects.onNext(Unit)
+            publicFeedDisconnects.onNext(Unit)
             scheduler.triggerActions()
 
             assertEquals("預入金: 100 JPY", view.findViewById<TextView>(R.id.balance).text.toString())
