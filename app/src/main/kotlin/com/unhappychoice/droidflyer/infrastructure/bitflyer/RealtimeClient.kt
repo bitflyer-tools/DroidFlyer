@@ -52,6 +52,7 @@ class RealtimeClient internal constructor(
     private val accountLock = Any()
     private var account: PrivateRealtimeConnection? = null
     @Volatile private var disconnected = false
+    private val executionsType = object : TypeToken<List<Execution>>() {}.type
 
     init {
         socket.on(Socket.EVENT_CONNECT) {
@@ -128,7 +129,7 @@ class RealtimeClient internal constructor(
             "lightning_board_snapshot_FX_BTC_JPY" ->
                 decodeAndPublish(body, Board::class.java, boardSnapshot)
             "lightning_executions_FX_BTC_JPY" ->
-                decodeAndPublish(body, object : TypeToken<List<Execution>>() {}.type, executions)
+                decodeAndPublish(body, executionsType, executions)
         }
     }
 
