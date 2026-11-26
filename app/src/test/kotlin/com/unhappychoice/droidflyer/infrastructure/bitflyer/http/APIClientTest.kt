@@ -7,6 +7,9 @@ import com.unhappychoice.droidflyer.BuildConfig
 import com.unhappychoice.droidflyer.domain.service.ClosePositionService
 import com.unhappychoice.droidflyer.extension.toHmacSHA256
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
@@ -71,6 +74,18 @@ class APIClientTest {
     fun orderPostIsNotResentWhenServerClosesConnectionAfterReadingBody() {
         val response = MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
         assertOrderSentOnce(response) { it is IOException }
+    }
+
+    @Test
+    fun stopOrderIsNotResentAfterServiceUnavailableWithImmediateRetry() {
+        val response = MockResponse.Builder().code(503).addHeader("Retry-After", "0").build()
+        assertStopOrderSentOnce(response) { it is HttpException && it.code() == 503 }
+    }
+
+    @Test
+    fun stopOrderIsNotResentWhenServerClosesConnectionAfterReadingBody() {
+        val response = MockResponse.Builder().onResponseStart(SocketEffect.CloseSocket()).build()
+        assertStopOrderSentOnce(response) { it is IOException }
     }
 
     @Test
@@ -325,6 +340,21 @@ class APIClientTest {
                 .assertError { it is OrderAcceptanceUncertainException && expectedCause(it.cause) }
 
             assertSignedRequest(origin, "POST", "/v1/me/sendchildorder", gson.toJson(order))
+            assertEquals(1, origin.requestCount)
+        }
+    }
+
+    private fun assertStopOrderSentOnce(response: MockResponse, expectedError: (Throwable) -> Boolean) {
+        val stop = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+        val order = SendParentOrderRequest(stop)
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(response)
+            origin.enqueue(MockResponse.Builder().body("""{"parent_order_acceptance_id":"retry"}""").build())
+
+            client(origin).sendParentOrder(order).test().assertNoValues().assertError { expectedError(it) }
+
+            assertSignedRequest(origin, "POST", "/v1/me/sendparentorder", gson.toJson(order))
             assertEquals(1, origin.requestCount)
         }
     }

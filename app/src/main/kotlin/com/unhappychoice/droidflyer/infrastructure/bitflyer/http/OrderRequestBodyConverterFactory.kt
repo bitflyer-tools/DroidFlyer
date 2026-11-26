@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
 import okhttp3.RequestBody
 import okio.BufferedSink
 import retrofit2.Converter
@@ -14,11 +15,11 @@ internal class OrderRequestBodyConverterFactory : Converter.Factory() {
         methodAnnotations: Array<Annotation>,
         retrofit: Retrofit
     ): Converter<*, RequestBody>? {
-        if (type != SendChildOrderRequest::class.java) return null
-        val converter = retrofit.nextRequestBodyConverter<SendChildOrderRequest>(
+        if (type != SendChildOrderRequest::class.java && type != SendParentOrderRequest::class.java) return null
+        val converter = retrofit.nextRequestBodyConverter<Any>(
             this, type, parameterAnnotations, methodAnnotations
         )
-        return Converter<SendChildOrderRequest, RequestBody> { request ->
+        return Converter<Any, RequestBody> { request ->
             OneShotOrderBody(checkNotNull(converter.convert(request)))
         }
     }

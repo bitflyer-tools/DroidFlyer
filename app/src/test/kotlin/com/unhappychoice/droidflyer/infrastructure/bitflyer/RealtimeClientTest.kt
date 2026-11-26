@@ -10,14 +10,25 @@ import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.MarketPrice
+import com.unhappychoice.droidflyer.domain.service.StopOrderService
+import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
+import com.unhappychoice.droidflyer.domain.service.StopOrderStatus
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderDetails
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderParameter
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.CurrentStatusView
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
@@ -44,7 +55,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.kodein.di.DI
 import org.kodein.di.bindInstance
+import org.mockito.Mockito.clearInvocations
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -84,6 +100,7 @@ class RealtimeClientTest {
         authentication.triggerActions()
         val account = accountSockets.single()
         val orders = client.childOrderEvents.test()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
         account.receive(Socket.EVENT_CONNECT)
         val expired = checkNotNull(account.authAck)
         expired.onTimeout()
@@ -107,8 +124,74 @@ class RealtimeClientTest {
         account.receive("child_order_events", JSONArray())
         advanceRetryTime(60)
         orders.assertValueCount(1)
+        availability.assertNoValues()
+        account.acknowledgePrivateSubscriptions()
+        availability.assertValue(true)
         assertEquals(listOf("child_order_events", "parent_order_events"), account.subscriptions)
         assertEquals(3, account.authAttempts)
+    }
+
+    @Test
+    fun retriesBothPrivateSubscriptionsWhenOneAcknowledgementIsMissing() {
+        RxJavaPlugins.setComputationSchedulerHandler { time }
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
+
+        account.receive(Socket.EVENT_CONNECT)
+        checkNotNull(account.authAck).call()
+        account.subscriptionAcks.getValue("child_order_events").call()
+        val expired = account.subscriptionAcks.getValue("parent_order_events")
+        availability.assertNoValues()
+        expired.onTimeout()
+        availability.assertValue(false)
+        assertEquals(1, account.authAttempts)
+
+        advanceRetryTime(1)
+        assertEquals(2, account.authAttempts)
+        checkNotNull(account.authAck).call()
+        expired.call()
+        account.subscriptionAcks.getValue("child_order_events").call()
+        availability.assertValue(false)
+        account.subscriptionAcks.getValue("parent_order_events").call()
+        advanceRetryTime(60)
+
+        availability.assertValues(false, true)
+        assertEquals(2, account.authAttempts)
+        assertEquals(
+            listOf("child_order_events", "parent_order_events", "child_order_events", "parent_order_events"),
+            account.subscriptions
+        )
+        client.disconnect()
+    }
+
+    @Test
+    fun reapplyingCredentialsAfterSubscriptionTimeoutCancelsThePendingRetry() {
+        RxJavaPlugins.setComputationSchedulerHandler { time }
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val original = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
+        original.receive(Socket.EVENT_CONNECT)
+        checkNotNull(original.authAck).call()
+        original.subscriptionAcks.getValue("child_order_events").onTimeout()
+
+        client.updateAccount {}
+        assertEquals(2, accountSockets.size)
+        val replacement = accountSockets.last()
+        replacement.receive(Socket.EVENT_CONNECT)
+        checkNotNull(replacement.authAck).call()
+        original.subscriptionAcks.getValue("parent_order_events").onTimeout()
+        replacement.acknowledgePrivateSubscriptions()
+        advanceRetryTime(60)
+
+        assertEquals(1, original.authAttempts)
+        assertEquals(1, replacement.authAttempts)
+        availability.assertValues(false, false, true)
+        client.disconnect()
     }
 
     @Test
@@ -184,6 +267,284 @@ class RealtimeClientTest {
         snapshot.assertValue(expectedBoard)
         childOrders.assertValue(emptyList())
         parentOrders.assertValue(emptyList())
+    }
+
+    @Test
+    fun signalsPrivateChannelReadinessOnlyAfterBothSubscriptionsAreAcknowledged() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
+
+        account.receive(Socket.EVENT_CONNECT)
+        availability.assertNoValues()
+        account.authAck!!.call(JSONObject.NULL)
+        availability.assertNoValues()
+        account.subscriptionAcks.getValue("parent_order_events").call()
+        availability.assertNoValues()
+        account.subscriptionAcks.getValue("child_order_events").call(JSONObject.NULL)
+        availability.assertValue(true)
+        client.privateChannelAvailability.map { it.value }.test().assertValue(true)
+
+        account.receive(Socket.EVENT_DISCONNECT)
+        client.privateChannelAvailability.map { it.value }.test().assertValue(false)
+        account.receive(Socket.EVENT_CONNECT)
+        availability.assertValues(true, false)
+        account.authAck!!.call(JSONObject.NULL)
+        account.acknowledgePrivateSubscriptions()
+        availability.assertValues(true, false, true)
+    }
+
+    @Test
+    fun rejectsPartialSubscriptionAndIgnoresAcknowledgementsFromAnEarlierConnection() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val availability = client.privateChannelAvailability.map { it.value }.test()
+
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call()
+        val firstChildAck = account.subscriptionAcks.getValue("child_order_events")
+        val firstParentAck = account.subscriptionAcks.getValue("parent_order_events")
+        firstParentAck.call(JSONObject().put("message", "Permission denied"))
+        availability.assertValue(false)
+
+        client.updateAccount {}
+        val replacement = accountSockets.last()
+        assertFalse(account === replacement)
+        replacement.receive(Socket.EVENT_CONNECT)
+        replacement.authAck!!.call()
+        firstChildAck.call()
+        replacement.subscriptionAcks.getValue("parent_order_events").call()
+        availability.assertValues(false, false)
+        replacement.subscriptionAcks.getValue("child_order_events").call()
+        availability.assertValues(false, false, true)
+    }
+
+    @Test
+    fun restoresUnconfirmedSubmissionAfterDisposalBeforeResponseAndKeepsOtherApiKeysIndependent() {
+        val scheduler = TestScheduler()
+        val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+        val api = stopOrderApi()
+        val response = PublishSubject.create<ParentOrderAcceptance>()
+        whenever(api.sendParentOrder(any())).thenReturn(response)
+
+        fun start(key: String): StopOrderService {
+            val guard = StopSubmissionPreference(RuntimeEnvironment.getApplication()).forApiKey(key)
+            return StopOrderService(api, scheduler, scheduler, guard).apply { onPrivateChannelAvailability(true) }
+        }
+
+        val original = start("first")
+        assertTrue(original.submit(original.confirmation(order)) { error("Response was not delivered") })
+        scheduler.triggerActions()
+        verify(api).sendParentOrder(any())
+        val restarted = start("first")
+        assertFalse(checkNotNull(restarted.confirmSubmissionRecovery()).invoke())
+        original.dispose()
+
+        val other = start("second")
+        try {
+            assertFalse(other.reconcilingSubmission.value)
+            assertTrue(restarted.reconcilingSubmission.value)
+            assertFalse(restarted.submit(restarted.confirmation(order)) { error("Duplicate order") })
+            scheduler.triggerActions()
+            verify(api).sendParentOrder(any())
+            assertTrue(checkNotNull(restarted.confirmSubmissionRecovery()).invoke())
+            assertFalse(restarted.reconcilingSubmission.value)
+            whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("accepted")))
+            assertTrue(restarted.submit(restarted.confirmation(order)) { assertEquals("accepted", it.getOrThrow()) })
+            scheduler.triggerActions()
+            val afterAcceptance = start("first")
+            assertFalse(afterAcceptance.reconcilingSubmission.value)
+            afterAcceptance.dispose()
+        } finally {
+            other.dispose()
+            restarted.dispose()
+        }
+    }
+
+    @Test
+    fun submitsStopWhenPrivateSubscriptionsWereAcknowledgedBeforeStatusServiceStarted() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        account.receive(Socket.EVENT_CONNECT)
+        account.authAck!!.call()
+        account.acknowledgePrivateSubscriptions()
+
+        val api = stopOrderApi()
+        whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("submitted-stop")))
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                val stops = service.privateState.stopOrders
+                val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+                val results = mutableListOf<Result<String>>()
+                assertTrue(stops.submit(stops.confirmation(order)) { results += it })
+                scheduler.triggerActions()
+                assertEquals(listOf(Result.success("submitted-stop")), results)
+                verify(api).sendParentOrder(any())
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
+    fun blocksStopSubmissionAndContinuesPollingAfterPrivateSubscriptionFails() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val api = stopOrderApi()
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                account.receive(Socket.EVENT_CONNECT)
+                account.authAck!!.call()
+                account.subscriptionAcks.getValue("child_order_events").call()
+                account.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
+                val stops = service.privateState.stopOrders
+                stops.refresh()
+                scheduler.advanceTimeBy(28, SECONDS)
+                assertFalse(stops.orderEventsReady)
+                assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
+                assertFalse(stops.orders.value.single().canCancel)
+                val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+                assertFalse(stops.submit(stops.confirmation(order)) { error("Stop submitted without order events") })
+                scheduler.triggerActions()
+                verify(api, never()).sendParentOrder(any())
+                verify(api).getParentOrders(orderState = "ACTIVE", count = 100)
+
+                clearInvocations(api)
+                scheduler.advanceTimeBy(38, SECONDS)
+                verify(api).getParentOrders(orderState = "ACTIVE", count = 100)
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
+    fun parentOrderEventsRefreshOrdersPositionsAndCollateral() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val api = stopOrderApi()
+        val position = Position("FX_BTC_JPY", "BUY", 10_000_000L, 0.1, 0.0, 0.0, 0.0, 1L, 0.0)
+        val order = ChildOrder(
+            1, "child-1", "FX_BTC_JPY", "BUY", "LIMIT", 10_000_000L, 0L, 0.1,
+            "ACTIVE", "child-acceptance-1", 0.1, 0.0, 0.0, 0.0
+        )
+        whenever(api.getPositions()).thenReturn(Observable.just(emptyList()), Observable.just(listOf(position)))
+        whenever(api.getCollateral()).thenReturn(Observable.just(emptyMap()), Observable.just(mapOf("collateral" to 200_000.0)))
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.just(emptyList()), Observable.just(listOf(order)))
+
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                account.receive(Socket.EVENT_CONNECT)
+                checkNotNull(account.authAck).call(JSONObject.NULL)
+                account.acknowledgePrivateSubscriptions()
+                val channel = "parent_order_events"
+                val event = """
+                    [{"product_code":"FX_BTC_JPY","event_type":"CANCEL","parent_order_id":"parent-1",
+                      "parent_order_acceptance_id":"acceptance-1","event_date":"2026-01-01T00:00:00Z"}]
+                """.trimIndent()
+                account.receive(channel, JSONArray(event.replace("FX_BTC_JPY", "BTC_JPY")))
+                scheduler.advanceTimeBy(1, SECONDS)
+                assertEquals(emptyList<ChildOrder>(), service.orders.value)
+
+                account.receive(channel, JSONArray(event))
+                account.receive(channel, JSONArray(event))
+                scheduler.advanceTimeBy(1, SECONDS)
+
+                assertEquals(listOf(order), service.orders.value)
+                assertEquals(listOf(position), service.position.value)
+                assertEquals(200_000.0, service.privateState.collateral.value.amount)
+                verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
+    }
+
+    @Test
+    fun blocksCancellationOfUnverifiedStopAfterReconnectAuthenticationFails() {
+        preference.save(APICredentials("key", "secret"))
+        val client = createClient()
+        authentication.triggerActions()
+        val account = accountSockets.single()
+        val api = stopOrderApi()
+
+        val scheduler = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        try {
+            val service = CurrentStatusService(api, client, api)
+            try {
+                val denied = JSONObject("""{"message":"Permission denied"}""")
+                account.receive(Socket.EVENT_CONNECT)
+                checkNotNull(account.authAck).call(JSONObject.NULL)
+                account.acknowledgePrivateSubscriptions()
+                val stops = service.privateState.stopOrders
+                stops.refresh()
+                scheduler.advanceTimeBy(28, SECONDS)
+                assertTrue(stops.orders.value.single().canCancel)
+                val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+                val order = checkNotNull(StopOrderRequest.fromInput(StopSide.SELL, "0.01", "5000000"))
+                assertTrue(stops.orderEventsReady)
+                val submission = stops.confirmation(order)
+
+                whenever(api.getParentChildOrders("parent-1"))
+                    .thenReturn(Observable.error(IllegalStateException("REST lookup failed")))
+                account.receive(Socket.EVENT_DISCONNECT)
+                account.authAck = null
+                account.receive(Socket.EVENT_CONNECT)
+                checkNotNull(account.authAck).call(denied)
+                scheduler.advanceTimeBy(28, SECONDS)
+
+                assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
+                assertFalse(stops.orders.value.single().canCancel)
+                assertTrue(stops.loadFailed.value)
+                assertFalse(stops.orderEventsReady)
+                assertFalse(stops.submit(submission) { error("Stop submitted after losing order events") })
+                verify(api, never()).sendParentOrder(any())
+                val failures = mutableListOf<CancellationFailure>()
+                stops.cancel(confirmation) { failures += it }
+                assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+                verify(api, never()).cancelParentOrder(any())
+            } finally {
+                service.dispose()
+            }
+        } finally {
+            RxAndroidPlugins.reset()
+            RxJavaPlugins.reset()
+        }
     }
 
     @Test
@@ -641,6 +1002,26 @@ class RealtimeClientTest {
         )
     }
 
+    private fun stopOrderApi(): APIClientV1 {
+        val api = mock<APIClientV1>()
+        val parent = ParentOrder(
+            "parent-1", "acceptance-1", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0,
+            outstandingSize = 0.01, cancelSize = 0.0
+        )
+        val details = ParentOrderDetails("SIMPLE", listOf(ParentOrderParameter("FX_BTC_JPY", "STOP", 5000000)))
+        whenever(api.getPositions()).thenReturn(Observable.empty())
+        whenever(api.getCollateral()).thenReturn(Observable.empty())
+        whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
+        whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(Observable.just(listOf(parent)))
+        listOf("COMPLETED", "CANCELED", null).forEach { state ->
+            whenever(api.getParentOrders(orderState = state)).thenReturn(Observable.just(emptyList()))
+        }
+        whenever(api.getParentOrder("parent-1")).thenReturn(Observable.just(details))
+        whenever(api.getParentChildOrders("parent-1")).thenReturn(Observable.just(emptyList()))
+        return api
+    }
+
     private fun advanceRetryTime(seconds: Long) {
         time.advanceTimeBy(seconds, SECONDS)
         val drained = CountDownLatch(1)
@@ -656,6 +1037,7 @@ class RealtimeClientTest {
 
     private class RecordingSocket : Socket(Manager(), "/", Manager.Options()) {
         val subscriptions = mutableListOf<String>()
+        val subscriptionAcks = mutableMapOf<String, AckWithTimeout>()
         var authAck: AckWithTimeout? = null
         var authAttempts = 0
         private var open = false
@@ -668,13 +1050,21 @@ class RealtimeClientTest {
 
         override fun emit(event: String, vararg args: Any): Emitter {
             when (event) {
-                "subscribe" -> subscriptions.add(args.single() as String)
+                "subscribe" -> {
+                    val channel = args.first() as String
+                    subscriptions.add(channel)
+                    (args.last() as? AckWithTimeout)?.let { subscriptionAcks[channel] = it.apply { cancelTimer() } }
+                }
                 "auth" -> {
                     authAttempts++
                     authAck = (args.last() as AckWithTimeout).apply { cancelTimer() }
                 }
             }
             return this
+        }
+
+        fun acknowledgePrivateSubscriptions() {
+            subscriptionAcks.values.forEach { it.call() }
         }
 
         fun receive(event: String, vararg args: Any) {
