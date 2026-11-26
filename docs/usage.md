@@ -19,9 +19,6 @@ under **Order** → **Limit** before connecting an account.
 - **Order** → **Orders** → **Active** lists active orders and lets you cancel them.
   **Fills** shows recent executions for your account. Tap **Refresh** to
   reload them or **Load older fills** to see earlier executions.
-- **Order** → **Market** → **Clear all positions** reads your open positions,
-  submits a market order to close them, then reads the submitted child order
-  by its acceptance ID to confirm the fill.
 
 ## Account settings
 
@@ -47,3 +44,5 @@ Lightning API.
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
 | Clear all positions | `GET /v1/me/getpositions`, `POST /v1/me/sendchildorder`, `GET /v1/me/getchildorders` |
+
+See [FAQ and troubleshooting](troubleshooting.md) for what each in-app error message means and how to fix it.

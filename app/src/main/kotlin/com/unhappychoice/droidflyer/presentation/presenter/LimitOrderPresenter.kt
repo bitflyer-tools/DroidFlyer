@@ -4,6 +4,7 @@ import android.content.res.Resources
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
+import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.NewOrder
 import com.unhappychoice.droidflyer.extension.Variable
@@ -24,6 +25,13 @@ class LimitOrderPresenter internal constructor(
     private val resources: Resources,
     private val showSnackbar: (String, Int) -> Unit
 ) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
+    constructor(
+        currentStatusService: CurrentStatusService,
+        accountPreference: CryptoCfdAccountPreference,
+        resources: Resources,
+        showSnackbar: (String, Int) -> Unit
+    ) : this(currentStatusService.privateState, accountPreference, resources, showSnackbar)
+
     override val isLoading = Variable(false)
     override val amount = Variable(0.0)
     override val unitSize = Variable(1.0)
