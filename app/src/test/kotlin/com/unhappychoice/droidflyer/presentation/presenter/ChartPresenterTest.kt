@@ -124,6 +124,22 @@ class ChartPresenterTest {
     }
 
     @Test
+    fun parsesExecutionTimestampsWithZOrUtcOffsetSuffixes() {
+        val presenter = ChartPresenter({ 0L }) { _, _, _ ->
+            Observable.just(
+                listOf(
+                    ExecutionPrice(1, 100.0, "2025-01-01T00:00:00Z"),
+                    ExecutionPrice(2, 200.0, "2025-01-01T00:00:01.5+00:00")
+                )
+            )
+        }
+
+        val candle = presenter.loadHistory().blockingSingle().series(CandleInterval.ONE_MINUTE).candles.single()
+        assertEquals(100.0, candle.open, 0.0)
+        assertEquals(200.0, candle.close, 0.0)
+    }
+
+    @Test
     fun rejectsEmptyHistoryAndInvalidExecutions() {
         listOf(emptyList(), listOf(trade(1, 0.0)), listOf(ExecutionPrice(1, 100.0, null))).forEach { page ->
             val presenter = ChartPresenter({ 0L }) { _, _, _ -> Observable.just(page) }

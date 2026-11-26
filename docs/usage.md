@@ -10,9 +10,12 @@ under **Order** → **Limit** before connecting an account.
 - **Chart** displays recent Crypto CFD trades as 1-minute or 5-minute candlesticks
   in JPY. Select a candle to see its time range and open, high, low, and close
   prices. The oldest candle may be incomplete.
-- **Order** → **Market** submits a buy or sell market order. **Limit**
-  shows the live order book and lets you select a price level for a limit
-  order. Use **Grouping** to change how the book combines price levels.
+- **Order** → **Market** submits a buy or sell market order. **Clear all
+  positions** closes your open position with a market order: it reads your
+  open positions, submits the closing order, then reads the child order by
+  its acceptance ID to confirm the order filled. **Limit** shows the live
+  order book and lets you select a price level for a limit order. Use
+  **Grouping** to change how the book combines price levels.
 - **Order** → **Orders** → **Active** lists active orders and lets you cancel them.
   **Fills** shows recent executions for your account. Tap **Refresh** to
   reload them or **Load older fills** to see earlier executions.
@@ -40,3 +43,6 @@ Lightning API.
 | List fills | `GET /v1/me/getexecutions` |
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
+| Clear all positions | `GET /v1/me/getpositions`, `POST /v1/me/sendchildorder`, `GET /v1/me/getchildorders` |
+
+See [FAQ and troubleshooting](troubleshooting.md) for what each in-app error message means and how to fix it.
