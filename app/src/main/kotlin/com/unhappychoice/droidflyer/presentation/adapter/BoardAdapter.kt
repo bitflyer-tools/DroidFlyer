@@ -4,7 +4,6 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
@@ -20,6 +19,8 @@ import io.reactivex.subjects.PublishSubject
 
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val clickItems = PublishSubject.create<Order>()
+
+    private val screenWidth = context.resources.displayMetrics.widthPixels
 
     internal var orderEntryEnabled = true
         set(value) {
@@ -64,6 +65,17 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
     }
 
     inner class ViewHolder(val view: View) : RecyclerView.ViewHolder(view) {
+        private val priceTextView = view.findViewById<TextView>(R.id.price)
+        private val mineSizeTextView = view.findViewById<TextView>(R.id.mineSize)
+        private val sizeTextView = view.findViewById<TextView>(R.id.size)
+        private val backgroundView = view.findViewById<View>(R.id.backgroundView)
+        private var backgroundWidth: Int? = null
+
+        init {
+            priceTextView.alignParent(type.priceDirection())
+            sizeTextView.alignParent(type.sizeDirection())
+        }
+
         fun bind(order: Order, outstandingSize: Double?) {
             priceTextView.text = order.price.splitByComma()
             sizeTextView.text = "%.3f".format(order.size)
@@ -71,13 +83,12 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             priceTextView.setTextColor(type.color())
             sizeTextView.setTextColor(type.color())
 
-            priceTextView.alignParent(type.priceDirection())
-            sizeTextView.alignParent(type.sizeDirection())
-
-            val screenWidth = (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.width
-            val width = screenWidth / 2.0 * Math.min(Math.log10(order.size + 1) / 2.0, 1.0) - 1.0
+            val width = (screenWidth / 2.0 * Math.min(Math.log10(order.size + 1) / 2.0, 1.0) - 1.0).toInt()
             backgroundView.setBackgroundColor(type.color())
-            backgroundView.alignParent(type.sizeDirection(), width.toInt())
+            if (backgroundWidth != width) {
+                backgroundWidth = width
+                backgroundView.alignParent(type.sizeDirection(), width)
+            }
 
             mineSizeTextView.visibility = if (outstandingSize == null) View.GONE else View.VISIBLE
             mineSizeTextView.text = outstandingSize?.toString().orEmpty()
@@ -93,11 +104,6 @@ class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Ada
             params.alignWithParent = true
             layoutParams = params
         }
-
-        private val priceTextView = view.findViewById<TextView>(R.id.price)
-        private val mineSizeTextView = view.findViewById<TextView>(R.id.mineSize)
-        private val sizeTextView = view.findViewById<TextView>(R.id.size)
-        private val backgroundView = view.findViewById<View>(R.id.backgroundView)
     }
 
     private data class Row(val order: Order, val groupingSize: Long, val outstandingSize: Double?)
