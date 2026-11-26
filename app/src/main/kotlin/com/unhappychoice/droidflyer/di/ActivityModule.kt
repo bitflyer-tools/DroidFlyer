@@ -7,6 +7,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.presenter.*
 import org.kodein.di.DI
 import org.kodein.di.bind
@@ -17,13 +19,23 @@ import org.kodein.di.instance
 
 fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindProvider<MainActivity> { activity }
+    bindSingleton<StopSubmissionPreference> { StopSubmissionPreference(activity.applicationContext) }
     bindSingleton<RealtimeClient> { RealtimeClient(instance(), instance()) }
     bind<CurrentStatusService> {
         eagerSingleton {
             val preference = instance<APITokenPreference>()
             val api = instance<APIClient>()
-            CurrentStatusService(instance(), instance(), null).apply {
-                initializeAccount { api.privateStatusClient(preference.read()) }
+            val stopSubmissions = instance<StopSubmissionPreference>()
+            CurrentStatusService(
+                instance(), instance(), null,
+                maximumOrderSize = instance<CryptoCfdAccountPreference>().maximumOrderSize
+            ).apply {
+                initializeAccount {
+                    val credentials = preference.read()
+                    api.privateStatusClient(credentials)?.let { client ->
+                        client to stopSubmissions.forApiKey(credentials.key)
+                    }
+                }
             }
         }
     }
@@ -32,6 +44,7 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
             instance(), instance(), instance(),
             realtimeClient = instance(),
             accountPreference = instance(),
+            stopSubmissions = instance(),
             requestNotificationPermission = activity::requestNotificationPermission
         )
     }

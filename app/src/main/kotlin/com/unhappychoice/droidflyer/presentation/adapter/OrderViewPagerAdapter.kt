@@ -9,15 +9,20 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
+import com.unhappychoice.droidflyer.presentation.view.StopOrderView
 import org.kodein.di.DI
 
 class OrderViewPagerAdapter(val context: Context, val di: DI) : PagerAdapter() {
     override fun isViewFromObject(view: View, `object`: Any): Boolean = view == `object`
-    override fun getCount(): Int = 3
+    override fun getCount(): Int = 4
     override fun instantiateItem(container: ViewGroup, position: Int): Any {
         return when (position) {
             0 -> createMarketOrderView(container)
             LIMIT_POSITION -> createLimitOrderView(container)
+            2 -> StopOrderView(context).also {
+                it.inject(di)
+                container.addView(it)
+            }
             else -> createOrdersView(container)
         }
     }
