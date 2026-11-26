@@ -123,6 +123,44 @@ class FillHistoryTest {
         assertEquals(FillHistory.State(), history.state.value)
     }
 
+    @Test
+    fun loadingOlderPageDescribesAnAppendOfOnlyTheNewRows() {
+        val history = FillHistory { count, before ->
+            Single.just(when (before) {
+                null -> (2L..(count + 1L)).map(::fill)
+                else -> listOf(fill(1L))
+            })
+        }
+
+        history.refresh()
+        val afterRefresh = history.state.value.update
+        assertTrue(afterRefresh is FillHistory.State.Update.Replace)
+        assertEquals((51L downTo 2L).map(::fill), (afterRefresh as FillHistory.State.Update.Replace).fills)
+
+        history.loadOlder()
+        val afterLoadOlder = history.state.value.update
+        assertTrue(afterLoadOlder is FillHistory.State.Update.Append)
+        assertEquals(listOf(fill(1L)), (afterLoadOlder as FillHistory.State.Update.Append).older)
+    }
+
+    @Test
+    fun failedRequestsReuseTheSameUpdateInstanceSoViewsSkipReapplyingFills() {
+        val cursors = mutableListOf<Long?>()
+        val history = FillHistory { count, before ->
+            cursors.add(before)
+            when {
+                before == null -> Single.just((2L..(count + 1L)).map(::fill))
+                else -> Single.error(IOException("Offline"))
+            }
+        }
+
+        history.refresh()
+        val afterRefresh = history.state.value.update
+        history.loadOlder()
+
+        assertTrue(history.state.value.update === afterRefresh)
+    }
+
     private fun fill(id: Long) = PrivateExecution(
         id, "BUY", "33470".toBigDecimal(), "0.01".toBigDecimal(), "2015-07-07T09:57:40.397"
     )
