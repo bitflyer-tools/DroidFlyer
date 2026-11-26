@@ -29,7 +29,7 @@
     <string name="cleared_all_positions">全決済を行いました</string>
     <string name="create_limit_order">指値注文を行いますか？</string>
     <string name="grouping">グループ</string>
-    <string name="help_api_key">https://lightning.bitflyer.jp/developer</string>
+    <string name="help_api_key">https://lightning.bitflyer.com/developer</string>
     <string name="limit">指値</string>
     <string name="market">成行</string>
     <string name="ok">OK</string>
