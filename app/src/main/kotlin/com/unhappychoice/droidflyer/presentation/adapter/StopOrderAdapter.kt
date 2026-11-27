@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.StopOrder
@@ -15,22 +16,31 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
     RecyclerView.Adapter<StopOrderAdapter.Holder>() {
     private var orders = emptyList<StopOrder>()
     private var cancelling = emptySet<String>()
+    private var rows = emptyList<Row>()
 
-    fun updateOrders(rows: List<StopOrder>) {
-        if (orders == rows) return
-        orders = rows
-        notifyDataSetChanged()
+    fun updateOrders(newOrders: List<StopOrder>) {
+        if (orders == newOrders) return
+        orders = newOrders
+        applyRows()
     }
 
     fun updateCancellations(ids: Set<String>) {
         if (cancelling == ids) return
         cancelling = ids
-        notifyDataSetChanged()
+        applyRows()
     }
 
-    override fun getItemCount() = orders.size
+    private fun applyRows() {
+        val next = orders.map { Row(it, it.acceptanceId in cancelling) }
+        if (rows == next) return
+        val diff = DiffUtil.calculateDiff(RowDiff(rows, next))
+        rows = next
+        diff.dispatchUpdatesTo(this)
+    }
 
-    override fun onBindViewHolder(holder: Holder, position: Int) = holder.bind(orders[position])
+    override fun getItemCount() = rows.size
+
+    override fun onBindViewHolder(holder: Holder, position: Int) = holder.bind(rows[position])
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
         Holder(LinearLayout(parent.context))
@@ -49,7 +59,8 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
             row.addView(cancelButton)
         }
 
-        fun bind(order: StopOrder) {
+        fun bind(row: Row) {
+            val order = row.order
             val side = context.getString(if (order.parent.side == "BUY") R.string.buy else R.string.sell)
             val trigger = order.triggerPrice?.let { context.getString(R.string.stop_price, it) }
                 ?: context.getString(R.string.stop_price_unavailable)
@@ -59,7 +70,7 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
             )
             cancelButton.setText(if (order.canConfirmRecovery) R.string.stop_verify_cancel else R.string.cancel)
             cancelButton.visibility = if (order.canCancel || order.canConfirmRecovery) View.VISIBLE else View.GONE
-            cancelButton.isEnabled = order.acceptanceId !in cancelling
+            cancelButton.isEnabled = !row.cancelling
             cancelButton.setOnClickListener { cancel(order) }
         }
 
@@ -85,5 +96,18 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
         StopOrderStatus.EXPIRED -> R.string.stop_expired
         StopOrderStatus.REJECTED -> R.string.stop_rejected
         StopOrderStatus.UNKNOWN -> R.string.stop_unknown
+    }
+
+    private data class Row(val order: StopOrder, val cancelling: Boolean)
+
+    private class RowDiff(private val previous: List<Row>, private val next: List<Row>) : DiffUtil.Callback() {
+        override fun getOldListSize() = previous.size
+        override fun getNewListSize() = next.size
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+            previous[oldItemPosition].order.acceptanceId == next[newItemPosition].order.acceptanceId
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+            previous[oldItemPosition] == next[newItemPosition]
     }
 }
