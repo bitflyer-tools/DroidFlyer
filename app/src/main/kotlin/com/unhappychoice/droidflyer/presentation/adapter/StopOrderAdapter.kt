@@ -98,7 +98,7 @@ internal class StopOrderAdapter(private val cancel: (StopOrder) -> Unit) :
         StopOrderStatus.UNKNOWN -> R.string.stop_unknown
     }
 
-    private data class Row(val order: StopOrder, val cancelling: Boolean)
+    internal data class Row(val order: StopOrder, val cancelling: Boolean)
 
     private class RowDiff(private val previous: List<Row>, private val next: List<Row>) : DiffUtil.Callback() {
         override fun getOldListSize() = previous.size
