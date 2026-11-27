@@ -1,6 +1,5 @@
 package com.unhappychoice.droidflyer.extension
 
-import android.util.Log
 import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.subscribeBy
@@ -14,20 +13,6 @@ fun <T : Any> Observable<T>.subscribeNext(fn: (T) -> Unit): Disposable =
         onComplete = {}
     )
 
-fun <T : Any> Observable<T>.subscribeError(fn: (e: Throwable?) -> Unit): Disposable =
-    subscribeBy(
-        onNext = {},
-        onError = { it.let { fn(it) } },
-        onComplete = {}
-    )
-
-fun <T : Any> Observable<T>.subscribeCompleted(fn: () -> Unit): Disposable =
-    subscribeBy(
-        onNext = {},
-        onError = { it.printStackTrace() },
-        onComplete = { fn() }
-    )
-
 fun <T> Observable<T>.subscribeOnIoObserveOnUI(): Observable<T> =
     subscribeOn(Schedulers.io()).observeOn(androidMainThreadScheduler())
 
@@ -36,11 +21,6 @@ fun <T> Observable<T>.subscribeOnComputationObserveOnUI(): Observable<T> =
 
 fun <T> Observable<T?>.filterNotNull(): Observable<T> =
     filter { it != null }.map { it!! }
-
-fun <T> Observable<T>.withLog(name: String = "Anonymous"): Observable<T> =
-    doOnNext { Log.d(name, "onNext: ${it?.toString()}") }
-        .doOnError { Log.d(name, "onError: ${it?.toString()}") }
-        .doOnComplete { Log.d(name, "onCompleted") }
 
 fun <T : Any> Observable<T>.bindTo(subject: Subject<T>): Disposable = subscribeNext { subject.onNext(it) }
 fun <T : Any> Observable<T>.bindTo(variable: Variable<T>): Disposable = subscribeNext { variable.value = it }
