@@ -45,7 +45,7 @@ check **Order** → **Orders** → **Active** and your positions, then retry if 
 If the position is smaller than the minimum order size (0.001 BTC-CFD), DroidFlyer cannot submit a
 closing order for it.
 
-**Cancelling an order says "Could not cancel order `<id>`."**
+**Cancelling an order says "Could not cancel order `<id>`"**
 The cancellation request failed, for example because the order already filled or was already
 cancelled. Refresh **Active** to see its current state.
 
@@ -62,6 +62,6 @@ Enable the permission for `GET /v1/me/getexecutions` on your API key, then tap *
 The request to `GET /v1/me/getexecutions` failed for another reason, such as a network error.
 Tap **Refresh** to retry.
 
-**Active orders show "Could not refresh active orders. The orders shown may be out of date."**
+**Active orders show "Could not refresh active child orders. The child orders shown may be out of date."**
 A refresh request failed after an earlier load succeeded. The list keeps showing the last orders
 it loaded; tap into **Active** again or reopen the Order screen to retry.
