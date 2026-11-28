@@ -2,7 +2,7 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ExecutionPrice
 import com.unhappychoice.droidflyer.presentation.view.ChartView
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
 import mortar.ViewPresenter
 import java.util.concurrent.TimeUnit
 

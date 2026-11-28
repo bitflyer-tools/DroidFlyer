@@ -9,9 +9,9 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.presentation.view.observeLimitOrderRows
-import io.reactivex.Observable
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

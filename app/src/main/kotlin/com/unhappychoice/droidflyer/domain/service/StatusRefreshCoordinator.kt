@@ -1,8 +1,8 @@
 package com.unhappychoice.droidflyer.domain.service
 
-import io.reactivex.Completable
-import io.reactivex.Observable
-import io.reactivex.disposables.SerialDisposable
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.disposables.SerialDisposable
 
 internal class StatusRefreshCoordinator(private val refresh: () -> Completable) {
     private val lock = Any()

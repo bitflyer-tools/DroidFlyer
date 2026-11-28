@@ -16,7 +16,8 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.SocketEffect
@@ -51,6 +52,22 @@ class APIClientTest {
         """{"child_order_acceptance_id":null}""",
         """{"child_order_acceptance_id":{}}"""
     )
+
+    @Test
+    fun httpCallsRunOnTheSubscriptionScheduler() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            val scheduler = TestScheduler()
+            val positions = client(origin).getPositions().subscribeOn(scheduler).test()
+
+            positions.assertEmpty()
+            assertEquals(0, origin.requestCount)
+            scheduler.triggerActions()
+            positions.assertResult(emptyList())
+            assertEquals(1, origin.requestCount)
+        }
+    }
 
     @Test
     fun authenticatedGetDoesNotFollowCrossOriginRedirect() {
