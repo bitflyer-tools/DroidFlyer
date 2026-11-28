@@ -1148,6 +1148,42 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun fullyExecutedTerminalStopRetriesChildReverificationUntilSuccessful() {
+        val service = service()
+        parentState = "CANCELED"
+        executedSize = 0.003
+        childOrders = marketChild(0.01, "CANCELED")
+        service.onChildEvents(listOf(childExecution()))
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(StopOrderStatus.EXECUTED, service.orders.value.single().status)
+
+        service.onChildEvents(listOf(childExecution().copy(execId = 2)))
+        childOrderStatus = 503
+        requests.clear()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+
+        childOrderStatus = 200
+        listOf("[]", marketChild(0.01, "CANCELED")).forEach { response ->
+            childOrders = response
+            requests.clear()
+            serviceScheduler.advanceTimeBy(50, SECONDS)
+            assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+            assertEquals(StopOrderStatus.EXECUTED, service.orders.value.single().status)
+        }
+
+        requests.clear()
+        serviceScheduler.advanceTimeBy(50, SECONDS)
+        assertTrue(stopReadPaths().isEmpty())
+
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(List(4) { "/v1/me/getparentorders" }, stopReadPaths())
+    }
+
+    @Test
     fun canceledStopRetriesUnverifiedChildReads() {
         val service = service()
         parentState = "CANCELED"

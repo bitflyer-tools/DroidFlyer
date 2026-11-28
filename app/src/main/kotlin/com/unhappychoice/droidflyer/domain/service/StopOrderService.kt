@@ -297,15 +297,19 @@ internal class StopOrderService(
                     )
                     val terminal = row.parentOrderState in terminalParentStates
                     val verification = cached?.childVerification?.takeIf { terminal }
+                    val needsReverification = verification != null ||
+                        (terminal && cached?.childVerificationPending == true)
                     when {
                         verification != null && verification.parent == row &&
                             verification.parentEvent == parentEvent &&
                             verification.childEvent == verification.childAcceptanceId?.let(knownChildEvents::get) ->
                             Observable.just(updated.copy(childVerification = verification))
-                        verification != null || updated.status == StopOrderStatus.TRIGGERED ||
+                        needsReverification || updated.status == StopOrderStatus.TRIGGERED ||
                             updated.isPartiallyExecuted ||
                             (realtime == RealtimeRefresh.CHILD && updated.childTermination != null) ->
-                            reconcileMarketChild(client, updated, refreshReads) { childId ->
+                            reconcileMarketChild(
+                                client, updated.copy(childVerificationPending = needsReverification), refreshReads
+                            ) { childId ->
                                 val acceptanceId = childId?.takeIf(String::isNotBlank)
                                     ?: parentEvent?.childOrderAcceptanceId
                                 StopChildVerification(
@@ -334,7 +338,7 @@ internal class StopOrderService(
                 val incomplete = latest.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
                 orders.value = latest.map(::applyEvent)
-                scheduleFallbackRefresh(incomplete || historyFailed)
+                scheduleFallbackRefresh(incomplete || historyFailed || latest.any { it.childVerificationPending })
                 loadFailed.value = incomplete || historyFailed
                 finishRefresh()
             }
@@ -492,6 +496,7 @@ internal class StopOrderService(
                     parent = stop.parent.copy(executedSize = maxOf(stop.parent.executedSize, marketOrder.executedSize)),
                     event = stop.event ?: "TRIGGER",
                     childVerification = verification(marketOrder.childOrderAcceptanceId),
+                    childVerificationPending = false,
                     childTermination = when (marketOrder.childOrderState) {
                         "CANCELED" -> StopOrderStatus.CANCELED
                         "EXPIRED" -> StopOrderStatus.EXPIRED

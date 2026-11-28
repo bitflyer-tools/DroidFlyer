@@ -13,7 +13,8 @@ internal data class StopOrder(
     val waitingConfirmed: Boolean = true,
     val restWaitingConfirmed: Boolean = false,
     val recoveryAvailable: Boolean = false,
-    val childVerification: StopChildVerification? = null
+    val childVerification: StopChildVerification? = null,
+    val childVerificationPending: Boolean = false
 ) {
     val acceptanceId get() = parent.parentOrderAcceptanceId
     val canCancel get() = triggerPrice != null && status == StopOrderStatus.WAITING
