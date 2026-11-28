@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.os.Looper
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
@@ -49,6 +50,45 @@ class OrderFillNotificationControllerTest {
 
             controller.onAppPaused()
             assertEquals(listOf(true), states)
+            preference.clear()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(listOf(true, false), states)
+        } finally {
+            subscription.dispose()
+        }
+    }
+
+    @Test
+    @Config(sdk = [35])
+    fun retriesDeniedStartsOnResumeAndStopsOnUnlink() {
+        var startAttempts = 0
+        val controller = OrderFillNotificationController(preference) { running ->
+            if (running) {
+                startAttempts += 1
+                if (startAttempts <= 2) {
+                    throw ForegroundServiceStartNotAllowedException("App is in the background")
+                }
+            }
+            states.add(running)
+        }
+        val subscription = controller.start()
+        try {
+            controller.onAppResumed()
+            preference.save(APICredentials("key", "secret"))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1, startAttempts)
+
+            controller.onAppPaused()
+            controller.onAppResumed()
+            assertEquals(2, startAttempts)
+            assertEquals(emptyList<Boolean>(), states)
+
+            controller.onAppPaused()
+            controller.onAppResumed()
+            assertEquals(3, startAttempts)
+            assertEquals(listOf(true), states)
+
+            controller.onAppPaused()
             preference.clear()
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(listOf(true, false), states)

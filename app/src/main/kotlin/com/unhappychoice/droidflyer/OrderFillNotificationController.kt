@@ -1,5 +1,8 @@
 package com.unhappychoice.droidflyer
 
+import android.app.ForegroundServiceStartNotAllowedException
+import android.os.Build
+import android.util.Log
 import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
@@ -23,15 +26,27 @@ internal class OrderFillNotificationController(
             .filter { it != accountLinked }
             .subscribeNext { linked ->
                 accountLinked = linked
-                if (!linked || appResumed) setRunning(linked)
+                if (!linked) setRunning(false)
+                else if (appResumed) startMonitoring()
             }
 
     fun onAppResumed() {
         appResumed = true
-        if (accountLinked) setRunning(true)
+        if (accountLinked) startMonitoring()
     }
 
     fun onAppPaused() {
         appResumed = false
+    }
+
+    private fun startMonitoring() {
+        try {
+            setRunning(true)
+        } catch (error: IllegalStateException) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                error !is ForegroundServiceStartNotAllowedException
+            ) throw error
+            Log.w("OrderFillNotifications", "Service start denied. Will retry when the app resumes.", error)
+        }
     }
 }
