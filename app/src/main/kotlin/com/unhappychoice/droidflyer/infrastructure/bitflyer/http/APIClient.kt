@@ -38,7 +38,7 @@ class APIClient internal constructor(
             if (BuildConfig.DEBUG) {
                 addInterceptor(HttpLoggingInterceptor(logger).apply {
                     level = HttpLoggingInterceptor.Level.BASIC
-                    redactQueryParams("child_order_acceptance_id")
+                    redactQueryParams("child_order_acceptance_id", "parent_order_id")
                 })
             }
         }

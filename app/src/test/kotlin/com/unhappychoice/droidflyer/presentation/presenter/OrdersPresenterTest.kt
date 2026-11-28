@@ -137,7 +137,7 @@ class OrdersPresenterTest {
         presenter.cancelOrder(orders.values().last().single())
 
         failures.assertValue(order).assertNoErrors().assertNotComplete()
-        assertEquals(listOf(listOf(order)), orders.values().map { rows -> rows.map { it.order } })
+        assertEquals(listOf(false, true, false), orders.values().map { it.single().isCancelling })
 
         presenter.cancelOrder(orders.values().last().single())
 
@@ -146,7 +146,7 @@ class OrdersPresenterTest {
             Buffer().apply { requireNotNull(request.body).writeTo(this) }.readUtf8()
         })
         failures.assertValueCount(1)
-        assertEquals(listOf(listOf(order), emptyList()), orders.values().map { rows -> rows.map { it.order } })
+        assertEquals(emptyList<PrivateTradingState.OrderRow>(), orders.values().last())
     }
 
     private fun response(request: Request, code: Int): Response =
