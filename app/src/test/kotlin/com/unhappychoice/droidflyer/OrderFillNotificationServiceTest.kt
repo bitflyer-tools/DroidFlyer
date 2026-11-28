@@ -2,6 +2,8 @@ package com.unhappychoice.droidflyer
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
 import android.content.pm.ServiceInfo
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
@@ -72,20 +74,43 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
+    fun stickyRestartAfterUnlinkStopsWithoutCreatingSession() {
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        assertTrue(preference.clear())
+        OrderFillNotificationService.sessionFactory = { error("Unlinked account must not start a session") }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 1))
+            assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
     fun notifiesOrderOutcomesAfterCredentialReplacementAndClosesSessionOnDestroy() {
         val socket = TestSocket()
         val accountSockets = mutableListOf<TestSocket>()
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
-        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication()).apply {
-            save(APICredentials("key", "secret"))
-        }
+        val application = RuntimeEnvironment.getApplication()
+        val preference = testAPITokenPreference(application)
+        assertTrue(
+            application.getSharedPreferences("api_token", Context.MODE_PRIVATE).edit()
+                .putString("key", "key")
+                .putString("secret", "secret")
+                .commit()
+        )
         val api = Proxy.newProxyInstance(
             APIClientV1::class.java.classLoader,
             arrayOf(APIClientV1::class.java)
         ) { _, _, _ -> Observable.empty<Any>() } as APIClientV1
-        val client = RealtimeClient(gson, preference, socket) { TestSocket().also(accountSockets::add) }
-        val status = CurrentStatusService(api, client, api)
         OrderFillNotificationService.sessionFactory = {
+            preference.save(APICredentials("key", "secret"))
+            val client = RealtimeClient(gson, preference, socket) { TestSocket().also(accountSockets::add) }
+            val status = CurrentStatusService(api, client, api)
             RealtimeSession(client, status).apply {
                 watchSavedAccount { api to StopSubmissionGuard.inMemory() }
             }
@@ -94,6 +119,7 @@ class OrderFillNotificationServiceTest {
         val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
         try {
             val service = controller.get()
+            assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 1))
             val manager = service.getSystemService(NotificationManager::class.java)
             assertNotNull(shadowOf(manager).getNotification(1))
 

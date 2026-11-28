@@ -35,12 +35,19 @@ class OrderFillNotificationService : Service() {
         super.onCreate()
         createNotificationChannels()
         startForeground(SERVICE_NOTIFICATION_ID, watchingNotification())
-        session = sessionFactory(application as DroidFlyerApplication).apply {
-            notifyOrderOutcomes(::notifyOutcome)
-        }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val app = application as DroidFlyerApplication
+        if (!app.tokenPreference.read().isConfigured) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (session == null) {
+            session = sessionFactory(app).apply { notifyOrderOutcomes(::notifyOutcome) }
+        }
+        return START_STICKY
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
