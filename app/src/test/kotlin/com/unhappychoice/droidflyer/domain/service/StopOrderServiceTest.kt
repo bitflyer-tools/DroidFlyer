@@ -1003,14 +1003,34 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun cancellationSkipsPostWhenChildStatusCannotBeVerified() =
-        withRealtimeStops { stops, realtime, scheduler ->
+    fun cancellationSkipsPostWhenParentListPermissionIsDenied() =
+        withRealtimeStops { stops, _, scheduler ->
             stops.refresh()
             scheduler.advanceTimeBy(28, SECONDS)
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+            requests.clear()
 
-            childOrderStatus = 500
+            parentOrderStatus = 403
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            assertEquals(listOf(CancellationFailure.REQUEST_FAILED), failures)
+            assertTrue(requests.any { it.url.encodedPath == "/v1/me/getparentorders" })
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
+    fun cancellationSkipsPostWhenChildListPermissionIsDenied() =
+        withRealtimeStops { stops, _, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            assertTrue(stops.orders.value.single().canCancel)
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+            requests.clear()
+
+            childOrderStatus = 403
             val failures = mutableListOf<CancellationFailure>()
             stops.cancel(confirmation) { failures += it }
             scheduler.advanceTimeBy(28, SECONDS)
@@ -1018,6 +1038,7 @@ class StopOrderServiceTest {
             assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
             assertFalse(stops.orders.value.single().canCancel)
             assertTrue(stops.loadFailed.value)
+            assertTrue(requests.any { it.url.encodedPath == "/v1/me/getchildorders" })
             assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
         }
 

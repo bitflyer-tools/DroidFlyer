@@ -52,7 +52,11 @@ Lightning API.
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
 | Clear all positions | `GET /v1/me/getpositions`, `POST /v1/me/sendchildorder`, `GET /v1/me/getchildorders` |
 | Submit or track a stop order | `POST /v1/me/sendparentorder`, `GET /v1/me/getparentorders`, `GET /v1/me/getparentorder`, `GET /v1/me/getchildorders` |
-| Cancel a stop order | `POST /v1/me/cancelparentorder` |
+| Cancel a stop order | `GET /v1/me/getparentorders`, `GET /v1/me/getchildorders`, `POST /v1/me/cancelparentorder` |
+
+Before sending a cancellation request, DroidFlyer reads active parent orders and
+checks for a triggered child order to verify that the stop order is still waiting
+to trigger.
 
 Stop orders also need the **Receive order events** permission, enabled separately from the
 REST permissions above, so DroidFlyer can track them over bitFlyer's private realtime channels.
