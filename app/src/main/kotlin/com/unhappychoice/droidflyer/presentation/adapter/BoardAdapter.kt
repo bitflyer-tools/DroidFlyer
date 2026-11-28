@@ -15,7 +15,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ceilBySize
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.floorBySize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 
 class BoardAdapter(val context: Context, val type: BoardType) : RecyclerView.Adapter<BoardAdapter.ViewHolder>() {
     val clickItems = PublishSubject.create<Order>()

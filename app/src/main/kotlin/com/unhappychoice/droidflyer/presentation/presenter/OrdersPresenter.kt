@@ -6,10 +6,10 @@ import com.unhappychoice.droidflyer.domain.service.StopOrder
 import com.unhappychoice.droidflyer.domain.service.StopOrderService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.view.OrdersView
-import io.reactivex.Observable
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.kotlin.addTo
+import io.reactivex.rxjava3.subjects.PublishSubject
 import mortar.ViewPresenter
 
 class OrdersPresenter internal constructor(

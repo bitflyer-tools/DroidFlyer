@@ -31,13 +31,12 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.view.CurrentStatusView
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import io.socket.client.AckWithTimeout
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -379,7 +378,7 @@ class RealtimeClientTest {
         whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("submitted-stop")))
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         try {
             val service = CurrentStatusService(api, client, api)
             try {
@@ -409,7 +408,7 @@ class RealtimeClientTest {
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         try {
             val service = CurrentStatusService(api, client, api)
             try {
@@ -460,7 +459,7 @@ class RealtimeClientTest {
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         try {
             val service = CurrentStatusService(api, client, api)
             try {
@@ -503,7 +502,7 @@ class RealtimeClientTest {
 
         val scheduler = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         try {
             val service = CurrentStatusService(api, client, api)
             try {
@@ -761,7 +760,7 @@ class RealtimeClientTest {
 
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(clock) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
         try {
             val service = CurrentStatusService(api, client, api)
             socket.receive(Socket.EVENT_CONNECT)
@@ -819,7 +818,7 @@ class RealtimeClientTest {
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxJavaPlugins.setSingleSchedulerHandler { clock }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(clock) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
         val service = CurrentStatusService(api, client, null)
         val snapshots = "lightning_board_snapshot_FX_BTC_JPY"
         try {
@@ -884,7 +883,7 @@ class RealtimeClientTest {
 
         val clock = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(clock) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { clock }
         try {
             val service = CurrentStatusService(api, client, api)
             clock.triggerActions()

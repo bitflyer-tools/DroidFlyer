@@ -1,7 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter.core
 
 import android.view.View
-import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxjava3.disposables.CompositeDisposable
 import mortar.MortarScope
 import mortar.ViewPresenter
 

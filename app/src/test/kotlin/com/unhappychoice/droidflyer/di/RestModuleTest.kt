@@ -9,9 +9,9 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import io.socket.client.Manager
 import io.socket.client.Socket
 import org.junit.Assert.assertSame

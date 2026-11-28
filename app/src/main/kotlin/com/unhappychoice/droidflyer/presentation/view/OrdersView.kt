@@ -29,8 +29,8 @@ import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.kotlin.addTo
 import org.kodein.di.instance
 
 class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {
