@@ -12,12 +12,11 @@ import com.unhappychoice.droidflyer.domain.service.MarketPrice
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -46,7 +45,7 @@ class CurrentStatusViewTest {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setSingleSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
 
         val api = mock<APIClientV1>()
         whenever(api.getBoard("FX_BTC_JPY")).thenReturn(Observable.empty())

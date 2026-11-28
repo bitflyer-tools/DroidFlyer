@@ -2,8 +2,8 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
-import io.reactivex.Observable
-import io.reactivex.Scheduler
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Scheduler
 import java.util.Collections
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit

@@ -20,8 +20,8 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
-import io.reactivex.rxkotlin.Observables
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.kotlin.addTo
 import kotlin.math.abs
 import org.kodein.di.instance
 
@@ -59,7 +59,7 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
                 binding.sellButton.alpha = if (it) 1.0f else 0.4f
             }.addTo(bag)
 
-        Observables.combineLatest(
+        Observable.combineLatest(
             currentStatusService.position.asObservable(),
             currentStatusService.positionStatus.asObservable(),
             presenter.isLoading.asObservable(),

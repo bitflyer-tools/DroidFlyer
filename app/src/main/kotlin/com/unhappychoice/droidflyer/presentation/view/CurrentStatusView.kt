@@ -20,9 +20,9 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import io.reactivex.rxkotlin.Observables
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.kotlin.addTo
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.text.DateFormat
 import java.text.DecimalFormat
 import java.text.NumberFormat
@@ -48,7 +48,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
             .addTo(bag)
         updateFundingVisibility()
 
-        Observables.combineLatest(
+        Observable.combineLatest(
             currentStatusService.tradingHeader,
             currentStatusService.positionStatus.asObservable(),
             currentStatusService.collateralStatus.asObservable()
