@@ -107,8 +107,9 @@ class CurrentStatusService internal constructor(
             }
             .addTo(bag)
 
-        val parentUpdates = parentEvents.filter { batch -> batch.value.any { it.productCode == "FX_BTC_JPY" } }
-        Observable.merge<PrivateEvent<*>>(orderEvents, parentUpdates)
+        val parentUpdates = parentEvents.forTradingProduct(ParentOrderEvent::productCode)
+        val childUpdates = orderEvents.forTradingProduct(ChildOrderEvent::productCode)
+        Observable.merge<PrivateEvent<*>>(childUpdates, parentUpdates)
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
             .filter { it.isCurrent() }
@@ -116,9 +117,6 @@ class CurrentStatusService internal constructor(
             .addTo(bag)
 
         val stopOrders = privateState.stopOrders
-        val childUpdates = orderEvents.filter { batch ->
-            batch.value.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
-        }
         parentUpdates
             .observeOn(androidMainThreadScheduler())
             .filter { it.isCurrent() }
@@ -129,7 +127,8 @@ class CurrentStatusService internal constructor(
             .subscribeNext { stopOrders.onParentUpdates() }
             .addTo(bag)
 
-        childUpdates.observeOn(androidMainThreadScheduler())
+        childUpdates.filter { batch -> batch.value.any(ChildOrderEvent::affectsStopOrderStatus) }
+            .observeOn(androidMainThreadScheduler())
             .filter { it.isCurrent() }
             .doOnNext { stopOrders.onChildEvents(it.value) }
             .sample(1, TimeUnit.SECONDS, true)
@@ -234,3 +233,10 @@ class CurrentStatusService internal constructor(
             .subscribeOnIoObserveOnUI()
             .publishStatus(restBoards::onNext)
 }
+
+private fun <T> Observable<PrivateEvent<List<T>>>.forTradingProduct(
+    productCode: (T) -> String
+): Observable<PrivateEvent<List<T>>> =
+    map { batch ->
+        PrivateEvent(batch.value.filter { productCode(it) == "FX_BTC_JPY" }, batch.isCurrent)
+    }.filter { it.value.isNotEmpty() }

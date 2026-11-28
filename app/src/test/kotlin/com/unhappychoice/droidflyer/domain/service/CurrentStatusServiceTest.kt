@@ -210,6 +210,35 @@ class CurrentStatusServiceTest {
     }
 
     @Test
+    fun spotChildEventsDoNotRefreshTradingStatus() {
+        emitChildEvents("BTC_JPY")
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+
+        verify(api).getPositions()
+        verify(api).getChildOrders("FX_BTC_JPY", count = 500)
+    }
+
+    @Test
+    fun spotChildEventsDoNotDelayOrRepeatACryptoCfdRefresh() {
+        emitChildEvents("BTC_JPY", "FX_BTC_JPY")
+        scheduler.advanceTimeBy(400, MILLISECONDS)
+        emitChildEvents("BTC_JPY")
+        scheduler.advanceTimeBy(400, MILLISECONDS)
+        emitChildEvents("BTC_JPY")
+        scheduler.advanceTimeBy(199, MILLISECONDS)
+        verify(api).getPositions()
+
+        scheduler.advanceTimeBy(1, MILLISECONDS)
+        verify(api, times(2)).getPositions()
+        verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
+
+        emitChildEvents("BTC_JPY")
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        verify(api, times(2)).getPositions()
+        verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
+    }
+
+    @Test
     fun orderEventQueuesAccountRefreshWhileBoardResponseIsHeld() {
         val orderResponses = PublishSubject.create<List<ChildOrder>>()
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500))
@@ -218,7 +247,7 @@ class CurrentStatusServiceTest {
         service.updateStatus()
         scheduler.triggerActions()
 
-        orderEvents.onNext(PrivateEvent(emptyList()) { true })
+        emitChildEvents("FX_BTC_JPY")
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
         verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
 
@@ -318,6 +347,16 @@ class CurrentStatusServiceTest {
         verify(api).getBoard("FX_BTC_JPY")
         verify(api, times(3)).getChildOrders("FX_BTC_JPY", count = 500)
         assertBook(updatedBook, 110)
+    }
+
+    private fun emitChildEvents(vararg productCodes: String) {
+        val events = productCodes.map {
+            ChildOrderEvent(
+                it, "order", "acceptance", "2024-04-15T13:00:00", "EXECUTION", "LIMIT",
+                null, null, 1L, "BUY", BigDecimal("100"), 0.5, null, null
+            )
+        }
+        orderEvents.onNext(PrivateEvent(events) { true })
     }
 
     private fun assertBook(expected: Board, bestAsk: Long) {
