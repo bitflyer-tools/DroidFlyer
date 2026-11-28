@@ -30,6 +30,8 @@ import retrofit2.Retrofit
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 
@@ -115,6 +117,147 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun slowReservationAndReleaseLeaveMainResponsive() {
+        val stored = StopSubmissionGuard.inMemory()
+        val reservation = SlowWrite()
+        val release = SlowWrite()
+        val guard = object : StopSubmissionGuard by stored {
+            override fun reserve(id: String) = reservation.run { stored.reserve(id) }
+            override fun release(id: String) = release.run { stored.release(id) }
+        }
+        val io = TestScheduler()
+        val main = TestScheduler()
+        val service = StopOrderService(client(), io, main, guard).apply { onPrivateChannelAvailability(true) }
+        val confirmation = service.confirmation(stopRequest())
+        val results = mutableListOf<Result<String>>()
+        val worker = Executors.newSingleThreadExecutor()
+
+        try {
+            main.scheduleDirect {
+                assertTrue(service.submit(confirmation) { results += it })
+                assertFalse(service.submit(confirmation) { fail("Submitted twice") })
+            }
+            main.triggerActions()
+            val submitting = worker.submit { io.triggerActions() }
+
+            reservation.whileBlocked {
+                assertMainResponsive(main)
+                assertTrue(service.submitting.value)
+                assertTrue(requests.isEmpty())
+            }
+            release.whileBlocked {
+                assertMainResponsive(main)
+                assertTrue(service.submitting.value)
+                assertTrue(results.isEmpty())
+                assertEquals(1, requests.count { it.method == "POST" })
+            }
+            submitting.get(5, SECONDS)
+
+            assertTrue(results.isEmpty())
+            main.triggerActions()
+            assertEquals("acceptance-1", results.single().getOrThrow())
+            assertFalse(service.submitting.value)
+            assertNull(stored.pending())
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun accountSwitchDuringReservationClearsTheUnsentReservation() {
+        val stored = StopSubmissionGuard.inMemory()
+        val reservation = SlowWrite()
+        val guard = object : StopSubmissionGuard by stored {
+            override fun reserve(id: String) = reservation.run { stored.reserve(id) }
+        }
+        val io = TestScheduler()
+        val main = TestScheduler()
+        val service = StopOrderService(client(), io, main, guard).apply { onPrivateChannelAvailability(true) }
+        val worker = Executors.newSingleThreadExecutor()
+
+        try {
+            assertTrue(service.submit(service.confirmation(stopRequest())) { fail("Delivered a stale result") })
+            val submitting = worker.submit { io.triggerActions() }
+
+            reservation.whileBlocked {
+                service.switchAccount(client(), guard)
+                service.onPrivateChannelAvailability(true)
+                assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Submitted during account switch") })
+            }
+            submitting.get(5, SECONDS)
+            main.triggerActions()
+
+            assertTrue(requests.isEmpty())
+            assertNull(stored.pending())
+            assertFalse(service.reconcilingSubmission.value)
+            assertFalse(service.submitting.value)
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
+    fun failedReservationDoesNotSendOrder() {
+        val guard = object : StopSubmissionGuard by StopSubmissionGuard.inMemory() {
+            override fun reserve(id: String) = false
+        }
+        val io = TestScheduler()
+        val main = TestScheduler()
+        val service = StopOrderService(client(), io, main, guard).apply { onPrivateChannelAvailability(true) }
+        val results = mutableListOf<Result<String>>()
+
+        assertTrue(service.submit(service.confirmation(stopRequest())) { results += it })
+        assertTrue(service.submitting.value)
+        io.triggerActions()
+        assertTrue(results.isEmpty())
+        main.triggerActions()
+
+        assertTrue(results.single().exceptionOrNull() is StopOrderService.ReservationFailed)
+        assertTrue(requests.isEmpty())
+        assertFalse(service.submitting.value)
+        assertFalse(service.reconcilingSubmission.value)
+    }
+
+    @Test
+    fun slowManualRecoveryLeavesMainResponsiveAndPreventsRepeatedConfirmation() {
+        val stored = StopSubmissionGuard.inMemory().apply { reserve("pending") }
+        val release = SlowWrite()
+        val guard = object : StopSubmissionGuard by stored {
+            override fun release(id: String) = release.run { stored.release(id) }
+        }
+        val io = TestScheduler()
+        val main = TestScheduler()
+        val service = StopOrderService(client(), io, main, guard).apply { onPrivateChannelAvailability(true) }
+        val confirmRecovery = requireNotNull(service.confirmSubmissionRecovery())
+        val worker = Executors.newSingleThreadExecutor()
+
+        try {
+            main.scheduleDirect { assertTrue(confirmRecovery()) }
+            main.triggerActions()
+            val recovering = worker.submit { io.triggerActions() }
+
+            release.whileBlocked {
+                main.scheduleDirect {
+                    assertFalse(confirmRecovery())
+                    assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Submitted during recovery") })
+                }
+                assertMainResponsive(main)
+                assertTrue(service.reconcilingSubmission.value)
+            }
+            recovering.get(5, SECONDS)
+            assertTrue(service.reconcilingSubmission.value)
+            main.triggerActions()
+
+            assertFalse(service.reconcilingSubmission.value)
+            assertFalse(service.submitting.value)
+            assertNull(stored.pending())
+            assertTrue(requests.isEmpty())
+        } finally {
+            worker.shutdownNow()
+        }
+    }
+
+    @Test
     fun rejectedSubmissionAllowsResendingWithoutWaitingForAnOrder() {
         val service = service()
         val confirmation = service.confirmation(stopRequest())
@@ -139,7 +282,9 @@ class StopOrderServiceTest {
 
     @Test
     fun matchingOrderDoesNotUnblockSubmissionAfterLostResponse() {
-        val service = service()
+        val guard = StopSubmissionGuard.inMemory()
+        val service = StopOrderService(client(), serviceScheduler, serviceScheduler, guard)
+            .apply { onPrivateChannelAvailability(true) }
         val confirmation = service.confirmation(stopRequest())
         loseSubmissionResponse = true
         val results = mutableListOf<Result<String>>()
@@ -149,6 +294,7 @@ class StopOrderServiceTest {
         serviceScheduler.advanceTimeBy(32, SECONDS)
 
         assertTrue(results.single().isFailure)
+        assertNotNull(guard.pending())
         assertTrue(service.reconcilingSubmission.value)
         assertEquals(100L, service.orders.value.single().parent.id)
         assertFalse(service.submit(confirmation) { fail("Submitted while reconciling") })
@@ -170,6 +316,8 @@ class StopOrderServiceTest {
 
         assertTrue(confirmRecovery())
         assertFalse(confirmRecovery())
+        assertTrue(service.reconcilingSubmission.value)
+        serviceScheduler.triggerActions()
         assertFalse(service.reconcilingSubmission.value)
 
         loseSubmissionResponse = false
@@ -192,6 +340,7 @@ class StopOrderServiceTest {
         val confirmRecovery = requireNotNull(service.confirmSubmissionRecovery())
         assertFalse(service.submit(service.confirmation(stopRequest())) { fail("Submitted before recovery was confirmed") })
         assertTrue(confirmRecovery())
+        serviceScheduler.triggerActions()
         assertFalse(service.reconcilingSubmission.value)
         assertEquals(1, requests.count { it.method == "POST" })
 
@@ -1293,6 +1442,33 @@ class StopOrderServiceTest {
         fun child(events: List<ChildOrderEvent>) = children.onNext(PrivateEvent(events) { true })
         fun parent(events: List<ParentOrderEvent>) = parents.onNext(PrivateEvent(events) { true })
         fun available(ready: Boolean) = availability.onNext(PrivateEvent(ready) { true })
+    }
+
+    private fun assertMainResponsive(main: TestScheduler) {
+        var ran = false
+        main.scheduleDirect { ran = true }
+        main.triggerActions()
+        assertTrue(ran)
+    }
+
+    private class SlowWrite {
+        private val entered = CountDownLatch(1)
+        private val proceed = CountDownLatch(1)
+
+        fun run(write: () -> Boolean): Boolean {
+            entered.countDown()
+            check(proceed.await(5, SECONDS))
+            return write()
+        }
+
+        fun whileBlocked(assertions: () -> Unit) {
+            try {
+                assertTrue(entered.await(5, SECONDS))
+                assertions()
+            } finally {
+                proceed.countDown()
+            }
+        }
     }
 
     private fun service() = StopOrderService(client(), serviceScheduler, serviceScheduler)
