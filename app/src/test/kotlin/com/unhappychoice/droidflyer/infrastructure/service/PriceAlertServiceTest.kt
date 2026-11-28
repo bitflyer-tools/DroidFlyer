@@ -1,24 +1,27 @@
 package com.unhappychoice.droidflyer.infrastructure.service
 
 import android.app.Application
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
 class PriceAlertServiceTest {
     @Test
-    fun stopsItselfWhenDataSyncTimesOut() {
-        val service = Robolectric.buildService(PriceAlertService::class.java).get()
+    fun declaresSpecialUseForContinuousMonitoring() {
+        val application = RuntimeEnvironment.getApplication()
+        val service = application.packageManager.getServiceInfo(
+            ComponentName(application, PriceAlertService::class.java),
+            PackageManager.ComponentInfoFlags.of(0)
+        )
 
-        service.onTimeout(1, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-
-        assertTrue(shadowOf(service).isStoppedBySelf)
+        assertEquals(ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE, service.foregroundServiceType)
     }
 }

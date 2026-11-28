@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
 
     <application
         android:name=".DroidFlyerApplication"
@@ -29,6 +29,10 @@
         <service
             android:name=".infrastructure.service.PriceAlertService"
             android:exported="false"
-            android:foregroundServiceType="dataSync"/>
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Live Crypto CFD price alerts requested by the user. The service watches market executions in real time to detect brief price threshold hits while the app is in the background, shows an ongoing notification, and stops when no alerts remain."/>
+        </service>
     </application>
 </manifest>
