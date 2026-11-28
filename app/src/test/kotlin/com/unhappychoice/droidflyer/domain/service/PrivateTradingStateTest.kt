@@ -122,40 +122,37 @@ class PrivateTradingStateTest {
         assertEquals(ReadStatus.INITIAL, state.positionStatus.value)
         assertEquals(ReadStatus.INITIAL, state.collateralStatus.value)
 
-        val refresh = refreshAll().test()
+        val refresh = state.refreshPositionsAndCollateral().test()
         scheduler.triggerActions()
         accountA.positions.onError(ordersUnavailable())
         accountA.collateral.onError(ordersUnavailable())
-        accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
 
-        refresh.assertComplete()
+        refresh.assertResult()
         assertEquals(ReadStatus.UNAVAILABLE, state.positionStatus.value)
         assertEquals(ReadStatus.UNAVAILABLE, state.collateralStatus.value)
     }
 
     @Test
     fun positionFailureAfterSuccessMarksItStaleWhileCollateralStaysCurrent() {
-        refreshAll().test()
+        val initial = state.refreshPositionsAndCollateral().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         accountA.collateral.onNext(mapOf("collateral" to 10.0))
-        accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
+        initial.assertResult()
         assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
         assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
 
         accountA.positions = PublishSubject.create()
         accountA.collateral = PublishSubject.create()
-        accountA.orders = PublishSubject.create()
-        val refresh = refreshAll().test()
+        val refresh = state.refreshPositionsAndCollateral().test()
         scheduler.triggerActions()
         accountA.positions.onError(ordersUnavailable())
         accountA.collateral.onNext(mapOf("collateral" to 20.0))
-        accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
 
-        refresh.assertComplete()
+        refresh.assertResult()
         assertEquals(ReadStatus.STALE, state.positionStatus.value)
         assertEquals(listOf(position), state.position.value)
         assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
@@ -165,27 +162,25 @@ class PrivateTradingStateTest {
 
     @Test
     fun collateralFailureAfterSuccessMarksItStaleWhilePositionStaysCurrent() {
-        refreshAll().test()
+        val initial = state.refreshPositionsAndCollateral().test()
         scheduler.triggerActions()
         accountA.positions.onNext(listOf(position))
         accountA.collateral.onNext(mapOf("collateral" to 10.0))
-        accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
+        initial.assertResult()
         assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
         assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
 
         accountA.positions = PublishSubject.create()
         accountA.collateral = PublishSubject.create()
-        accountA.orders = PublishSubject.create()
-        val refresh = refreshAll().test()
+        val refresh = state.refreshPositionsAndCollateral().test()
         scheduler.triggerActions()
         val updatedPosition = position.copy(size = 1.0)
         accountA.positions.onNext(listOf(updatedPosition))
         accountA.collateral.onError(ordersUnavailable())
-        accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
 
-        refresh.assertComplete()
+        refresh.assertResult()
         assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
         assertEquals(listOf(updatedPosition), state.position.value)
         assertEquals(ReadStatus.STALE, state.collateralStatus.value)
