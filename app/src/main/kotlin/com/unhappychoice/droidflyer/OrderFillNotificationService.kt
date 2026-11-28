@@ -69,10 +69,14 @@ class OrderFillNotificationService : Service() {
         val realtime = sessionFactory(app)
         session = realtime
         realtime.notifyOrderOutcomes {
-            notifyOutcome(terminationMessage(it.eventType, it.productCode) ?: executionMessage(it))
+            if (it.productCode == PRODUCT_CODE) {
+                notifyOutcome(terminationMessage(it.eventType, it.productCode) ?: executionMessage(it))
+            }
         }
         realtime.notifyParentOrderOutcomes {
-            terminationMessage(it.eventType, it.productCode)?.let(::notifyOutcome)
+            if (it.productCode == PRODUCT_CODE) {
+                terminationMessage(it.eventType, it.productCode)?.let(::notifyOutcome)
+            }
         }
 
         orderChecks = realtime.privateChannelAvailability
@@ -154,6 +158,7 @@ class OrderFillNotificationService : Service() {
 
     companion object {
         internal const val ACTION_START = "com.unhappychoice.droidflyer.action.START_ORDER_MONITORING"
+        private const val PRODUCT_CODE = "FX_BTC_JPY"
         private const val ORDER_CHECK_SECONDS = 15L
         private const val CONNECTION_TIMEOUT_SECONDS = 30L
         private const val FILL_CHANNEL_ID = "order_fills"
@@ -175,10 +180,10 @@ class OrderFillNotificationService : Service() {
             val credentials = app.tokenPreference.read()
             val api = app.module.direct.instance<APIClient>().privateStatusClient(credentials)
                 ?: return Observable.just(false)
-            return api.getParentOrders(orderState = "ACTIVE", count = 1)
+            return api.getParentOrders(productCode = PRODUCT_CODE, orderState = "ACTIVE", count = 1)
                 .flatMap { parents ->
                     if (parents.isNotEmpty()) Observable.just(true)
-                    else api.getChildOrders("FX_BTC_JPY", count = 1).map { it.isNotEmpty() }
+                    else api.getChildOrders(PRODUCT_CODE, count = 1).map { it.isNotEmpty() }
                 }
                 .timeout(ORDER_CHECK_SECONDS, TimeUnit.SECONDS)
         }

@@ -132,6 +132,12 @@ class OrderFillNotificationServiceTest {
             assertEquals(1, shadowOf(manager).allNotifications.size)
 
             replacement.authenticate()
+            listOf("EXECUTION", "ORDER_FAILED", "CANCEL").forEach {
+                replacement.receiveEvent(it, productCode = "BTC_JPY")
+            }
+            time.triggerActions()
+            assertEquals(1, shadowOf(manager).allNotifications.size)
+
             replacement.receiveEvent("EXECUTION")
             replacement.receiveEvent("ORDER_FAILED")
             replacement.receiveEvent("CANCEL")
@@ -258,6 +264,7 @@ class OrderFillNotificationServiceTest {
             val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
 
             account.receiveParentEvent("ORDER")
+            account.receiveParentEvent(eventType, productCode = "BTC_JPY")
             time.triggerActions()
             assertEquals(1, notifications.allNotifications.size)
 
@@ -308,10 +315,10 @@ class OrderFillNotificationServiceTest {
 
         override fun connected(): Boolean = open
 
-        fun receiveParentEvent(eventType: String) {
+        fun receiveParentEvent(eventType: String, productCode: String = "FX_BTC_JPY") {
             val events = JSONArray(
                 """[{
-                    "product_code": "FX_BTC_JPY",
+                    "product_code": "$productCode",
                     "parent_order_id": "JCP20180101-000000-000001",
                     "parent_order_acceptance_id": "JPA20180101-000000-000001",
                     "event_date": "2018-01-01T00:00:00.1234567Z",
@@ -321,10 +328,10 @@ class OrderFillNotificationServiceTest {
             listeners("parent_order_events").forEach { it.call(events) }
         }
 
-        fun receiveEvent(eventType: String) {
+        fun receiveEvent(eventType: String, productCode: String = "FX_BTC_JPY") {
             val events = JSONArray(
                 """[{
-                    "product_code": "FX_BTC_JPY",
+                    "product_code": "$productCode",
                     "child_order_id": "JFX20180101-000000-000001F",
                     "child_order_acceptance_id": "JRF20180101-000000-000001",
                     "event_date": "2018-01-01T00:00:00.1234567Z",
