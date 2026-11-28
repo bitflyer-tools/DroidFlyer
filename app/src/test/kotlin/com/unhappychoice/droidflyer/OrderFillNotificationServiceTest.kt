@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.OrderFillNotificationService.OrderStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
@@ -38,6 +39,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -108,7 +111,9 @@ class OrderFillNotificationServiceTest {
         val application = RuntimeEnvironment.getApplication()
         val preference = testAPITokenPreference(application)
         var hasOpenOrders = true
-        OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
+        OrderFillNotificationService.openOrdersCheck = {
+            Observable.just(if (hasOpenOrders) OrderStatus.ACTIVE else OrderStatus.EMPTY)
+        }
         OrderFillNotificationService.sessionFactory = {
             preference.save(APICredentials("key", "secret"))
             val client = RealtimeClient(gson, preference, socket, publicFeed = false) {
@@ -211,10 +216,10 @@ class OrderFillNotificationServiceTest {
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
         preference.save(APICredentials("key", "secret"))
-        val firstCheck = PublishSubject.create<Boolean>()
+        val firstCheck = PublishSubject.create<OrderStatus>()
         var checks = 0
         OrderFillNotificationService.openOrdersCheck = {
-            if (++checks == 1) firstCheck else Observable.just(checks == 2)
+            if (++checks == 1) firstCheck else Observable.just(if (checks == 2) OrderStatus.ACTIVE else OrderStatus.EMPTY)
         }
         OrderFillNotificationService.sessionFactory = {
             RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
@@ -232,7 +237,7 @@ class OrderFillNotificationServiceTest {
             time.triggerActions()
             assertEquals(1, checks)
             account.receiveEvent("EXECUTION")
-            firstCheck.onNext(false)
+            firstCheck.onNext(OrderStatus.EMPTY)
             firstCheck.onComplete()
             time.triggerActions()
             val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
@@ -259,7 +264,7 @@ class OrderFillNotificationServiceTest {
         preference.save(APICredentials("key", "secret"))
         var checks = 0
         OrderFillNotificationService.openOrdersCheck = {
-            if (++checks == 2) Observable.error(TimeoutException()) else Observable.just(false)
+            if (++checks == 2) Observable.error(TimeoutException()) else Observable.just(OrderStatus.EMPTY)
         }
         OrderFillNotificationService.sessionFactory = {
             RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
@@ -295,7 +300,7 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun notifiesChildOrderFillWhenParentOrderLookupIsForbidden() {
+    fun warnsOnceAndContinuesMonitoringWhenParentOrderLookupIsForbidden() {
         val account = TestSocket()
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
@@ -311,7 +316,7 @@ class OrderFillNotificationServiceTest {
         )
         whenever(api.getChildOrders("FX_BTC_JPY", count = 1))
             .thenReturn(Observable.just(listOf(activeChild)), Observable.just(emptyList()))
-        OrderFillNotificationService.openOrdersCheck = { OrderFillNotificationService.hasOpenOrders(api) }
+        OrderFillNotificationService.openOrdersCheck = { OrderFillNotificationService.checkOrderStatus(api) }
         OrderFillNotificationService.sessionFactory = {
             RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
         }
@@ -325,16 +330,27 @@ class OrderFillNotificationServiceTest {
             time.triggerActions()
             assertFalse(shadowOf(service).isStoppedBySelf)
 
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+            val warning = service.getString(R.string.order_fill_monitoring_parent_permission_warning)
+            assertEquals(listOf(warning), notifications.allNotifications.mapNotNull {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            })
+
+            time.advanceTimeBy(45, TimeUnit.SECONDS)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            verify(api, times(4)).getChildOrders("FX_BTC_JPY", count = 1)
+
             account.receiveEvent("EXECUTION")
             time.triggerActions()
-            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
-            assertEquals(
-                listOf(service.getString(R.string.order_executed, "FX_BTC_JPY", "BUY", 0.01, "1000000")),
-                notifications.allNotifications.mapNotNull {
-                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
-                }
-            )
+            val fill = service.getString(R.string.order_executed, "FX_BTC_JPY", "BUY", 0.01, "1000000")
+            val messages = notifications.allNotifications.mapNotNull {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            }
+            assertEquals(2, messages.size)
+            assertEquals(setOf(warning, fill), messages.toSet())
 
+            whenever(api.getParentOrders("FX_BTC_JPY", "ACTIVE", count = 1))
+                .thenReturn(Observable.just(emptyList()))
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertFalse(shadowOf(service).isStoppedBySelf)
             time.advanceTimeBy(15, TimeUnit.SECONDS)
@@ -358,7 +374,7 @@ class OrderFillNotificationServiceTest {
             expectedChecks = 6,
             messageId = R.string.order_fill_monitoring_check_error
         ) { check ->
-            if (check == 3) Observable.just(true) else Observable.error(TimeoutException())
+            if (check == 3) Observable.just(OrderStatus.ACTIVE) else Observable.error(TimeoutException())
         }
     }
 
@@ -371,7 +387,7 @@ class OrderFillNotificationServiceTest {
     private fun assertMonitoringStops(
         expectedChecks: Int,
         messageId: Int,
-        result: (Int) -> Observable<Boolean>
+        result: (Int) -> Observable<OrderStatus>
     ) {
         val account = TestSocket()
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
@@ -417,7 +433,9 @@ class OrderFillNotificationServiceTest {
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
         preference.save(APICredentials("key", "secret"))
         var hasOpenOrders = true
-        OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
+        OrderFillNotificationService.openOrdersCheck = {
+            Observable.just(if (hasOpenOrders) OrderStatus.ACTIVE else OrderStatus.EMPTY)
+        }
         OrderFillNotificationService.sessionFactory = {
             val client = RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account }
             RealtimeSession(client)

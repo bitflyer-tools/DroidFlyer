@@ -48,7 +48,9 @@ in the background or the screen is off.
 Tap **Stop order monitoring** in **Setting** to disconnect. DroidFlyer checks for
 active child and parent orders once the realtime subscriptions are ready and then
 approximately every 15 seconds. Two consecutive checks with no active orders end
-monitoring. Monitoring also ends if notification access is lost, the account is
+monitoring. If the API key cannot view parent orders, DroidFlyer posts a warning
+once per monitoring session and keeps listening for order events even when no
+active child orders are visible. Monitoring also ends if notification access is lost, the account is
 unlinked, or the app cannot verify active orders or establish the realtime subscriptions.
 The realtime connection and order checks use extra battery and data.
 

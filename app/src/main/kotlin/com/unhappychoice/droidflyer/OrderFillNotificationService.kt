@@ -22,7 +22,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.presentation.executionMessage
 import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
-import io.reactivex.exceptions.CompositeException
 import io.reactivex.schedulers.Schedulers
 import org.kodein.di.direct
 import org.kodein.di.instance
@@ -34,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class OrderFillNotificationService : Service() {
     private var session: RealtimeSession? = null
     private var orderChecks: Disposable? = null
+    private var parentAccessWarningShown = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val app = application as DroidFlyerApplication
@@ -109,17 +109,32 @@ class OrderFillNotificationService : Service() {
             .observeOn(androidMainThreadScheduler())
             .filter { availability.isCurrent() }
             .map { checks ->
+                if (checks.parentAccessDenied && !parentAccessWarningShown) {
+                    parentAccessWarningShown = true
+                    notifyOutcome(getString(R.string.order_fill_monitoring_parent_permission_warning))
+                }
                 checks.stopMessage?.let { notifyOutcome(getString(it)) }
                 checks.stopMessage != null || checks.empty >= 2 || !notificationsAllowed(this)
             }
 
-    private data class OrderChecks(val empty: Int = 0, val failures: Int = 0, val stopMessage: Int? = null) {
-        fun record(result: Result<Boolean>): OrderChecks = result.fold(
-            onSuccess = { hasOrders -> OrderChecks(empty = if (hasOrders) 0 else empty + 1) },
+    internal enum class OrderStatus { ACTIVE, EMPTY, PARENT_ACCESS_DENIED }
+
+    private data class OrderChecks(
+        val empty: Int = 0,
+        val failures: Int = 0,
+        val stopMessage: Int? = null,
+        val parentAccessDenied: Boolean = false
+    ) {
+        fun record(result: Result<OrderStatus>): OrderChecks = result.fold(
+            onSuccess = { status ->
+                OrderChecks(
+                    empty = if (status == OrderStatus.EMPTY) empty + 1 else 0,
+                    parentAccessDenied = status == OrderStatus.PARENT_ACCESS_DENIED
+                )
+            },
             onFailure = { error ->
-                val causes = (error as? CompositeException)?.exceptions ?: listOf(error)
                 val message = when {
-                    causes.any { (it as? HttpException)?.code() in listOf(401, 403) } ->
+                    (error as? HttpException)?.code() in listOf(401, 403) ->
                         R.string.order_fill_monitoring_permission_error
                     failures + 1 >= MAX_CONSECUTIVE_FAILURES -> R.string.order_fill_monitoring_check_error
                     else -> null
@@ -194,25 +209,25 @@ class OrderFillNotificationService : Service() {
         /** Overridable by tests so they can supply a [RealtimeSession] backed by a fake socket. */
         internal var sessionFactory: (DroidFlyerApplication) -> RealtimeSession = ::defaultSession
 
-        internal var openOrdersCheck: (DroidFlyerApplication) -> Observable<Boolean> = ::hasOpenOrders
+        internal var openOrdersCheck: (DroidFlyerApplication) -> Observable<OrderStatus> = ::checkOrderStatus
 
         private fun defaultSession(application: DroidFlyerApplication): RealtimeSession {
             val client = RealtimeClient(application.module.direct.instance(), application.tokenPreference, publicFeed = false)
             return RealtimeSession(client)
         }
 
-        private fun hasOpenOrders(app: DroidFlyerApplication): Observable<Boolean> {
+        private fun checkOrderStatus(app: DroidFlyerApplication): Observable<OrderStatus> {
             val credentials = app.tokenPreference.read()
             val api = app.module.direct.instance<APIClient>().privateStatusClient(credentials)
-                ?: return Observable.just(false)
-            return hasOpenOrders(api)
+                ?: return Observable.just(OrderStatus.EMPTY)
+            return checkOrderStatus(api)
         }
 
-        internal fun hasOpenOrders(api: APIClientV1): Observable<Boolean> {
+        internal fun checkOrderStatus(api: APIClientV1): Observable<OrderStatus> {
             val parents = api.getParentOrders(productCode = PRODUCT_CODE, orderState = "ACTIVE", count = 1)
-                .map { it.isNotEmpty() }
+                .map { if (it.isEmpty()) OrderStatus.EMPTY else OrderStatus.ACTIVE }
                 .onErrorResumeNext { error: Throwable ->
-                    if ((error as? HttpException)?.code() == 403) Observable.just(false)
+                    if ((error as? HttpException)?.code() == 403) Observable.just(OrderStatus.PARENT_ACCESS_DENIED)
                     else Observable.error(error)
                 }
                 .subscribeOn(Schedulers.io())
@@ -220,11 +235,9 @@ class OrderFillNotificationService : Service() {
                 .map { it.isNotEmpty() }
                 .subscribeOn(Schedulers.io())
 
-            return Observable.mergeDelayError(parents, children)
-                .filter { it }
-                .first(false)
-                .toObservable()
-                .timeout(ORDER_CHECK_SECONDS, TimeUnit.SECONDS)
+            return Observable.zip(parents, children) { parentStatus, hasChildren ->
+                if (parentStatus == OrderStatus.EMPTY && hasChildren) OrderStatus.ACTIVE else parentStatus
+            }.timeout(ORDER_CHECK_SECONDS, TimeUnit.SECONDS)
         }
 
         internal fun notificationsAllowed(context: Context): Boolean {

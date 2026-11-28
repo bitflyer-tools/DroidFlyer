@@ -103,7 +103,10 @@ settings. In DroidFlyer, open **Setting** and tap **Start order monitoring** whi
 least one Crypto CFD order is active. Verify your network connection and check that your
 API key can [read orders and receive order events](usage.md#private-rest-api-permissions).
 DroidFlyer stops monitoring after two consecutive checks find no active orders, or
-when it cannot verify active orders or establish the realtime subscriptions.
+when required order checks fail or it cannot establish the realtime subscriptions.
+If you get a warning that DroidFlyer cannot check for active parent orders, enable
+`GET /v1/me/getparentorders` on your API key. DroidFlyer continues to listen for order
+events while this permission is missing.
 
 On Android 15 and later, Android can stop monitoring after six hours of background
 use in a 24-hour period. Bring DroidFlyer to the foreground to reset the allowance,
