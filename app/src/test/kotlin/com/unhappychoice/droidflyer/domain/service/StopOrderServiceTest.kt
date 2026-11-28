@@ -37,6 +37,7 @@ class StopOrderServiceTest {
     private val requests = mutableListOf<Request>()
     private var parentOrderStatus = 200
     private var historyStatus = 200
+    private var failingHistoryState: String? = null
     private var parentId = 100L
     private var submissionStatus = 200
     private var loseSubmissionResponse = false
@@ -358,6 +359,35 @@ class StopOrderServiceTest {
             stops.cancel(stops.cancellationConfirmation(order)) { fail("Cancellation failed: $it") }
             scheduler.triggerActions()
             assertEquals(1, requests.count { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
+    fun retainsCanceledHistoryUntilItsNextSuccessfulRead() =
+        withRealtimeStops { stops, _, scheduler ->
+            parentState = "CANCELED"
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            val canceled = stops.orders.value.single()
+            assertEquals(StopOrderStatus.CANCELED, canceled.status)
+            assertFalse(stops.loadFailed.value)
+
+            failingHistoryState = "CANCELED"
+            parentState = "EXPIRED"
+            parentId++
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            val orders = stops.orders.value.associateBy { it.acceptanceId }
+            assertEquals(canceled, orders["acceptance-1"])
+            assertEquals(StopOrderStatus.EXPIRED, orders["acceptance-2"]?.status)
+            assertTrue(stops.loadFailed.value)
+
+            failingHistoryState = null
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+
+            assertEquals("acceptance-2", stops.orders.value.single().acceptanceId)
+            assertFalse(stops.loadFailed.value)
         }
 
     @Test
@@ -1368,6 +1398,7 @@ class StopOrderServiceTest {
                 parentOrderStatus != 200 -> parentOrderStatus to ""
                 state == "EXPIRED" || state == "REJECTED" -> 400 to ""
                 !active && historyStatus != 200 -> historyStatus to ""
+                state != null && state == failingHistoryState -> 503 to ""
                 page != null && active -> 200 to page(request.url.queryParameter("before"))
                 (state != null && state != parentState) || (active && omitStopFromActiveParents) -> 200 to "[]"
                 else -> 200 to parentOrders()
