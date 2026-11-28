@@ -12,8 +12,8 @@ class DroidFlyerApplication : Application() {
     internal val module by lazy { DI { import(applicationModule(this@DroidFlyerApplication)) } }
 
     internal val orderFillNotifications by lazy {
-        OrderFillNotificationController(tokenPreference) { linked ->
-            if (linked) OrderFillNotificationService.start(this) else OrderFillNotificationService.stop(this)
+        OrderFillNotificationController(tokenPreference, { OrderFillNotificationService.notificationsAllowed(this) }) { running ->
+            if (running) OrderFillNotificationService.start(this) else OrderFillNotificationService.stop(this)
         }
     }
 
@@ -23,7 +23,7 @@ class DroidFlyerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        orderFillNotifications.start()
+        orderFillNotifications.observeUnlink()
     }
 
     override fun getSystemService(name: String): Any? {

@@ -1,16 +1,14 @@
 package com.unhappychoice.droidflyer
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
+import android.content.Intent
 import android.content.pm.ServiceInfo
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
-import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
-import com.unhappychoice.droidflyer.domain.service.StopSubmissionGuard
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
@@ -40,7 +38,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.lang.reflect.Proxy
+import java.util.concurrent.TimeUnit
 import java.math.BigDecimal
 
 @RunWith(RobolectricTestRunner::class)
@@ -48,6 +46,8 @@ import java.math.BigDecimal
 class OrderFillNotificationServiceTest {
     private val time = TestScheduler()
     private val originalSessionFactory = OrderFillNotificationService.sessionFactory
+
+    private val originalOrderCheck = OrderFillNotificationService.openOrdersCheck
 
     @Before
     fun setUp() {
@@ -59,6 +59,7 @@ class OrderFillNotificationServiceTest {
     @After
     fun tearDown() {
         OrderFillNotificationService.sessionFactory = originalSessionFactory
+        OrderFillNotificationService.openOrdersCheck = originalOrderCheck
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
     }
@@ -74,7 +75,7 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun stickyRestartAfterUnlinkStopsWithoutCreatingSession() {
+    fun restartWithoutExplicitStartStopsWithoutCreatingSession() {
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
         preference.save(APICredentials("key", "secret"))
         assertTrue(preference.clear())
@@ -97,29 +98,22 @@ class OrderFillNotificationServiceTest {
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         val application = RuntimeEnvironment.getApplication()
         val preference = testAPITokenPreference(application)
-        assertTrue(
-            application.getSharedPreferences("api_token", Context.MODE_PRIVATE).edit()
-                .putString("key", "key")
-                .putString("secret", "secret")
-                .commit()
-        )
-        val api = Proxy.newProxyInstance(
-            APIClientV1::class.java.classLoader,
-            arrayOf(APIClientV1::class.java)
-        ) { _, _, _ -> Observable.empty<Any>() } as APIClientV1
+        var hasOpenOrders = true
+        OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
         OrderFillNotificationService.sessionFactory = {
             preference.save(APICredentials("key", "secret"))
-            val client = RealtimeClient(gson, preference, socket) { TestSocket().also(accountSockets::add) }
-            val status = CurrentStatusService(api, client, api)
-            RealtimeSession(client, status).apply {
-                watchSavedAccount { api to StopSubmissionGuard.inMemory() }
+            val client = RealtimeClient(gson, preference, socket, publicFeed = false) {
+                TestSocket().also(accountSockets::add)
             }
+            RealtimeSession(client).apply { watchSavedAccount() }
         }
 
         val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
         try {
             val service = controller.get()
-            assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 1))
+            assertEquals(Service.START_NOT_STICKY, service.onStartCommand(startIntent(), 0, 1))
+            time.triggerActions()
+            assertFalse(socket.connected())
             val manager = service.getSystemService(NotificationManager::class.java)
             assertNotNull(shadowOf(manager).getNotification(1))
 
@@ -158,12 +152,58 @@ class OrderFillNotificationServiceTest {
                     it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
                 }.sorted()
             )
+
+            hasOpenOrders = false
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertTrue(shadowOf(service).isStoppedBySelf)
         } finally {
             controller.destroy()
             assertFalse(socket.connected())
             assertTrue(accountSockets.none { it.connected() })
         }
     }
+
+    @Test
+    @Config(sdk = [36])
+    fun deniedNotificationPermissionStopsBeforeCheckingOrders() {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        OrderFillNotificationService.openOrdersCheck = { error("Notifications are disabled") }
+        OrderFillNotificationService.sessionFactory = { error("Notifications are disabled") }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            assertEquals(Service.START_NOT_STICKY, service.onStartCommand(startIntent(), 0, 1))
+            time.triggerActions()
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            assertTrue(shadowOf(service).lastForegroundNotification == null)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun noOpenOrdersStopsWithoutOpeningRealtimeConnection() {
+        var sessionStarted = false
+        OrderFillNotificationService.openOrdersCheck = { Observable.just(false) }
+        OrderFillNotificationService.sessionFactory = {
+            sessionStarted = true
+            error("No orders to monitor")
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            assertFalse(sessionStarted)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    private fun startIntent(): Intent = Intent().setAction(OrderFillNotificationService.ACTION_START)
 
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
         private var open = false

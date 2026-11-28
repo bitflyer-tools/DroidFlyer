@@ -52,7 +52,7 @@ class RestModuleTest {
             import(applicationModule(application))
             import(activityModule(activity))
             bindSingleton<RealtimeClient>(overrides = true) {
-                RealtimeClient(instance(), instance(), disconnectedSocket(), ::disconnectedSocket)
+                RealtimeClient(instance(), instance(), disconnectedSocket(), createPrivateSocket = ::disconnectedSocket)
             }
         }
 

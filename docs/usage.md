@@ -37,23 +37,23 @@ does not change your account type at bitFlyer.
 
 ## Order fill notifications
 
-With an account linked, DroidFlyer posts system notifications for order fills,
-rejections, and cancellations while monitoring is active, including when the app is in the
-background or the screen is off. Allow notifications when Android asks after
-you link an account. If your account is already linked, open **Setting** and
-tap **Enable order notifications** to request permission on Android 13 and later.
-The realtime connection uses extra battery and data.
-Unlinking the account under **Setting** stops monitoring.
+With an account linked and an open Crypto CFD order, open **Setting** and tap
+**Start order monitoring**. If Android notifications are disabled, tap
+**Enable order notifications** first. DroidFlyer posts system notifications for fills,
+rejections, and cancellations received while monitoring, including when the app is
+in the background or the screen is off.
 
-On Android 15 and later, Android allows up to six hours of background monitoring
-in a 24-hour period. When the allowance runs out, DroidFlyer stops monitoring
-and order notifications pause. See [Android's foreground service time limits](https://developer.android.com/develop/background-work/services/fgs/timeout).
+Tap **Stop order monitoring** in **Setting** to disconnect. DroidFlyer checks for
+active child and parent orders at startup and approximately every 15 seconds.
+Monitoring ends when there are no active orders, notification access is lost, the
+account is unlinked, or the app cannot verify which orders are active.
+The realtime connection and order checks use extra battery and data.
 
-Bring DroidFlyer back to the foreground with your account still linked to reset
-the allowance and resume monitoring.
-Order updates that occurred while monitoring was stopped do not generate notifications
-when it resumes. See [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications)
-if notifications aren't showing up.
+Android 15 and later also limit background monitoring to six hours in a 24-hour
+period. Bring DroidFlyer to the foreground to reset the allowance and start monitoring
+again in **Setting**. Notifications cover events received during monitoring.
+See [Android's foreground service time limits](https://developer.android.com/develop/background-work/services/fgs/timeout)
+and [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications).
 
 ## Private REST API permissions
 
@@ -67,6 +67,7 @@ Lightning API.
 | Show collateral | `GET /v1/me/getcollateral` |
 | Show open positions | `GET /v1/me/getpositions` |
 | List active orders | `GET /v1/me/getchildorders` |
+| Monitor order fills | `GET /v1/me/getchildorders`, `GET /v1/me/getparentorders` |
 | List fills | `GET /v1/me/getexecutions` |
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
@@ -74,7 +75,8 @@ Lightning API.
 | Submit or track a stop order | `POST /v1/me/sendparentorder`, `GET /v1/me/getparentorders`, `GET /v1/me/getparentorder`, `GET /v1/me/getchildorders` |
 | Cancel a stop order | `POST /v1/me/cancelparentorder` |
 
-Stop orders also need the **Receive order events** permission, enabled separately from the
-REST permissions above, so DroidFlyer can track them over bitFlyer's private realtime channels.
+Stop orders and order monitoring also need the **Receive order events** permission,
+enabled separately from the REST permissions above, to receive updates over
+bitFlyer's private realtime channels.
 
 See [FAQ and troubleshooting](troubleshooting.md) for what each in-app error message means and how to fix it.

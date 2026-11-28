@@ -2,12 +2,16 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.AttributeSet
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import com.google.android.material.snackbar.Snackbar
+import com.unhappychoice.droidflyer.OrderFillNotificationService
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -40,9 +44,12 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         presenter.accountLinked.asObservable()
             .subscribeNext { updateNotificationButton(it) }
             .addTo(bag)
+        presenter.monitoring.asObservable()
+            .subscribeNext { updateNotificationButton(presenter.accountLinked.value) }
+            .addTo(bag)
         binding.enableNotificationsButton.clicks()
             .subscribeNext {
-                if (binding.enableNotificationsButton.isVisible) presenter.requestNotificationPermission()
+                if (binding.enableNotificationsButton.isVisible) onNotificationButtonClicked()
             }
             .addTo(bag)
 
@@ -101,10 +108,35 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
     }
 
     private fun updateNotificationButton(accountLinked: Boolean) {
-        binding.enableNotificationsButton.isVisible = accountLinked &&
+        binding.enableNotificationsButton.isVisible = accountLinked || presenter.monitoring.value
+        binding.enableNotificationsButton.setText(
+            when {
+                presenter.monitoring.value -> R.string.stop_order_monitoring
+                !OrderFillNotificationService.notificationsAllowed(context) -> R.string.enable_order_notifications
+                else -> R.string.start_order_monitoring
+            }
+        )
+    }
+
+    private fun onNotificationButtonClicked() {
+        when {
+            presenter.monitoring.value || OrderFillNotificationService.notificationsAllowed(context) ->
+                presenter.toggleMonitoring()
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED -> presenter.requestNotificationPermission()
+            else -> openNotificationSettings()
+        }
+    }
+
+    private fun openNotificationSettings() {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+        }
+        context.startActivity(intent)
     }
 
     private fun setCredentialInputsEnabled(enabled: Boolean) {

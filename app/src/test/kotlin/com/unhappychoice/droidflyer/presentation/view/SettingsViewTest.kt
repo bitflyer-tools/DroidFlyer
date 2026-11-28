@@ -14,6 +14,7 @@ import android.widget.TextView
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
+import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
@@ -117,12 +118,17 @@ class SettingsViewTest {
 
             application.grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
             settings.root.onWindowFocusChanged(true)
-            assertEquals(View.GONE, settings.enableNotificationsButton.visibility)
+            assertEquals(View.VISIBLE, settings.enableNotificationsButton.visibility)
+            assertEquals(host.getString(R.string.start_order_monitoring), settings.enableNotificationsButton.text)
+            settings.enableNotificationsButton.performClick()
+            assertEquals(host.getString(R.string.stop_order_monitoring), settings.enableNotificationsButton.text)
+            settings.enableNotificationsButton.performClick()
+            assertEquals(host.getString(R.string.start_order_monitoring), settings.enableNotificationsButton.text)
         }
     }
 
     @Test
-    fun applyingValidatedCredentialsRequestsNotificationPermission() {
+    fun applyingValidatedCredentialsDoesNotRequestNotificationPermission() {
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
             val settings = host.openSettings()
@@ -135,7 +141,7 @@ class SettingsViewTest {
             saveIo.triggerActions()
             shadowOf(Looper.getMainLooper()).idle()
 
-            assertEquals(1, host.notificationPermissionRequests)
+            assertEquals(0, host.notificationPermissionRequests)
         }
     }
 
@@ -454,13 +460,16 @@ class SettingsViewTest {
                     .body("[]".toResponseBody())
                     .build()
             }.build()
+            val monitoring = Variable(false)
             val presenter = SettingsPresenter(
                 APIClient(Gson(), preference, transport),
                 preference,
                 switchAccount = { _, _ -> },
                 accountPreference = CryptoCfdAccountPreference(this),
                 updateRealtimeAccount = { it() },
-                requestNotificationPermission = { notificationPermissionRequests++ }
+                requestNotificationPermission = { notificationPermissionRequests++ },
+                monitoring = monitoring,
+                toggleMonitoring = { monitoring.value = !monitoring.value }
             )
             DI { bindInstance { presenter } }
         }

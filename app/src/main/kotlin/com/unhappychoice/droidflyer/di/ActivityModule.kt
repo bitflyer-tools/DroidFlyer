@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.di
 
 import android.os.SystemClock
+import com.unhappychoice.droidflyer.DroidFlyerApplication
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -40,12 +41,17 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         }
     }
     bindSingleton<SettingsPresenter> {
+        val notifications = (activity.application as DroidFlyerApplication).orderFillNotifications
         SettingsPresenter(
             instance(), instance(), instance(),
             realtimeClient = instance(),
             accountPreference = instance(),
             stopSubmissions = instance(),
-            requestNotificationPermission = activity::requestNotificationPermission
+            requestNotificationPermission = activity::requestNotificationPermission,
+            monitoring = notifications.running,
+            toggleMonitoring = {
+                if (notifications.running.value) notifications.stopMonitoring() else notifications.startMonitoring()
+            }
         )
     }
     bindSingleton<ChartPresenter> {

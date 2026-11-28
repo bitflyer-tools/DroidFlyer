@@ -21,7 +21,8 @@ import org.robolectric.annotation.Config
 class OrderFillNotificationControllerTest {
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
     private val states = mutableListOf<Boolean>()
-    private val controller = OrderFillNotificationController(preference) { states.add(it) }
+    private var allowed = false
+    private val controller = OrderFillNotificationController(preference, { allowed }) { states.add(it) }
 
     @Before
     fun setUp() {
@@ -34,85 +35,56 @@ class OrderFillNotificationControllerTest {
     }
 
     @Test
-    fun startsOnLinkWhileResumedAndStopsOnUnlinkInBackground() {
-        val subscription = controller.start()
+    fun linkingDoesNotStartMonitoringAndUnlinkStopsAnExplicitSession() {
+        val subscription = controller.observeUnlink()
         try {
-            controller.onAppResumed()
+            allowed = true
+            preference.save(APICredentials("key", "secret"))
+            shadowOf(Looper.getMainLooper()).idle()
             assertEquals(emptyList<Boolean>(), states)
 
-            preference.save(APICredentials("key", "secret"))
-            shadowOf(Looper.getMainLooper()).idle()
+            controller.startMonitoring()
+            controller.startMonitoring()
             assertEquals(listOf(true), states)
 
-            preference.save(APICredentials("key", "secret"))
-            shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(listOf(true), states)
-
-            controller.onAppPaused()
-            assertEquals(listOf(true), states)
             preference.clear()
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(listOf(true, false), states)
         } finally {
             subscription.dispose()
         }
+    }
+
+    @Test
+    fun permissionAndExplicitStopControlMonitoring() {
+        controller.startMonitoring()
+        assertEquals(emptyList<Boolean>(), states)
+
+        allowed = true
+        controller.startMonitoring()
+        controller.stopMonitoring()
+        assertEquals(listOf(true, false), states)
+    }
+
+    @Test
+    fun disablingNotificationsStopsMonitoring() {
+        allowed = true
+        controller.startMonitoring()
+        allowed = false
+        controller.stopIfNotificationsDisabled()
+
+        assertEquals(listOf(true, false), states)
     }
 
     @Test
     @Config(sdk = [35])
-    fun retriesDeniedStartsOnResumeAndStopsOnUnlink() {
-        var startAttempts = 0
-        val controller = OrderFillNotificationController(preference) { running ->
-            if (running) {
-                startAttempts += 1
-                if (startAttempts <= 2) {
-                    throw ForegroundServiceStartNotAllowedException("App is in the background")
-                }
-            }
-            states.add(running)
+    fun deniedServiceStartLeavesMonitoringOff() {
+        val controller = OrderFillNotificationController(preference, { true }) {
+            throw ForegroundServiceStartNotAllowedException("App is in the background")
         }
-        val subscription = controller.start()
-        try {
-            controller.onAppResumed()
-            preference.save(APICredentials("key", "secret"))
-            shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(1, startAttempts)
 
-            controller.onAppPaused()
-            controller.onAppResumed()
-            assertEquals(2, startAttempts)
-            assertEquals(emptyList<Boolean>(), states)
+        controller.startMonitoring()
 
-            controller.onAppPaused()
-            controller.onAppResumed()
-            assertEquals(3, startAttempts)
-            assertEquals(listOf(true), states)
-
-            controller.onAppPaused()
-            preference.clear()
-            shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(listOf(true, false), states)
-        } finally {
-            subscription.dispose()
-        }
-    }
-
-    @Test
-    fun startsSavedAccountOnlyWhenResumedAndRestartsOnReturn() {
-        val subscription = controller.start()
-        try {
-            preference.save(APICredentials("key", "secret"))
-            shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(emptyList<Boolean>(), states)
-
-            controller.onAppResumed()
-            controller.onAppPaused()
-            assertEquals(listOf(true), states)
-
-            controller.onAppResumed()
-            assertEquals(listOf(true, true), states)
-        } finally {
-            subscription.dispose()
-        }
+        assertEquals(false, controller.running.value)
     }
 }

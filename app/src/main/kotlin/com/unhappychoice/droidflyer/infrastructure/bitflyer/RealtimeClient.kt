@@ -23,12 +23,16 @@ class RealtimeClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
     private val socket: Socket,
+    private val publicFeed: Boolean = true,
     private val createPrivateSocket: () -> Socket
 ) {
-    constructor(gson: Gson, preference: APITokenPreference) : this(
+    constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, publicFeed = true)
+
+    internal constructor(gson: Gson, preference: APITokenPreference, publicFeed: Boolean) : this(
         gson,
         preference,
         newSocket(),
+        publicFeed,
         ::newSocket
     )
 
@@ -69,7 +73,7 @@ class RealtimeClient internal constructor(
                 if (!disconnected) publicDisconnects.onNext(Unit)
             }
         }
-        socket.connect()
+        if (publicFeed) socket.connect()
         authenticationWorker.schedule {
             synchronized(credentialLock) {
                 val needsAccount = synchronized(accountLock) { !disconnected && account == null }

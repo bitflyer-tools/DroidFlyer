@@ -30,7 +30,9 @@ class SettingsPresenter internal constructor(
     private val switchAccount: (APIClientV1?, APICredentials) -> Unit,
     internal val accountPreference: CryptoCfdAccountPreference,
     private val updateRealtimeAccount: (() -> Unit) -> Unit,
-    internal val requestNotificationPermission: () -> Unit = {}
+    internal val requestNotificationPermission: () -> Unit = {},
+    internal val monitoring: Variable<Boolean> = Variable(false),
+    internal val toggleMonitoring: () -> Unit = {}
 ) : ViewPresenter<SettingsView>() {
     internal constructor(
         api: APIClient,
@@ -39,10 +41,12 @@ class SettingsPresenter internal constructor(
         realtimeClient: RealtimeClient,
         accountPreference: CryptoCfdAccountPreference,
         stopSubmissions: StopSubmissionPreference,
-        requestNotificationPermission: () -> Unit = {}
+        requestNotificationPermission: () -> Unit = {},
+        monitoring: Variable<Boolean> = Variable(false),
+        toggleMonitoring: () -> Unit = {}
     ) : this(api, preference, { client, credentials ->
         currentStatusService.switchAccount(client, stopSubmissions.forApiKey(credentials.key))
-    }, accountPreference, realtimeClient::updateAccount, requestNotificationPermission)
+    }, accountPreference, realtimeClient::updateAccount, requestNotificationPermission, monitoring, toggleMonitoring)
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
@@ -78,7 +82,6 @@ class SettingsPresenter internal constructor(
             }
             .subscribe(
                 {
-                    requestNotificationPermission()
                     Snackbar.make(snackbarAnchor, R.string.api_key_saved, Snackbar.LENGTH_SHORT).show()
                 },
                 { error ->

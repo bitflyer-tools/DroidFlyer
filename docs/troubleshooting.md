@@ -98,17 +98,17 @@ it loaded; tap into **Active** again or reopen the Order screen to retry.
 ## Order fill notifications
 
 **I'm not getting a notification when an order fills, is rejected, or is canceled.**
-Check that notifications are allowed for DroidFlyer in Android's app settings; the permission is
-requested the first time you link an account, but it can be denied or revoked later. Also check
-that battery optimization isn't preventing the app from running in the background, and that the
-device has a network connection, since the notification depends on DroidFlyer's realtime
-connection to bitFlyer.
+Check that notifications and both order notification channels are enabled in Android's
+settings. In DroidFlyer, open **Setting** and tap **Start order monitoring** while at
+least one Crypto CFD order is active. Verify your network connection and check that your
+API key can [read orders and receive order events](usage.md#private-rest-api-permissions).
+DroidFlyer stops monitoring when there are no active orders or when it cannot verify
+which orders are active.
 
-On Android 15 and later, Android can stop background monitoring after six
-hours of background use in a 24-hour period. Open DroidFlyer again with your
-account still linked to reset the allowance and resume notifications for new
-order updates.
+On Android 15 and later, Android can stop monitoring after six hours of background
+use in a 24-hour period. Bring DroidFlyer to the foreground to reset the allowance,
+then tap **Start order monitoring** again.
 
 **Does watching for order updates use more battery or data?**
-Yes. While monitoring is active, DroidFlyer keeps a realtime connection open so it can notify
-you of fills, rejections, and cancellations even when the app isn't open. Unlinking the account under **Setting** stops monitoring.
+Yes. While monitoring, DroidFlyer keeps a realtime connection open and checks for active
+orders periodically. Tap **Stop order monitoring** in **Setting** to stop.

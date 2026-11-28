@@ -102,12 +102,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        (application as DroidFlyerApplication).orderFillNotifications.onAppResumed()
-    }
-
-    override fun onPause() {
-        (application as DroidFlyerApplication).orderFillNotifications.onAppPaused()
-        super.onPause()
+        (application as DroidFlyerApplication).orderFillNotifications.stopIfNotificationsDisabled()
     }
 
     override fun onDestroy() {
