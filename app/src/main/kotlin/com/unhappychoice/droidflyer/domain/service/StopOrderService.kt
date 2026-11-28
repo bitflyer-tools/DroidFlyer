@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
+import com.unhappychoice.droidflyer.extension.toEventInstantNanos
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelParentOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendParentOrderRequest
@@ -185,7 +186,9 @@ internal class StopOrderService(
         updates.forEach { event ->
             val id = event.parentOrderAcceptanceId
             val previous = events[id]
-            if (previous == null || (event.eventType != "ORDER" && event.eventDate >= previous.eventDate)) {
+            if (previous == null ||
+                (event.eventType != "ORDER" && event.eventDate.toEventInstantNanos() >= previous.eventDate.toEventInstantNanos())
+            ) {
                 events[id] = event
             }
         }
@@ -205,7 +208,9 @@ internal class StopOrderService(
             childEvents[id] = event
             if (event.terminationStatus() == null) return@forEach
             val previous = childTerminations[id]
-            if (previous == null || event.eventDate >= previous.eventDate) childTerminations[id] = event
+            if (previous == null || event.eventDate.toEventInstantNanos() >= previous.eventDate.toEventInstantNanos()) {
+                childTerminations[id] = event
+            }
         }
         while (childEvents.size > 200) {
             childEvents.remove(childEvents.keys.first())
