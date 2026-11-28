@@ -112,12 +112,13 @@ when required order checks fail. If the realtime connection cannot be establishe
 or restored within 30 seconds, DroidFlyer stops monitoring and posts a notification
 explaining why.
 If you get a warning that DroidFlyer cannot check for active parent orders, enable
-`GET /v1/me/getparentorders` on your API key. DroidFlyer continues to listen for order
-events while this permission is missing.
+`GET /v1/me/getparentorders` on your API key. Without this permission, DroidFlyer stops monitoring
+after two consecutive checks find no active child orders.
 
 On Android 15 and later, Android can stop monitoring after six hours of background
-use in a 24-hour period. Bring DroidFlyer to the foreground to reset the allowance,
-then tap **Start order monitoring** again.
+use in a 24-hour period. DroidFlyer posts a notification when it reaches this limit.
+Bring DroidFlyer to the foreground to reset the allowance, then tap
+**Start order monitoring** again.
 
 **Does watching for order updates use more battery or data?**
 Yes. While monitoring, DroidFlyer keeps a realtime connection open and checks for active

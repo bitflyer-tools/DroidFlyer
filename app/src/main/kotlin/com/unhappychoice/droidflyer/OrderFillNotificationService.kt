@@ -58,6 +58,7 @@ class OrderFillNotificationService : Service() {
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         stopSelf()
+        notifyOutcome(getString(R.string.order_fill_monitoring_runtime_limit))
     }
 
     override fun onDestroy() {
@@ -118,7 +119,12 @@ class OrderFillNotificationService : Service() {
                 checks.stopMessage != null || checks.empty >= 2 || !notificationsAllowed(this)
             }
 
-    internal enum class OrderStatus { ACTIVE, EMPTY, PARENT_ACCESS_DENIED }
+    internal enum class OrderStatus(val hasActiveOrders: Boolean, val parentAccessDenied: Boolean = false) {
+        ACTIVE(true),
+        EMPTY(false),
+        PARENT_ACCESS_DENIED(true, parentAccessDenied = true),
+        PARENT_ACCESS_DENIED_NO_ACTIVE_CHILDREN(false, parentAccessDenied = true)
+    }
 
     private data class OrderChecks(
         val empty: Int = 0,
@@ -129,8 +135,8 @@ class OrderFillNotificationService : Service() {
         fun record(result: Result<OrderStatus>): OrderChecks = result.fold(
             onSuccess = { status ->
                 OrderChecks(
-                    empty = if (status == OrderStatus.EMPTY) empty + 1 else 0,
-                    parentAccessDenied = status == OrderStatus.PARENT_ACCESS_DENIED
+                    empty = if (status.hasActiveOrders) 0 else empty + 1,
+                    parentAccessDenied = status.parentAccessDenied
                 )
             },
             onFailure = { error ->
@@ -237,7 +243,11 @@ class OrderFillNotificationService : Service() {
                 .subscribeOn(Schedulers.io())
 
             return Observable.zip(parents, children) { parentStatus, hasChildren ->
-                if (parentStatus == OrderStatus.EMPTY && hasChildren) OrderStatus.ACTIVE else parentStatus
+                when {
+                    parentStatus.parentAccessDenied && !hasChildren -> OrderStatus.PARENT_ACCESS_DENIED_NO_ACTIVE_CHILDREN
+                    hasChildren && !parentStatus.hasActiveOrders -> OrderStatus.ACTIVE
+                    else -> parentStatus
+                }
             }.timeout(ORDER_CHECK_SECONDS, TimeUnit.SECONDS)
         }
 

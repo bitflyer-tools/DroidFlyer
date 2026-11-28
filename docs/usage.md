@@ -49,14 +49,15 @@ Tap **Stop order monitoring** in **Setting** to disconnect. DroidFlyer checks fo
 active child and parent orders once the realtime subscriptions are ready and then
 approximately every 15 seconds. Two consecutive checks with no active orders end
 monitoring. If the API key cannot view parent orders, DroidFlyer posts a warning
-once per monitoring session and keeps listening for order events even when no
-active child orders are visible. Monitoring also ends if notification access is lost, the account is
+once per monitoring session and stops after two consecutive checks find no active
+child orders. Monitoring also ends if notification access is lost, the account is
 unlinked, or the app cannot verify active orders or establish the realtime subscriptions.
 The realtime connection and order checks use extra battery and data.
 
 Android 15 and later also limit background monitoring to six hours in a 24-hour
-period. Bring DroidFlyer to the foreground to reset the allowance and start monitoring
-again in **Setting**. Notifications cover events received during monitoring.
+period. DroidFlyer posts a notification when monitoring stops at this limit. Bring
+DroidFlyer to the foreground to reset the allowance and start monitoring again
+in **Setting**. Notifications cover events received during monitoring.
 See [Android's foreground service time limits](https://developer.android.com/develop/background-work/services/fgs/timeout)
 and [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications).
 

@@ -78,12 +78,30 @@ class OrderFillNotificationServiceTest {
 
     @Test
     @Config(sdk = [36])
-    fun stopsItselfWhenDataSyncTimesOut() {
-        val service = Robolectric.buildService(OrderFillNotificationService::class.java).get()
+    fun stopsAndNotifiesWhenDataSyncTimesOut() {
+        val application = RuntimeEnvironment.getApplication()
+        shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val preference = testAPITokenPreference(application)
+        OrderFillNotificationService.sessionFactory = {
+            RealtimeSession(RealtimeClient(GsonBuilder().create(), preference, TestSocket(), publicFeed = false) { TestSocket() })
+        }
 
-        service.onTimeout(1, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
 
-        assertTrue(shadowOf(service).isStoppedBySelf)
+            service.onTimeout(1, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+            val messages = notifications.allNotifications.mapNotNull {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            }
+            assertEquals(listOf(service.getString(R.string.order_fill_monitoring_runtime_limit)), messages)
+        } finally {
+            controller.destroy()
+        }
     }
 
     @Test
@@ -331,7 +349,7 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun warnsOnceAndContinuesMonitoringWhenParentOrderLookupIsForbidden() {
+    fun warnsOnceAndStopsAfterActiveChildOrdersClearWhenParentLookupIsForbidden() {
         val account = TestSocket()
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
@@ -346,7 +364,7 @@ class OrderFillNotificationServiceTest {
             outstandingSize = 0.01, cancelSize = 0.0, executedSize = 0.0, totalCommission = 0.0
         )
         whenever(api.getChildOrders("FX_BTC_JPY", count = 1))
-            .thenReturn(Observable.just(listOf(activeChild)), Observable.just(emptyList()))
+            .thenReturn(Observable.just(listOf(activeChild)), Observable.just(listOf(activeChild)), Observable.just(emptyList()))
         OrderFillNotificationService.openOrdersCheck = { OrderFillNotificationService.checkOrderStatus(api) }
         OrderFillNotificationService.sessionFactory = {
             RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
@@ -367,9 +385,8 @@ class OrderFillNotificationServiceTest {
                 it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
             })
 
-            time.advanceTimeBy(45, TimeUnit.SECONDS)
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertFalse(shadowOf(service).isStoppedBySelf)
-            verify(api, times(4)).getChildOrders("FX_BTC_JPY", count = 1)
 
             account.receiveEvent("EXECUTION")
             time.triggerActions()
@@ -380,12 +397,14 @@ class OrderFillNotificationServiceTest {
             assertEquals(2, messages.size)
             assertEquals(setOf(warning, fill), messages.toSet())
 
-            whenever(api.getParentOrders("FX_BTC_JPY", "ACTIVE", count = 1))
-                .thenReturn(Observable.just(emptyList()))
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertFalse(shadowOf(service).isStoppedBySelf)
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertTrue(shadowOf(service).isStoppedBySelf)
+            verify(api, times(4)).getChildOrders("FX_BTC_JPY", count = 1)
+            assertEquals(1, notifications.allNotifications.count {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() == warning
+            })
         } finally {
             controller.destroy()
         }
