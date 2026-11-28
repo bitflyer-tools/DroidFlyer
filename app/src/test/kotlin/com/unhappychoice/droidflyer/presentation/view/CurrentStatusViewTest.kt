@@ -18,6 +18,7 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -146,28 +147,56 @@ class CurrentStatusViewTest {
     }
 
     @Test
-    fun failedPositionRefreshAfterASuccessfulReadMarksThePositionStale() {
+    fun failedPositionRefreshKeepsRepricedValuationsStaleUntilTheNextSuccessfulRead() {
         Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
             val activity = controller.get()
             val view = CurrentStatusView(activity, null)
             view.inject(DI { bindInstance<CurrentStatusService> { service } })
             activity.setContentView(view)
             val summary = view.findViewById<TextView>(R.id.position)
+            val profit = view.findViewById<TextView>(R.id.profit)
+            val spread = view.findViewById<TextView>(R.id.spread)
+            val balance = view.findViewById<TextView>(R.id.balance)
 
             val long = Position("FX_BTC_JPY", "BUY", 100L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0)
-            service.position.value = listOf(long)
-            service.privateState.positionStatus.value = ReadStatus.AVAILABLE
+            val client = mock<APIClientV1>()
+            whenever(client.getPositions()).thenReturn(
+                Observable.just(listOf(long)),
+                Observable.error(IllegalStateException("Position read failed")),
+                Observable.just(listOf(long.copy(price = 160L)))
+            )
+            whenever(client.getCollateral()).thenReturn(Observable.just(mapOf("collateral" to 100.0)))
+            service.privateState.switchAccount(client)
+
+            service.privateState.refreshPositionsAndCollateral().test()
             scheduler.triggerActions()
             assertEquals("100 JPY / 0.5 ɃFX", summary.text.toString())
+            assertEquals("25", profit.text.toString().trim())
+            assertEquals("50", spread.text.toString().trim())
 
-            service.privateState.positionStatus.value = ReadStatus.STALE
+            service.privateState.refreshPositionsAndCollateral().test()
             scheduler.triggerActions()
             assertEquals("100 JPY / 0.5 ɃFX (stale)", summary.text.toString())
+            assertEquals("25 (stale)", profit.text.toString().trim())
+            assertEquals("50 (stale)", spread.text.toString().trim())
+            assertEquals("125 JPY (stale)", balance.text.toString())
+
+            service.currentPrice.value = MarketPrice(180.0)
+            scheduler.advanceTimeBy(100, TimeUnit.MILLISECONDS)
+            assertEquals("40 (stale)", profit.text.toString().trim())
+            assertEquals("80 (stale)", spread.text.toString().trim())
+            assertEquals("140 JPY (stale)", balance.text.toString())
+
+            service.privateState.refreshPositionsAndCollateral().test()
+            scheduler.triggerActions()
+            assertEquals("10", profit.text.toString().trim())
+            assertEquals("20", spread.text.toString().trim())
+            assertEquals("110 JPY", balance.text.toString())
         }
     }
 
     @Test
-    fun unavailablePositionHidesTheCachedPositionSummary() {
+    fun unavailablePositionHidesTheCachedPositionAndItsValuations() {
         Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
             val activity = controller.get()
             val view = CurrentStatusView(activity, null)
@@ -176,10 +205,14 @@ class CurrentStatusViewTest {
             val summary = view.findViewById<TextView>(R.id.position)
 
             service.position.value = listOf(Position("FX_BTC_JPY", "BUY", 100L, 0.5, 0.0, 0.0, 0.0, 1L, 0.0))
+            service.privateState.collateral.value = Collateral(100.0)
             service.privateState.positionStatus.value = ReadStatus.UNAVAILABLE
             scheduler.triggerActions()
 
             assertEquals("Position unavailable", summary.text.toString())
+            assertFalse(view.findViewById<TextView>(R.id.profit).isVisible)
+            assertFalse(view.findViewById<TextView>(R.id.spread).isVisible)
+            assertEquals("Balance unavailable", view.findViewById<TextView>(R.id.balance).text.toString())
         }
     }
 

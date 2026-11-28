@@ -64,11 +64,18 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         val (positions, totals) = state
         binding.currentPrice.text = totals.price?.let { "${it.splitByComma()} JPY" } ?: "—"
         binding.position.text = positionSummary(positions, positionStatus)
-        binding.profit.isVisible = positions.isNotEmpty()
-        binding.profit.showValuation(totals.profit)
-        binding.spread.isVisible = positions.wholeSize() != 0.0
-        binding.spread.showValuation(totals.spread)
-        binding.balance.text = balanceSummary(totals.balance, totals.price, collateralStatus)
+        val positionsUsable = positionStatus != ReadStatus.UNAVAILABLE
+        binding.profit.isVisible = positionsUsable && positions.isNotEmpty()
+        binding.profit.showValuation(totals.profit.takeIf { positionsUsable }, positionStatus)
+        binding.spread.isVisible = positionsUsable && positions.wholeSize() != 0.0
+        binding.spread.showValuation(totals.spread.takeIf { positionsUsable }, positionStatus)
+        val balanceStatus = when {
+            collateralStatus == ReadStatus.UNAVAILABLE -> collateralStatus
+            totals.price != null && totals.balance != null && positionStatus == ReadStatus.STALE -> ReadStatus.STALE
+            totals.price != null && !positionsUsable && positions.isNotEmpty() -> ReadStatus.UNAVAILABLE
+            else -> collateralStatus
+        }
+        binding.balance.text = balanceSummary(totals.balance, totals.price, balanceStatus)
     }
 
     private fun positionSummary(positions: List<Position>, status: ReadStatus): String {
@@ -139,8 +146,10 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         binding.funding.setTextColor(DefaultStyle.accentColor)
     }
 
-    private fun TextView.showValuation(value: Long?) {
-        text = value?.splitByComma() ?: "—"
+    private fun TextView.showValuation(value: Long?, status: ReadStatus) {
+        text = value?.splitByComma()?.let {
+            if (status == ReadStatus.STALE) context.getString(R.string.stale_value, it) else it
+        } ?: "—"
         val color = when {
             value == null -> DefaultStyle.accentColor
             value >= 0L -> DefaultStyle.greenColor
