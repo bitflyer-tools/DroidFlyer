@@ -29,7 +29,8 @@ class CurrentStatusService internal constructor(
     privateChannelAvailability: Observable<PrivateEvent<Boolean>> = Observable.empty(),
     submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
     publicFeedDisconnects: Observable<Unit> = Observable.never(),
-    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
+    private val now: () -> Long = System::currentTimeMillis
 ) {
     constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) :
         this(apiClient, realtimeClient, privateClient, StopSubmissionGuard.inMemory())
@@ -197,9 +198,16 @@ class CurrentStatusService internal constructor(
     internal fun observeFunding(visibility: Observable<Boolean>): Observable<FundingStatus> =
         Observable.defer {
             visibility.distinctUntilChanged()
-                .switchMap { visible -> if (visible) pollFunding() else Observable.empty() }
-                .map(::updateFundingStatus)
-                .startWith(fundingStatus.get())
+                .switchMap { visible ->
+                    if (visible) {
+                        Observable.merge(pollFunding().map(::updateFundingStatus), expiryTicks())
+                            .startWith(unexpiredFundingStatus())
+                    } else {
+                        Observable.empty()
+                    }
+                }
+                .map { unexpiredFundingStatus() }
+                .startWith(unexpiredFundingStatus())
                 .distinctUntilChanged()
         }
 
@@ -210,6 +218,17 @@ class CurrentStatusService internal constructor(
             if (fundingStatus.compareAndSet(previous, next)) return next
         } while (true)
     }
+
+    private fun unexpiredFundingStatus(): FundingStatus {
+        val status = fundingStatus.get()
+        val funding = status.funding
+        return if (funding != null && funding.isExpired(now())) status.copy(funding = null) else status
+    }
+
+    private fun expiryTicks(): Observable<FundingStatus> =
+        Observable.interval(1, TimeUnit.SECONDS)
+            .observeOn(androidMainThreadScheduler())
+            .map { unexpiredFundingStatus() }
 
     private fun pollFunding(): Observable<FundingStatus> =
         Observable.defer { apiClient.getFundingRate("FX_BTC_JPY") }
