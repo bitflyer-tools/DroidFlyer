@@ -30,10 +30,11 @@ under **Order** → **Limit** before connecting an account.
 ## Account settings
 
 Enter your **API key** and **API secret** under **Setting**. Tap **Apply**
-to verify and save the credentials. Enable **Use corporate Crypto CFD
-account limits** to raise the app's maximum quantity for market and limit
-order entry from 10 to 40 BTC-CFD. This setting is saved when toggled and
-does not change your account type at bitFlyer.
+to verify and save the credentials. The app limits market, limit, and stop
+order quantities to 10 BTC-CFD under individual account limits. Enable
+**Use corporate Crypto CFD account limits** to raise that maximum to
+40 BTC-CFD. This setting is saved when toggled and does not change your
+account type at bitFlyer.
 
 ## Private REST API permissions
 
