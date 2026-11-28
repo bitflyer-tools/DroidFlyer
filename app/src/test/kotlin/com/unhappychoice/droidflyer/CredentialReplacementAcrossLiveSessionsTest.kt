@@ -3,18 +3,19 @@ package com.unhappychoice.droidflyer
 import android.app.Application
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.di.loadTradingAccount
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.socket.client.Ack
 import io.socket.client.Manager
@@ -30,8 +31,8 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -41,106 +42,119 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, application = Application::class, sdk = [30])
 class CredentialReplacementAcrossLiveSessionsTest {
-    private val main = TestScheduler()
+    private val scheduler = TestScheduler()
+    private val sessions = mutableListOf<ActivitySession>()
     private val requests = mutableListOf<Request>()
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
-    private val api = APIClient(
-        GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create(),
-        preference,
-        OkHttpClient.Builder().addInterceptor { chain ->
-            val request = chain.request()
-            requests.add(request)
-            val body = when (request.url.encodedPath) {
-                "/v1/board" -> """{"midPrice":100.0,"bids":[],"asks":[]}"""
-                "/v1/me/getcollateral" -> """{"collateral":0}"""
-                "/v1/me/sendchildorder" -> """{"child_order_acceptance_id":"accepted"}"""
-                else -> "[]"
-            }
-            Response.Builder()
-                .request(request)
-                .protocol(Protocol.HTTP_1_1)
-                .code(200)
-                .message("Test response")
-                .body(body.toResponseBody())
-                .build()
-        }.build()
-    )
+    private val stopSubmissions = StopSubmissionPreference(RuntimeEnvironment.getApplication())
+    private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+    private val transport = OkHttpClient.Builder().addInterceptor { chain ->
+        val request = chain.request()
+        requests.add(request)
+        val body = when (request.url.encodedPath) {
+            "/v1/board" -> """{"mid_price":100.0,"bids":[],"asks":[]}"""
+            "/v1/me/getcollateral" -> """{"collateral":0}"""
+            "/v1/me/sendchildorder" -> """{"child_order_acceptance_id":"accepted"}"""
+            else -> "[]"
+        }
+        Response.Builder()
+            .request(request)
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("Test response")
+            .body(body.toResponseBody())
+            .build()
+    }.build()
 
     @Before
     fun setUp() {
-        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxJavaPlugins.setSingleSchedulerHandler { Schedulers.trampoline() }
-        RxJavaPlugins.setComputationSchedulerHandler { main }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setSingleSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
     }
 
     @After
     fun tearDown() {
+        sessions.forEach(ActivitySession::close)
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
     }
 
-    // Hangs ci/circleci: test (./gradlew jacoco times out with no output): two RealtimeSession/
-    // CurrentStatusService stacks sharing one APITokenPreference deadlock or infinitely reschedule
-    // while reacting to the same accountChanged broadcast. The scenario is still covered, without the
-    // two-stack interaction, by SettingsPresenterTest, CurrentStatusServiceTest.applyAccountChange*,
-    // and RealtimeSessionTest. Re-enable once the interleaving between two live instances is fixed
-    // and verified with `./gradlew testDebugUnitTest` in an environment with Gradle access.
-    @Ignore("Hangs CI by racing two RealtimeSession/CurrentStatusService stacks sharing one APITokenPreference")
     @Test
-    fun savingReplacementCredentialsInOneActivityInvalidatesAndSwitchesEveryLiveActivity() {
+    fun replacingCredentialsSwitchesEveryLiveSessionAndRestoresPendingStops() {
         preference.save(APICredentials("account-a-key", "account-a-secret"))
-        val instance1 = ActivitySession()
-        val instance2 = ActivitySession()
+        val oldGuard = stopSubmissions.forApiKey("account-a-key")
+        val replacementGuard = stopSubmissions.forApiKey("account-b-key")
+        assertTrue(replacementGuard.reserve("pending-on-b"))
+        val instance1 = ActivitySession().also(sessions::add)
+        val instance2 = ActivitySession().also(sessions::add)
+        scheduler.triggerActions()
+        assertFalse(instance1.status.privateState.stopOrders.reconcilingSubmission.value)
+        assertFalse(instance2.status.privateState.stopOrders.reconcilingSubmission.value)
+        assertTrue(oldGuard.reserve("pending-on-a"))
         val order = SendChildOrderRequest(childOrderType = "LIMIT", side = "BUY", price = 100L, size = 0.01)
 
-        // A queued order prepared under account A in the first activity.
-        val pendingOrderOnA = checkNotNull(instance1.status.privateState.prepareOrder(order))
-        val oldAccountSocketInInstance1 = instance1.accountSockets.single()
-        val oldAccountSocketInInstance2 = instance2.accountSockets.single()
+        val liveSessions = listOf(instance1, instance2)
+        val pendingOrders = liveSessions.map { checkNotNull(it.status.privateState.prepareOrder(order)) }
+        val oldSockets = liveSessions.map { it.accountSockets.single() }
 
-        // Account B is validated and saved from the Settings screen of the second activity.
-        val settingsInInstance2 = SettingsPresenter(api, preference, CryptoCfdAccountPreference(RuntimeEnvironment.getApplication()))
-        settingsInInstance2.key.value = "account-b-key"
-        settingsInInstance2.secret.value = "account-b-secret"
-        val saved = settingsInInstance2.saveCredentials().test()
-        main.triggerActions()
+        saveReplacementCredentials(instance2.settings)
+
+        liveSessions.zip(pendingOrders).forEach { (instance, pendingOrder) ->
+            assertNull(instance.status.privateState.submitOrder(pendingOrder))
+            assertEquals(2, instance.accountSockets.size)
+        }
+        oldSockets.forEach { assertFalse(it.connected()) }
+
+        assertPendingStopRestored(instance1, instance2)
+        assertNull(replacementGuard.pending())
+        assertEquals("pending-on-a", oldGuard.pending())
+        assertOrdersUseReplacementCredentials(instance1)
+        assertOrdersUseReplacementCredentials(instance2)
+    }
+
+    private fun saveReplacementCredentials(settings: SettingsPresenter) {
+        settings.key.value = "account-b-key"
+        settings.secret.value = "account-b-secret"
+        val saved = settings.saveCredentials().test()
+        scheduler.triggerActions()
         saved.assertValueCount(1).assertComplete()
+    }
 
-        // The order queued under account A can no longer be submitted from the first activity.
-        assertNull(instance1.status.privateState.submitOrder(pendingOrderOnA))
+    private fun assertPendingStopRestored(vararg sessions: ActivitySession) {
+        val stopServices = sessions.map { it.status.privateState.stopOrders }
+        stopServices.forEach { stopOrders ->
+            assertTrue(stopOrders.orderEventsReady)
+            assertTrue(stopOrders.reconcilingSubmission.value)
+        }
+        val recover = checkNotNull(stopServices.first().confirmSubmissionRecovery())
+        assertTrue(recover())
+        assertNull(stopServices.last().confirmSubmissionRecovery())
+    }
 
-        // Both activities reconnected their private realtime socket away from account A.
-        assertFalse(oldAccountSocketInInstance1.connected())
-        assertFalse(oldAccountSocketInInstance2.connected())
-        assertEquals(2, instance1.accountSockets.size)
-        assertEquals(2, instance2.accountSockets.size)
-
-        // A fresh order submitted from either activity now signs with account B's credentials.
+    private fun assertOrdersUseReplacementCredentials(instance: ActivitySession) {
         requests.clear()
-        val freshOrderInInstance1 = checkNotNull(instance1.status.privateState.prepareOrder(order))
-        checkNotNull(instance1.status.privateState.submitOrder(freshOrderInInstance1)).test()
-        main.triggerActions()
-        val instance1Submission = requests.single { it.url.encodedPath == "/v1/me/sendchildorder" }
-        assertEquals("account-b-key", instance1Submission.header("Access-Key"))
-
-        requests.clear()
-        val freshOrderInInstance2 = checkNotNull(instance2.status.privateState.prepareOrder(order))
-        checkNotNull(instance2.status.privateState.submitOrder(freshOrderInInstance2)).test()
-        main.triggerActions()
-        val instance2Submission = requests.single { it.url.encodedPath == "/v1/me/sendchildorder" }
-        assertEquals("account-b-key", instance2Submission.header("Access-Key"))
-
-        instance1.close()
-        instance2.close()
+        val order = SendChildOrderRequest(childOrderType = "LIMIT", side = "BUY", price = 100L, size = 0.01)
+        val prepared = checkNotNull(instance.status.privateState.prepareOrder(order))
+        val submission = checkNotNull(instance.status.privateState.submitOrder(prepared)).test()
+        scheduler.triggerActions()
+        submission.assertValueCount(1).assertComplete()
+        val request = requests.single { it.url.encodedPath == "/v1/me/sendchildorder" }
+        assertEquals("account-b-key", request.header("Access-Key"))
     }
 
     private inner class ActivitySession {
-        private val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        private val api = APIClient(gson, preference, transport)
+        val settings = SettingsPresenter(
+            api, preference, CryptoCfdAccountPreference(RuntimeEnvironment.getApplication())
+        )
         val accountSockets = mutableListOf<TestSocket>()
-        val client = RealtimeClient(gson, preference, TestSocket()) { TestSocket().also(accountSockets::add) }
-        val status = CurrentStatusService(api.client(), client, api.privateStatusClient(preference.read()))
-        val session = RealtimeSession(client, status) { api.privateStatusClient(preference.read()) }
+        private val client = RealtimeClient(gson, preference, TestSocket()) { TestSocket().also(accountSockets::add) }
+        val status = CurrentStatusService(api.client(), client, null).apply {
+            initializeAccount { loadTradingAccount(api, stopSubmissions) }
+        }
+        private val session = RealtimeSession(client, status) { loadTradingAccount(api, stopSubmissions) }
 
         fun close() {
             session.close()
@@ -156,8 +170,8 @@ class CredentialReplacementAcrossLiveSessionsTest {
         }
 
         override fun emit(event: String, vararg args: Any): Emitter {
-            // The fake server acknowledges authentication immediately.
-            if (event == "auth") (args.last() as Ack).call(JSONObject.NULL)
+            // Private authentication and subscriptions both require acknowledgements.
+            (args.lastOrNull() as? Ack)?.call(JSONObject.NULL)
             return this
         }
 

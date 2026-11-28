@@ -355,7 +355,9 @@ class SettingsPresenterTest {
             settings.secret.value = "submitted-secret"
             // Mirrors how RealtimeSession reacts to a credential replacement in a live activity.
             val wiring = preference.accountChanged.subscribeNext {
-                status.applyAccountChange { api.privateStatusClient(preference.read()) }
+                status.applyAccountChange {
+                    api.privateStatusClient(preference.read())?.let { it to StopSubmissionGuard.inMemory() }
+                }
             }
             val saved = settings.saveCredentials().test()
             timer.triggerActions()

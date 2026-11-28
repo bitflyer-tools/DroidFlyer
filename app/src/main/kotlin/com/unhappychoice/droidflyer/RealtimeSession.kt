@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopSubmissionGuard
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -12,7 +13,7 @@ import io.reactivex.rxkotlin.addTo
 internal class RealtimeSession(
     private val client: RealtimeClient,
     private val status: CurrentStatusService,
-    private val loadPrivateClient: () -> APIClientV1?
+    private val loadAccount: () -> Pair<APIClientV1, StopSubmissionGuard>?
 ) {
     private val subscriptions = CompositeDisposable()
 
@@ -22,7 +23,7 @@ internal class RealtimeSession(
         client.preference.accountChanged
             .subscribeNext {
                 client.updateAccount {}
-                status.applyAccountChange(loadPrivateClient)
+                status.applyAccountChange(loadAccount)
             }
             .addTo(subscriptions)
     }
