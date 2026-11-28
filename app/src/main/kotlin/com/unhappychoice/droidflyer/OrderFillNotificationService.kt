@@ -90,6 +90,7 @@ class OrderFillNotificationService : Service() {
             .switchMap { availability ->
                 if (availability.value) checkUntilIdle(app, availability)
                 else Observable.timer(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS, androidMainThreadScheduler())
+                    .doOnNext { notifyOutcome(getString(R.string.order_fill_monitoring_connection_timeout)) }
                     .map { true }
             }
             .filter { it }

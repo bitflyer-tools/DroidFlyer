@@ -126,4 +126,5 @@
     <string name="order_fill_monitoring_parent_permission_warning">Order monitoring is still running. DroidFlyer cannot check for active parent orders. Allow this API key to view parent orders.</string>
     <string name="order_fill_monitoring_permission_error">Order monitoring stopped. Check that your bitFlyer API key can view active orders.</string>
     <string name="order_fill_monitoring_check_error">Order monitoring stopped after repeated failures to check active orders.</string>
+    <string name="order_fill_monitoring_connection_timeout">Order monitoring stopped because the real-time connection to bitFlyer could not be established or restored in time.</string>
 </resources>

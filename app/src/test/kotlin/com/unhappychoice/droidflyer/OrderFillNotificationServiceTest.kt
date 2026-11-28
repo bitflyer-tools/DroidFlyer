@@ -87,6 +87,25 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
+    fun notifiesWhenInitialConnectionTimesOut() {
+        assertConnectionTimeout { account ->
+            account.rejectAuthentication()
+            time.triggerActions()
+        }
+    }
+
+    @Test
+    fun notifiesWhenConnectionIsLostWithActiveOrders() {
+        assertConnectionTimeout { account ->
+            account.authenticate()
+            time.triggerActions()
+            time.advanceTimeBy(29, TimeUnit.SECONDS)
+            account.loseConnection()
+            time.triggerActions()
+        }
+    }
+
+    @Test
     fun restartWithoutExplicitStartStopsWithoutCreatingSession() {
         val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
         preference.save(APICredentials("key", "secret"))
@@ -485,6 +504,42 @@ class OrderFillNotificationServiceTest {
         }
     }
 
+    private fun assertConnectionTimeout(beforeTimeout: (TestSocket) -> Unit) {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        OrderFillNotificationService.openOrdersCheck = { Observable.just(OrderStatus.ACTIVE) }
+        OrderFillNotificationService.sessionFactory = {
+            RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        val service = controller.get()
+        val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+        try {
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            beforeTimeout(account)
+
+            time.advanceTimeBy(29, TimeUnit.SECONDS)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            assertEquals(1, notifications.allNotifications.size)
+
+            time.advanceTimeBy(1, TimeUnit.SECONDS)
+            assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            controller.destroy()
+        }
+        time.advanceTimeBy(30, TimeUnit.SECONDS)
+        assertEquals(
+            listOf(service.getString(R.string.order_fill_monitoring_connection_timeout)),
+            notifications.allNotifications.mapNotNull {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            }
+        )
+    }
+
     private fun startIntent(): Intent = Intent().setAction(OrderFillNotificationService.ACTION_START)
 
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
@@ -508,6 +563,13 @@ class OrderFillNotificationServiceTest {
         }
 
         fun authenticate() = checkNotNull(ack).call(JSONObject.NULL)
+
+        fun rejectAuthentication() = checkNotNull(ack).call("Authentication failed")
+
+        fun loseConnection() {
+            disconnect()
+            listeners(EVENT_DISCONNECT).forEach { it.call() }
+        }
 
         override fun disconnect(): Socket = apply { open = false }
 
