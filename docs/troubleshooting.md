@@ -98,4 +98,5 @@ Tap **Refresh** to retry.
 
 **Active orders show "Could not refresh active child orders. The child orders shown may be out of date."**
 A refresh request failed after an earlier load succeeded. The list keeps showing the last orders
-it loaded; tap into **Active** again or reopen the Order screen to retry.
+it loaded. Keep the **Order** screen open to let DroidFlyer retry automatically, or leave the
+screen and reopen it to request a refresh right away.
