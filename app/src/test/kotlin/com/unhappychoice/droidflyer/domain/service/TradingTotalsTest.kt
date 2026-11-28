@@ -3,7 +3,7 @@ package com.unhappychoice.droidflyer.domain.service
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import org.junit.Assert.assertEquals
 import org.junit.Test

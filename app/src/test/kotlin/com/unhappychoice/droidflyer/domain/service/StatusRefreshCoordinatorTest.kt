@@ -1,9 +1,9 @@
 package com.unhappychoice.droidflyer.domain.service
 
-import io.reactivex.Completable
-import io.reactivex.Observable
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.CompletableSubject
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.CompletableSubject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test

@@ -22,10 +22,10 @@ import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPr
 import com.unhappychoice.droidflyer.presentation.adapter.BoardAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter.Companion.LIMIT_POSITION
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.subjects.PublishSubject
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import org.junit.After

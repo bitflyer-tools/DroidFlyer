@@ -2,8 +2,8 @@ package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import org.junit.Test
 
@@ -11,7 +11,7 @@ class OrderBookVisibilityTest {
     private val scheduler = TestScheduler()
     private val updates = PublishSubject.create<BoardUpdate>()
     private val visibility = PublishSubject.create<Boolean>()
-    private val events = observeOrderBook(updates, scheduler, visible = visibility.startWith(false)).test()
+    private val events = observeOrderBook(updates, scheduler, visible = visibility.startWithItem(false)).test()
 
     @Test
     fun hiddenLimitSkipsSnapshotsButQuotesTrackDeltasAndDisconnects() {

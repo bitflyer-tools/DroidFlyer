@@ -11,13 +11,12 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import io.socket.client.AckWithTimeout
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -44,7 +43,7 @@ class RealtimeSessionTest {
     fun setUp() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxJavaPlugins.setComputationSchedulerHandler { time }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(time) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { time }
     }
 
     @After

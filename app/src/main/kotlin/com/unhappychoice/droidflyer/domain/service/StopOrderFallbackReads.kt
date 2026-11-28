@@ -1,7 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
-import io.reactivex.Observable
-import io.reactivex.Scheduler
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Scheduler
 import java.util.concurrent.TimeUnit.MILLISECONDS
 
 internal class StopOrderFallbackReads(private val scheduler: Scheduler) {
