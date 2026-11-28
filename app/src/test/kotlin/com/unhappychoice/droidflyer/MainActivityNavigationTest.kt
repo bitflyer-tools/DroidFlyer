@@ -83,10 +83,14 @@ class MainActivityNavigationTest {
     private val background = TestScheduler()
 
     @Before
-    fun pauseBackgroundRequests() {
+    fun setUp() {
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.HIDE_OVERLAY_WINDOWS)
         DisconnectedSocket.connections.clear()
         RxJavaPlugins.setIoSchedulerHandler { background }
+        // Material can retain queued Snackbar callbacks from a previous activity.
+        ReflectionHelpers.setStaticField(
+            Class.forName("com.google.android.material.snackbar.SnackbarManager"), "snackbarManager", null
+        )
     }
 
     @After
