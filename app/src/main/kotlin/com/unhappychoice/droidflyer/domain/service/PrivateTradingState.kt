@@ -60,10 +60,12 @@ internal class PrivateTradingState(
         .distinctUntilChanged()
 
     fun orderRows(): Observable<List<OrderRow>> =
-        orders.asObservable().map { currentOrders ->
-            val current = session
-            current?.let { active -> currentOrders.map { OrderRow(active, it) } }.orEmpty()
-        }
+        orders.asObservable().switchMap { currentOrders ->
+            val current = session ?: return@switchMap Observable.just(emptyList<OrderRow>())
+            current.cancellations.asObservable().map { pending ->
+                currentOrders.map { OrderRow(current, it, it.cancellationRequest() in pending) }
+            }
+        }.distinctUntilChanged()
 
     fun dispose() {
         disposed = true
@@ -186,17 +188,28 @@ internal class PrivateTradingState(
     fun isCurrent(row: OrderRow): Boolean = !disposed && row.session === session
 
     fun cancelOrder(row: OrderRow): Observable<Unit>? {
-        val current = session ?: return null
-        if (!isCurrent(row)) return null
-        val order = orders.value.firstOrNull {
-            it.productCode == row.order.productCode &&
-                it.childOrderAcceptanceId == row.order.childOrderAcceptanceId
-        } ?: return null
-        val request = CancelChildOrderRequest(order.productCode, order.childOrderAcceptanceId)
-        return withinSession(current, Observable.defer {
-            current.client.cancelChildOrder(request).andThen(Observable.just(Unit))
-        })
+        val current = row.session
+        val request = row.order.cancellationRequest()
+        if (!canCancel(row, request)) return null
+
+        return Observable.defer {
+            if (!canCancel(row, request)) return@defer Observable.empty<Unit>()
+
+            current.cancellations.value = current.cancellations.value + request
+            withinSession(current, Observable.defer {
+                current.client.cancelChildOrder(request).andThen(Observable.just(Unit))
+            }).doFinally {
+                current.cancellations.value = current.cancellations.value - request
+            }
+        }
     }
+
+    private fun canCancel(row: OrderRow, request: CancelChildOrderRequest): Boolean =
+        isCurrent(row) && request !in row.session.cancellations.value && orders.value.any {
+            it.productCode == request.productCode && it.childOrderAcceptanceId == request.childOrderAcceptanceId
+        }
+
+    private fun ChildOrder.cancellationRequest() = CancelChildOrderRequest(productCode, childOrderAcceptanceId)
 
     private fun replaceSession(next: Session?, onSwitched: () -> Unit = {}) {
         val previous = session
@@ -230,9 +243,10 @@ internal class PrivateTradingState(
         private const val ACTIVE_ORDER_LIMIT = 500
     }
 
-    data class OrderRow(internal val session: Session, val order: ChildOrder)
+    data class OrderRow(internal val session: Session, val order: ChildOrder, val isCancelling: Boolean = false)
     class CloseConfirmation internal constructor(internal val session: Session, val order: PositionCloseOrder)
     class Session(val client: APIClientV1) {
         val ended = ReplaySubject.createWithSize<Unit>(1)
+        val cancellations = Variable<Set<CancelChildOrderRequest>>(emptySet())
     }
 }
