@@ -40,6 +40,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.math.BigDecimal
 
 @RunWith(RobolectricTestRunner::class)
@@ -237,6 +238,49 @@ class OrderFillNotificationServiceTest {
             assertEquals(3, checks)
             assertFalse(shadowOf(service).isStoppedBySelf)
             time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun retriesAfterOrderCheckTimesOutAndKeepsReceivingFills() {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        var checks = 0
+        OrderFillNotificationService.openOrdersCheck = {
+            if (++checks == 2) Observable.error(TimeoutException()) else Observable.just(false)
+        }
+        OrderFillNotificationService.sessionFactory = {
+            RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            account.authenticate()
+            time.triggerActions()
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertEquals(2, checks)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+
+            account.receiveEvent("EXECUTION")
+            time.triggerActions()
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+            assertEquals(1, notifications.allNotifications.count {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT) != null
+            })
+
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertEquals(3, checks)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertEquals(4, checks)
             assertTrue(shadowOf(service).isStoppedBySelf)
         } finally {
             controller.destroy()

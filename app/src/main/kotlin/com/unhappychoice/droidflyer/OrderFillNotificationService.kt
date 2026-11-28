@@ -98,12 +98,13 @@ class OrderFillNotificationService : Service() {
     private fun checkUntilIdle(app: DroidFlyerApplication, availability: PrivateEvent<Boolean>): Observable<Boolean> =
         Observable.defer { openOrdersCheck(app) }
             .subscribeOn(Schedulers.io())
+            // Require two consecutive successful empty checks before stopping.
+            .onErrorReturnItem(true)
             .repeatWhen { completed -> completed.delay(ORDER_CHECK_SECONDS, TimeUnit.SECONDS) }
             .scan(0) { emptyChecks, hasOrders -> if (hasOrders) 0 else emptyChecks + 1 }
             .skip(1)
             .observeOn(androidMainThreadScheduler())
             .map { availability.isCurrent() && (it >= 2 || !notificationsAllowed(this)) }
-            .onErrorReturn { availability.isCurrent() }
 
     @SuppressLint("MissingPermission")
     private fun notifyOutcome(message: String) {
