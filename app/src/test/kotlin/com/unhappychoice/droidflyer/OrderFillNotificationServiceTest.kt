@@ -19,6 +19,7 @@ import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
+import io.reactivex.subjects.PublishSubject
 import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
@@ -105,7 +106,7 @@ class OrderFillNotificationServiceTest {
             val client = RealtimeClient(gson, preference, socket, publicFeed = false) {
                 TestSocket().also(accountSockets::add)
             }
-            RealtimeSession(client).apply { watchSavedAccount() }
+            RealtimeSession(client)
         }
 
         val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
@@ -154,7 +155,7 @@ class OrderFillNotificationServiceTest {
             )
 
             hasOpenOrders = false
-            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            time.advanceTimeBy(30, TimeUnit.SECONDS)
             assertTrue(shadowOf(service).isStoppedBySelf)
         } finally {
             controller.destroy()
@@ -173,7 +174,7 @@ class OrderFillNotificationServiceTest {
         OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
         OrderFillNotificationService.sessionFactory = {
             val client = RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account }
-            RealtimeSession(client).apply { watchSavedAccount() }
+            RealtimeSession(client)
         }
 
         val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
@@ -189,10 +190,11 @@ class OrderFillNotificationServiceTest {
             assertEquals(1, notifications.allNotifications.size)
 
             hasOpenOrders = false
-            account.receiveParentEvent("CANCEL")
-            time.triggerActions()
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertFalse(shadowOf(service).isStoppedBySelf)
 
+            account.receiveParentEvent("CANCEL")
+            time.triggerActions()
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertTrue(shadowOf(service).isStoppedBySelf)
             assertEquals(
@@ -226,12 +228,18 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun noOpenOrdersStopsWithoutOpeningRealtimeConnection() {
-        var sessionStarted = false
-        OrderFillNotificationService.openOrdersCheck = { Observable.just(false) }
+    fun receivesFillWhileFirstOrderCheckIsPendingAndConfirmsEmptyOrdersBeforeStopping() {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        val firstCheck = PublishSubject.create<Boolean>()
+        var checks = 0
+        OrderFillNotificationService.openOrdersCheck = {
+            if (++checks == 1) firstCheck else Observable.just(checks == 2)
+        }
         OrderFillNotificationService.sessionFactory = {
-            sessionStarted = true
-            error("No orders to monitor")
+            RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
         }
 
         val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
@@ -239,8 +247,27 @@ class OrderFillNotificationServiceTest {
             val service = controller.get()
             service.onStartCommand(startIntent(), 0, 1)
             time.triggerActions()
+            assertTrue(account.connected())
+            assertEquals(0, checks)
+
+            account.authenticate()
+            time.triggerActions()
+            assertEquals(1, checks)
+            account.receiveEvent("EXECUTION")
+            firstCheck.onNext(false)
+            firstCheck.onComplete()
+            time.triggerActions()
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+            assertEquals(1, notifications.allNotifications.count {
+                it.extras.getCharSequence(Notification.EXTRA_TEXT) != null
+            })
+            assertFalse(shadowOf(service).isStoppedBySelf)
+
+            time.advanceTimeBy(30, TimeUnit.SECONDS)
+            assertEquals(3, checks)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertTrue(shadowOf(service).isStoppedBySelf)
-            assertFalse(sessionStarted)
         } finally {
             controller.destroy()
         }

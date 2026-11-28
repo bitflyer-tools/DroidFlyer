@@ -44,9 +44,10 @@ rejections, and cancellations received while monitoring, including when the app 
 in the background or the screen is off.
 
 Tap **Stop order monitoring** in **Setting** to disconnect. DroidFlyer checks for
-active child and parent orders at startup and approximately every 15 seconds.
-Monitoring ends when there are no active orders, notification access is lost, the
-account is unlinked, or the app cannot verify which orders are active.
+active child and parent orders once the realtime subscriptions are ready and then
+approximately every 15 seconds. Two consecutive checks with no active orders end
+monitoring. Monitoring also ends if notification access is lost, the account is
+unlinked, or the app cannot verify active orders or establish the realtime subscriptions.
 The realtime connection and order checks use extra battery and data.
 
 Android 15 and later also limit background monitoring to six hours in a 24-hour

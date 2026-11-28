@@ -1,8 +1,8 @@
 package com.unhappychoice.droidflyer
 
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
-import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import io.reactivex.disposables.CompositeDisposable
@@ -13,6 +13,7 @@ internal class RealtimeSession(
     private val client: RealtimeClient,
     private val status: CurrentStatusService? = null
 ) {
+    val privateChannelAvailability = client.privateChannelAvailability
     private val subscriptions = CompositeDisposable()
 
     init {
@@ -40,7 +41,7 @@ internal class RealtimeSession(
 
     fun notifyParentOrderCancellations(onCancellation: (String) -> Unit) {
         client.parentOrderEvents
-            .subscribeOnIoObserveOnUI()
+            .observeOn(androidMainThreadScheduler())
             .filter { it.isCurrent() }
             .subscribeNext { batch ->
                 batch.value.filter { it.eventType == "CANCEL" }.forEach { onCancellation(it.productCode) }
@@ -59,7 +60,7 @@ internal class RealtimeSession(
         onEvent: (ChildOrderEvent) -> Unit
     ) {
         client.childOrderEvents
-            .subscribeOnIoObserveOnUI()
+            .observeOn(androidMainThreadScheduler())
             .filter { it.isCurrent() }
             .subscribeNext { batch -> batch.value.filter(matches).forEach(onEvent) }
             .addTo(subscriptions)

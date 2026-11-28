@@ -73,11 +73,13 @@ class RealtimeClient internal constructor(
                 if (!disconnected) publicDisconnects.onNext(Unit)
             }
         }
-        if (publicFeed) socket.connect()
-        authenticationWorker.schedule {
-            synchronized(credentialLock) {
-                val needsAccount = synchronized(accountLock) { !disconnected && account == null }
-                if (needsAccount) connectSavedAccount()
+        if (publicFeed) {
+            socket.connect()
+            authenticationWorker.schedule {
+                synchronized(credentialLock) {
+                    val needsAccount = synchronized(accountLock) { !disconnected && account == null }
+                    if (needsAccount) connectSavedAccount()
+                }
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
@@ -66,26 +67,38 @@ class OrderFillNotificationService : Service() {
     }
 
     private fun watchOpenOrders(app: DroidFlyerApplication) {
-        orderChecks = Observable.defer { openOrdersCheck(app) }
+        val realtime = sessionFactory(app)
+        session = realtime
+        realtime.notifyOrderOutcomes { notifyOutcome(outcomeMessage(it)) }
+        realtime.notifyParentOrderCancellations {
+            notifyOutcome(getString(R.string.order_notification_canceled, it))
+        }
+
+        orderChecks = realtime.privateChannelAvailability
+            .startWith(PrivateEvent(false) { true })
+            .observeOn(androidMainThreadScheduler())
+            .filter { it.isCurrent() }
+            .distinctUntilChanged { it.value }
+            .switchMap { availability ->
+                if (availability.value) checkUntilIdle(app, availability)
+                else Observable.timer(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS, androidMainThreadScheduler())
+                    .map { true }
+            }
+            .filter { it }
+            .take(1)
+            .subscribe({ stopSelf() }, { stopSelf() })
+        realtime.watchSavedAccount()
+    }
+
+    private fun checkUntilIdle(app: DroidFlyerApplication, availability: PrivateEvent<Boolean>): Observable<Boolean> =
+        Observable.defer { openOrdersCheck(app) }
             .subscribeOn(Schedulers.io())
             .repeatWhen { completed -> completed.delay(ORDER_CHECK_SECONDS, TimeUnit.SECONDS) }
+            .scan(0) { emptyChecks, hasOrders -> if (hasOrders) 0 else emptyChecks + 1 }
+            .skip(1)
             .observeOn(androidMainThreadScheduler())
-            .takeWhile { it && notificationsAllowed(this) }
-            .subscribe(
-                {
-                    if (session == null) {
-                        session = sessionFactory(app).apply {
-                            notifyOrderOutcomes { notifyOutcome(outcomeMessage(it)) }
-                            notifyParentOrderCancellations {
-                                notifyOutcome(getString(R.string.order_notification_canceled, it))
-                            }
-                        }
-                    }
-                },
-                { stopSelf() },
-                { stopSelf() }
-            )
-    }
+            .map { availability.isCurrent() && (it >= 2 || !notificationsAllowed(this)) }
+            .onErrorReturn { availability.isCurrent() }
 
     @SuppressLint("MissingPermission")
     private fun notifyOutcome(message: String) {
@@ -141,6 +154,7 @@ class OrderFillNotificationService : Service() {
     companion object {
         internal const val ACTION_START = "com.unhappychoice.droidflyer.action.START_ORDER_MONITORING"
         private const val ORDER_CHECK_SECONDS = 15L
+        private const val CONNECTION_TIMEOUT_SECONDS = 30L
         private const val FILL_CHANNEL_ID = "order_fills"
         private const val SERVICE_CHANNEL_ID = "order_fill_service"
         private const val SERVICE_NOTIFICATION_ID = 1
@@ -153,7 +167,7 @@ class OrderFillNotificationService : Service() {
 
         private fun defaultSession(application: DroidFlyerApplication): RealtimeSession {
             val client = RealtimeClient(application.module.direct.instance(), application.tokenPreference, publicFeed = false)
-            return RealtimeSession(client).apply { watchSavedAccount() }
+            return RealtimeSession(client)
         }
 
         private fun hasOpenOrders(app: DroidFlyerApplication): Observable<Boolean> {
