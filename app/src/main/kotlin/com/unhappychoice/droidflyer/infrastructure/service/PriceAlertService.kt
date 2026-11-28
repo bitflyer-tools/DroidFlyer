@@ -16,8 +16,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.CryptoCfdExecutionFe
 import com.unhappychoice.droidflyer.infrastructure.notification.PRICE_ALERT_SERVICE_NOTIFICATION_ID
 import com.unhappychoice.droidflyer.infrastructure.notification.notifyPriceAlertTriggered
 import com.unhappychoice.droidflyer.infrastructure.notification.priceAlertServiceNotification
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.kotlin.addTo
 
 internal class PriceAlertService : Service() {
     private val preference by lazy { (application as DroidFlyerApplication).priceAlertPreference }
@@ -38,7 +38,7 @@ internal class PriceAlertService : Service() {
             executionFeed.events.observeOn(androidMainThreadScheduler())
         ) { alert -> notifyPriceAlertTriggered(alert) }
         executionFeed.connect()
-        preference.alertsChanged.startWith(preference.read())
+        preference.alertsChanged.startWithItem(preference.read())
             .subscribeNext { if (it.isEmpty()) stopSelf() }
             .addTo(bag)
     }

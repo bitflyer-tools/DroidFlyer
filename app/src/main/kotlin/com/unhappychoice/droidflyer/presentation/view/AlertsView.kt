@@ -20,7 +20,7 @@ import com.unhappychoice.droidflyer.presentation.adapter.PriceAlertAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.AlertsPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.kotlin.addTo
 import org.kodein.di.instance
 
 class AlertsView(context: Context?, attr: AttributeSet?) : BaseView(context, attr) {

@@ -5,7 +5,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.unhappychoice.droidflyer.domain.service.PriceAlert
 import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 
 internal class PriceAlertPreference(
     context: Context,

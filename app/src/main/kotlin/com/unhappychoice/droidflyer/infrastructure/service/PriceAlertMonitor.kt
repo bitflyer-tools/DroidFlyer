@@ -5,9 +5,9 @@ import com.unhappychoice.droidflyer.domain.service.triggeredAlerts
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.CryptoCfdExecutionFeed.Event
 import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
-import io.reactivex.Observable
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.kotlin.addTo
 
 internal class PriceAlertMonitor(
     private val preference: PriceAlertPreference,

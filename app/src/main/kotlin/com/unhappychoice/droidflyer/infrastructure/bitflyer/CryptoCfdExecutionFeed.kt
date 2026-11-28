@@ -3,7 +3,7 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 import io.socket.client.Socket
 import org.json.JSONArray
 

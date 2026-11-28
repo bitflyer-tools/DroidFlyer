@@ -5,7 +5,7 @@ import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.CryptoCfdExecutionFeed.Event
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

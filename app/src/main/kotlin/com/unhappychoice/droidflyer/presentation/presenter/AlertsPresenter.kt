@@ -4,7 +4,7 @@ import com.unhappychoice.droidflyer.domain.service.PriceAlert
 import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
 import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
 import com.unhappychoice.droidflyer.presentation.view.AlertsView
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
 import mortar.ViewPresenter
 
 class AlertsPresenter internal constructor(
