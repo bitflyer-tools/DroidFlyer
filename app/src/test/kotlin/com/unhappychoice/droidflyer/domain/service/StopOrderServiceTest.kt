@@ -47,6 +47,7 @@ class StopOrderServiceTest {
     private var childOrders = "[]"
     private var childOrderStatus = 200
     private var omitStopFromActiveParents = false
+    private var canceledParentRows: String? = null
     private var activeParentPage: ((String?) -> String)? = null
     private var cancelStatus = 200
     private val serviceScheduler = TestScheduler()
@@ -1080,6 +1081,98 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun unchangedCanceledStopsReuseVerifiedChildExecutions() {
+        val service = service()
+        parentState = "CANCELED"
+        canceledParentRows = (1..10).joinToString(prefix = "[", postfix = "]") { id ->
+            """{"id":$id,"parent_order_id":"parent-$id","parent_order_acceptance_id":"acceptance-$id",
+               "product_code":"FX_BTC_JPY","parent_order_type":"STOP","parent_order_state":"CANCELED",
+               "side":"SELL","size":0.01,"executed_size":0.003}"""
+        }
+        childOrders = marketChild(0.005, "CANCELED")
+
+        service.refresh()
+        serviceScheduler.advanceTimeBy(100, SECONDS)
+        assertEquals(10, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        requests.clear()
+
+        service.refresh()
+        serviceScheduler.advanceTimeBy(100, SECONDS)
+
+        assertEquals(List(4) { "/v1/me/getparentorders" }, stopReadPaths())
+        val orders = service.orders.value
+        assertEquals(10, orders.size)
+        orders.forEach {
+            assertEquals(StopOrderStatus.CANCELED, it.status)
+            assertEquals(0.005, it.parent.executedSize, 0.0)
+        }
+    }
+
+    @Test
+    fun canceledStopRereadsChildWhenRawParentExecutionChanges() {
+        val service = service()
+        parentState = "CANCELED"
+        executedSize = 0.003
+        childOrders = marketChild(0.005, "CANCELED")
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        executedSize = 0.004
+        childOrders = marketChild(0.006, "CANCELED")
+        requests.clear()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        assertEquals(0.006, service.orders.value.single().parent.executedSize, 0.0)
+    }
+
+    @Test
+    fun canceledStopRereadsChildWhenExecutionEventChanges() {
+        val service = service()
+        parentState = "CANCELED"
+        executedSize = 0.003
+        childOrders = marketChild(0.005, "CANCELED")
+        service.onChildEvents(listOf(childExecution()))
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        childOrders = marketChild(0.006, "CANCELED")
+        service.onChildEvents(listOf(childExecution().copy(execId = 2)))
+        requests.clear()
+        service.onChildUpdates()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        assertEquals(0.006, service.orders.value.single().parent.executedSize, 0.0)
+    }
+
+    @Test
+    fun canceledStopRetriesUnverifiedChildReads() {
+        val service = service()
+        parentState = "CANCELED"
+        executedSize = 0.003
+        childOrderStatus = 503
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertFalse(service.orders.value.single().triggerVerified)
+
+        childOrderStatus = 200
+        childOrders = "[]"
+        requests.clear()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+
+        childOrders = marketChild(0.005, "CANCELED")
+        requests.clear()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        assertEquals(0.005, service.orders.value.single().parent.executedSize, 0.0)
+    }
+
+    @Test
     fun expiryEventPreservesPartialExecutionWhileParentStateIsActive() {
         val service = service()
         executedSize = 0.005
@@ -1299,7 +1392,8 @@ class StopOrderServiceTest {
         .apply { onPrivateChannelAvailability(true) }
 
     private fun marketChild(size: Double, state: String = "ACTIVE") =
-        """[{"child_order_type":"MARKET","child_order_state":"$state","executed_size":$size}]"""
+        """[{"child_order_type":"MARKET","child_order_state":"$state","executed_size":$size,
+            "child_order_acceptance_id":"child-acceptance-1"}]"""
 
     private fun stopRequest(quantity: String = "0.01") =
         requireNotNull(StopOrderRequest.fromInput(StopSide.SELL, quantity, "5000000"))
@@ -1348,6 +1442,7 @@ class StopOrderServiceTest {
                 state == "EXPIRED" || state == "REJECTED" -> 400 to ""
                 !active && historyStatus != 200 -> historyStatus to ""
                 page != null && active -> 200 to page(request.url.queryParameter("before"))
+                state == "CANCELED" && canceledParentRows != null -> 200 to requireNotNull(canceledParentRows)
                 (state != null && state != parentState) || (active && omitStopFromActiveParents) -> 200 to "[]"
                 else -> 200 to parentOrders()
             }
@@ -1356,8 +1451,14 @@ class StopOrderServiceTest {
             200 to """{"order_method":"SIMPLE","parameters":[{"product_code":"FX_BTC_JPY",
                     "condition_type":"STOP","trigger_price":5000000}]}"""
         }
-        "/v1/me/getchildorders" -> childOrderStatus to
-            if (request.url.queryParameter("parent_order_id") == "parent-1") childOrders else "[]"
+        "/v1/me/getchildorders" -> {
+            val parent = request.url.queryParameter("parent_order_id")
+            childOrderStatus to when {
+                canceledParentRows != null -> childOrders.replace("child-acceptance-1", "child-$parent")
+                parent == "parent-1" -> childOrders
+                else -> "[]"
+            }
+        }
         "/v1/me/cancelparentorder" -> {
             if (cancelStatus == 200) parentState = "CANCELED"
             cancelStatus to ""

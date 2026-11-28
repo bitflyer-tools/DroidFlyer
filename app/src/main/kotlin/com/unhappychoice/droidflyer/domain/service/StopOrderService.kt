@@ -55,6 +55,7 @@ internal class StopOrderService(
     private val refreshReads = StopOrderFallbackReads(io)
     private val waitingOrUnknown = setOf(StopOrderStatus.WAITING, StopOrderStatus.UNKNOWN)
     private val events = LinkedHashMap<String, ParentOrderEvent>()
+    private val childEvents = LinkedHashMap<String, ChildOrderEvent>()
     private val childTerminations = LinkedHashMap<String, ChildOrderEvent>()
 
     fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
@@ -71,6 +72,7 @@ internal class StopOrderService(
         channelGapOpen = false
         channelGapCount = 0
         events.clear()
+        childEvents.clear()
         childTerminations.clear()
         orders.value = emptyList()
         loadFailed.value = false
@@ -194,15 +196,18 @@ internal class StopOrderService(
 
         val updates = batch.filter {
             it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() &&
-                it.terminationStatus() != null && !it.childOrderAcceptanceId.isNullOrBlank()
+                !it.childOrderAcceptanceId.isNullOrBlank()
         }
         updates.forEach { event ->
             val id = event.childOrderAcceptanceId
+            childEvents[id] = event
+            if (event.terminationStatus() == null) return@forEach
             val previous = childTerminations[id]
             if (previous == null || event.eventDate >= previous.eventDate) childTerminations[id] = event
         }
+        while (childEvents.size > 200) childEvents.remove(childEvents.keys.first())
         while (childTerminations.size > 200) childTerminations.remove(childTerminations.keys.first())
-        if (updates.isNotEmpty()) orders.value = orders.value.map(::applyEvent)
+        if (updates.any { it.terminationStatus() != null }) orders.value = orders.value.map(::applyEvent)
     }
 
     fun onPrivateChannelAvailability(ready: Boolean) {
@@ -256,7 +261,8 @@ internal class StopOrderService(
         recoverOnRefresh = recoverOnRefresh || recoverTriggers
         val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
         val previous = orders.value.associateBy { it.acceptanceId }
-        val knownEvents = events.mapValues { it.value.eventType }
+        val knownEvents = events.toMap()
+        val knownChildEvents = childEvents.toMap()
         val canConfirmWaitingFromRest = canUseRestWaitingEvidence
         val canOfferRecovery = orderEventsReady && channelGapCount > 0
         refreshRequest.set(null)
@@ -276,7 +282,8 @@ internal class StopOrderService(
         val request = Observable.just(parents, history).concatMap { source ->
             source.concatMap { (row, activeAndOutstanding) ->
                 val cached = refreshed[row.parentOrderAcceptanceId] ?: previous[row.parentOrderAcceptanceId]
-                val realtimeEvent = knownEvents[row.parentOrderAcceptanceId]
+                val parentEvent = knownEvents[row.parentOrderAcceptanceId]
+                val realtimeEvent = parentEvent?.eventType
                 val event = realtimeEvent?.takeUnless { it == "ORDER" } ?: cached?.event
                 val parent = row.copy(executedSize = maxOf(row.executedSize, cached?.parent?.executedSize ?: 0.0))
                 loadStop(client, parent, cached?.triggerPrice, refreshReads).concatMap { stop ->
@@ -288,11 +295,23 @@ internal class StopOrderService(
                         waitingConfirmed = realtimeEvent == "ORDER" || restWaitingConfirmed,
                         restWaitingConfirmed = restWaitingConfirmed
                     )
+                    val terminal = row.parentOrderState in terminalParentStates
+                    val verification = cached?.childVerification?.takeIf { terminal }
                     when {
-                        updated.status == StopOrderStatus.TRIGGERED ||
+                        verification != null && verification.parent == row &&
+                            verification.parentEvent == parentEvent &&
+                            verification.childEvent == verification.childAcceptanceId?.let(knownChildEvents::get) ->
+                            Observable.just(updated.copy(childVerification = verification))
+                        verification != null || updated.status == StopOrderStatus.TRIGGERED ||
                             updated.isPartiallyExecuted ||
                             (realtime == RealtimeRefresh.CHILD && updated.childTermination != null) ->
-                            reconcileMarketChild(client, updated, refreshReads)
+                            reconcileMarketChild(client, updated, refreshReads) { childId ->
+                                val acceptanceId = childId?.takeIf(String::isNotBlank)
+                                    ?: parentEvent?.childOrderAcceptanceId
+                                StopChildVerification(
+                                    row, parentEvent, acceptanceId, acceptanceId?.let(knownChildEvents::get)
+                                ).takeIf { terminal }
+                            }
                         parent.parentOrderState == "ACTIVE" &&
                             updated.status in waitingOrUnknown &&
                             (cached?.triggerPrice == null || !cached.triggerVerified || !cached.waitingConfirmed ||
@@ -463,7 +482,8 @@ internal class StopOrderService(
     private fun reconcileMarketChild(
         client: APIClientV1,
         stop: StopOrder,
-        reads: StopOrderFallbackReads? = null
+        reads: StopOrderFallbackReads? = null,
+        verification: (String?) -> StopChildVerification? = { null }
     ): Observable<StopOrder> =
         stopOrderRead(reads) { client.getParentChildOrders(stop.parent.parentOrderId) }
             .map { children ->
@@ -471,6 +491,7 @@ internal class StopOrderService(
                 if (marketOrder == null) stop else stop.copy(
                     parent = stop.parent.copy(executedSize = maxOf(stop.parent.executedSize, marketOrder.executedSize)),
                     event = stop.event ?: "TRIGGER",
+                    childVerification = verification(marketOrder.childOrderAcceptanceId),
                     childTermination = when (marketOrder.childOrderState) {
                         "CANCELED" -> StopOrderStatus.CANCELED
                         "EXPIRED" -> StopOrderStatus.EXPIRED
@@ -522,6 +543,7 @@ internal class StopOrderService(
     }
 
     private companion object {
+        val terminalParentStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
         val activeSubmissions = ConcurrentHashMap.newKeySet<String>()
     }
 }
