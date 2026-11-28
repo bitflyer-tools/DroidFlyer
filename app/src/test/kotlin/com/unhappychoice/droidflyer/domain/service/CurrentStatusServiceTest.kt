@@ -1,5 +1,6 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
@@ -9,6 +10,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEven
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
+import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
 import io.reactivex.Completable
@@ -207,6 +209,35 @@ class CurrentStatusServiceTest {
         service.dispose()
         assertFalse(responses.hasObservers())
         assertFalse(snapshots.hasObservers())
+    }
+
+    @Test
+    fun orderScreenPollingAndReopeningRetryStaleChildOrders() {
+        val refreshedOrder = activeOrder.copy(price = 120)
+        val failure = Observable.error<List<ChildOrder>>(IOException("Offline"))
+        `when`(api.getChildOrders("FX_BTC_JPY", count = 500))
+            .thenReturn(Observable.just(listOf(activeOrder)), failure, failure, Observable.just(listOf(refreshedOrder)))
+        val presenter = OrderPresenter(service)
+
+        presenter.startPolling()
+        try {
+            scheduler.triggerActions()
+            assertEquals(listOf(activeOrder), service.orders.value)
+            scheduler.advanceTimeBy(6, TimeUnit.SECONDS)
+            assertEquals(ActiveOrdersStatus.STALE, service.privateState.activeOrdersStatus.value)
+            scheduler.advanceTimeBy(6, TimeUnit.SECONDS)
+            verify(api, times(4)).getChildOrders("FX_BTC_JPY", count = 500)
+            assertEquals(ActiveOrdersStatus.STALE, service.privateState.activeOrdersStatus.value)
+            assertEquals(listOf(activeOrder), service.orders.value)
+
+            presenter.stopPolling()
+            presenter.startPolling()
+            scheduler.triggerActions()
+            assertEquals(ActiveOrdersStatus.AVAILABLE, service.privateState.activeOrdersStatus.value)
+            assertEquals(listOf(refreshedOrder), service.orders.value)
+        } finally {
+            presenter.stopPolling()
+        }
     }
 
     @Test
