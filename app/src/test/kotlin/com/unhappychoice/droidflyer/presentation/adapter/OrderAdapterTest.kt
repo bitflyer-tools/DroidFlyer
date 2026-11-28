@@ -16,8 +16,11 @@ import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.subjects.CompletableSubject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,6 +37,7 @@ class OrderAdapterTest {
     private val secondOrder = order(2)
 
     private var response = emptyList<ChildOrder>()
+    private var cancellationResponse = Completable.complete()
     private val requests = mutableListOf<CancelChildOrderRequest>()
     private val client = Proxy.newProxyInstance(
         APIClientV1::class.java.classLoader,
@@ -46,7 +50,10 @@ class OrderAdapterTest {
                 assertEquals("ACTIVE", args[1])
                 Observable.just(response.take(args[3] as Int? ?: 100))
             }
-            "cancelChildOrder" -> Completable.fromAction { requests.add(args[0] as CancelChildOrderRequest) }
+            "cancelChildOrder" -> {
+                requests.add(args[0] as CancelChildOrderRequest)
+                cancellationResponse
+            }
             else -> error("Unexpected API call: ${method.name}")
         }
     } as APIClientV1
@@ -74,6 +81,50 @@ class OrderAdapterTest {
         adapter.onBindViewHolder(adapter.ViewHolder(row), 0)
 
         assertEquals("0.04 ɃFX", row.findViewById<TextView>(R.id.size).text.toString())
+    }
+
+    @Test
+    fun pendingCancellationDisablesOnlyItsRowAndIsClearedOnAccountSwitch() {
+        val state = PrivateTradingState(client)
+        val presenter = OrdersPresenter(state) {}
+        val rows = presenter.orders.test()
+        val failures = presenter.cancellationFailures.test()
+        presenter.orders.subscribe(adapter::updateOrders)
+        adapter.clickCancel.subscribe(presenter::cancelOrder)
+        val otherProductOrder = firstOrder.copy(productCode = "BTC_JPY")
+        state.orders.value = listOf(firstOrder, otherProductOrder)
+
+        val firstRequest = CancelChildOrderRequest(firstOrder.productCode, firstOrder.childOrderAcceptanceId)
+        val otherRequest = firstRequest.copy(productCode = otherProductOrder.productCode)
+        val pending = CompletableSubject.create()
+        cancellationResponse = pending
+        val holder = adapter.ViewHolder(createRow())
+        val cancel = holder.view.findViewById<View>(R.id.cancel)
+        adapter.onBindViewHolder(holder, 0)
+        cancel.performClick()
+        presenter.cancelOrder(rows.values().first { it.isNotEmpty() }.first())
+        assertEquals(listOf(firstRequest), requests)
+
+        adapter.onBindViewHolder(holder, 0)
+        assertFalse(cancel.isEnabled)
+        cancel.performClick()
+        assertEquals(listOf(firstRequest), requests)
+
+        cancellationResponse = Completable.complete()
+        adapter.onBindViewHolder(holder, 1)
+        assertTrue(cancel.isEnabled)
+        cancel.performClick()
+        assertEquals(listOf(firstRequest, otherRequest), requests)
+
+        state.switchAccount(client)
+        assertFalse(pending.hasObservers())
+        assertEquals(0, adapter.itemCount)
+        state.orders.value = listOf(firstOrder)
+        adapter.onBindViewHolder(holder, 0)
+        assertTrue(cancel.isEnabled)
+        cancel.performClick()
+        assertEquals(listOf(firstRequest, otherRequest, firstRequest), requests)
+        failures.assertNoValues()
     }
 
     @Test

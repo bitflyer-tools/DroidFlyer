@@ -12,19 +12,27 @@ class APITokenPreference internal constructor(
 
     private val preferences by lazy { context.getSharedPreferences("api_token", Context.MODE_PRIVATE) }
 
-    private val unlinks = PublishSubject.create<Unit>()
-    internal val accountUnlinked = unlinks.hide()
+    private val changes = PublishSubject.create<Unit>().toSerialized()
+
+    /** Fires after an unlink or a validated credential replacement is applied, in every live instance. */
+    internal val accountChanged = changes.hide()
 
     @Volatile
-    internal var unlinkGeneration = 0L
+    internal var credentialsGeneration = 0L
         private set
+
+    internal class Snapshot(val credentials: APICredentials, val generation: Long)
+
+    internal fun readSnapshot(): Snapshot = synchronized(lock) {
+        Snapshot(read(), credentialsGeneration)
+    }
 
     fun clear(): Boolean {
         val cleared = synchronized(lock) {
-            unlinkGeneration++
+            credentialsGeneration++
             preferences.edit().remove(encryptedEntry).remove("key").remove("secret").commit()
         }
-        unlinks.onNext(Unit)
+        changes.onNext(Unit)
         return cleared
     }
 
@@ -37,13 +45,21 @@ class APITokenPreference internal constructor(
         legacy
     }
 
-    internal fun saveIfChanged(credentials: APICredentials, generation: Long): Boolean = synchronized(lock) {
-        if (generation != unlinkGeneration) return@synchronized false
+    internal fun saveIfChanged(credentials: APICredentials, generation: Long): Boolean {
+        val changed = synchronized(lock) {
+            if (generation != credentialsGeneration) return@synchronized false
 
-        val saved = read()
-        val changed = saved.key != credentials.key || saved.secret != credentials.secret
-        if (changed) save(credentials)
-        changed
+            val saved = read()
+            val isChanged = saved.key != credentials.key || saved.secret != credentials.secret
+            if (isChanged) {
+                save(credentials)
+                // Invalidate clients pinned to the replaced credentials, the same way an unlink does.
+                credentialsGeneration++
+            }
+            isChanged
+        }
+        if (changed) changes.onNext(Unit)
+        return changed
     }
 
     fun save(credentials: APICredentials) = synchronized(lock) {

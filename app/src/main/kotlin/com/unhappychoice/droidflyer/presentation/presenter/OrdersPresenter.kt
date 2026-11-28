@@ -57,7 +57,7 @@ class OrdersPresenter internal constructor(
         cancellation
             .subscribe(
                 { if (privateState.isCurrent(row)) refreshOrders() },
-                { failedCancellations.onNext(row.order) }
+                { if (privateState.isCurrent(row)) failedCancellations.onNext(row.order) }
             )
             .addTo(bag)
     }

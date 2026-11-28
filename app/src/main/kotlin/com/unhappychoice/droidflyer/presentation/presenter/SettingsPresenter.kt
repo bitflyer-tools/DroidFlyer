@@ -3,17 +3,13 @@ package com.unhappychoice.droidflyer.presentation.presenter
 import android.view.View
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
-import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.extension.subscribeOnIoObserveOnUI
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
-import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import io.reactivex.rxjava3.core.Completable
 import io.reactivex.rxjava3.core.Observable
@@ -27,21 +23,8 @@ import retrofit2.HttpException
 class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
-    private val switchAccount: (APIClientV1?, APICredentials) -> Unit,
-    internal val accountPreference: CryptoCfdAccountPreference,
-    private val updateRealtimeAccount: (() -> Unit) -> Unit
+    internal val accountPreference: CryptoCfdAccountPreference
 ) : ViewPresenter<SettingsView>() {
-    internal constructor(
-        api: APIClient,
-        preference: APITokenPreference,
-        currentStatusService: CurrentStatusService,
-        realtimeClient: RealtimeClient,
-        accountPreference: CryptoCfdAccountPreference,
-        stopSubmissions: StopSubmissionPreference
-    ) : this(api, preference, { client, credentials ->
-        currentStatusService.switchAccount(client, stopSubmissions.forApiKey(credentials.key))
-    }, accountPreference, realtimeClient::updateAccount)
-
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
     private val bag = CompositeDisposable()
@@ -90,26 +73,21 @@ class SettingsPresenter internal constructor(
 
     internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
         val submitted = APICredentials(key.value, secret.value)
-        val generation = preference.unlinkGeneration
-        return validateCredentials(submitted)
-            .filter { generation == preference.unlinkGeneration }
-            .map { balance ->
-                var changed = false
-                updateRealtimeAccount {
-                    changed = preference.saveIfChanged(submitted, generation)
-                }
-                balance to changed
-            }
+        val generation = preference.credentialsGeneration
+        return validateCredentials(submitted, generation)
+            .filter { generation == preference.credentialsGeneration }
+            .map { balance -> balance to preference.saveIfChanged(submitted, generation) }
             .subscribeOnIoObserveOnUI()
-            .filter { generation == preference.unlinkGeneration }
-            .map { (balance, changed) ->
-                if (changed) switchAccount(api.privateStatusClient(submitted), submitted)
-                balance
-            }
+            // A successful save bumps the generation itself, so expect generation + 1 in that case.
+            .filter { (_, changed) -> preference.credentialsGeneration == generation + if (changed) 1 else 0 }
+            .map { (balance, _) -> balance }
     }
 
-    private fun validateCredentials(credentials: APICredentials): Observable<List<Map<String, Any>>> =
-        api.client(credentials).getBalance().onErrorResumeNext { error: Throwable ->
+    private fun validateCredentials(
+        credentials: APICredentials,
+        generation: Long
+    ): Observable<List<Map<String, Any>>> =
+        api.client(credentials, generation).getBalance().onErrorResumeNext { error: Throwable ->
             Observable.error(CredentialValidationFailure(error))
         }
 }

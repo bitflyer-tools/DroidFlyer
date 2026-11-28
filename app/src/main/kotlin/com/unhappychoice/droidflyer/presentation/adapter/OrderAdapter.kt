@@ -42,7 +42,11 @@ internal class OrderAdapter(val context: Context?) : RecyclerView.Adapter<OrderA
             typeTextView.text = if (order.side == "BUY") context?.getString(R.string.buy) else context?.getString(R.string.sell)
             priceTextView.text = "${order.price} JPY"
             sizeTextView.text = "${order.outstandingSize} ɃFX"
-            cancelTextView.setOnClickListener { clickCancel.onNext(row) }
+            cancelTextView.isEnabled = !row.isCancelling
+            cancelTextView.alpha = if (row.isCancelling) 0.5f else 1f
+            cancelTextView.setOnClickListener {
+                if (cancelTextView.isEnabled) clickCancel.onNext(row)
+            }
         }
 
         private fun setupStyle(order: ChildOrder) {

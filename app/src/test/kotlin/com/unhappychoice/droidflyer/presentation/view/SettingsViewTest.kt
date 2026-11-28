@@ -390,9 +390,7 @@ class SettingsViewTest {
             val presenter = SettingsPresenter(
                 APIClient(Gson(), preference, transport),
                 preference,
-                switchAccount = { _, _ -> },
-                accountPreference = CryptoCfdAccountPreference(this),
-                updateRealtimeAccount = { it() }
+                accountPreference = CryptoCfdAccountPreference(this)
             )
             DI { bindInstance { presenter } }
         }

@@ -298,6 +298,36 @@ class APIClientTest {
     }
 
     @Test
+    fun parentOrderLookupLogsRedactParentIdForBothEndpoints() {
+        MockWebServer().use { origin ->
+            origin.start()
+            origin.enqueue(MockResponse.Builder().body("""{"order_method":"SIMPLE","parameters":[]}""").build())
+            origin.enqueue(MockResponse.Builder().body("[]").build())
+            val parentId = "test-stop-order-parent-id"
+            val lines = mutableListOf<String>()
+            val logger = HttpLoggingInterceptor.Logger { lines.add(it) }
+            val api = APIClient(gson, credentialPreference(), OkHttpClient(), origin.url("/v1/").toString(), logger)
+
+            api.client().getParentOrder(parentId).test().assertComplete().assertNoErrors()
+            api.client().getParentChildOrders(parentId).test().assertResult(emptyList())
+
+            val parentLookup = "/v1/me/getparentorder?parent_order_id="
+            val childLookup = "/v1/me/getchildorders?parent_order_id="
+            assertSignedRequest(origin, "GET", parentLookup + parentId, "")
+            assertSignedRequest(origin, "GET", "$childLookup$parentId&product_code=FX_BTC_JPY", "")
+            if (BuildConfig.DEBUG) {
+                listOf(parentLookup, childLookup).forEach { lookup ->
+                    assertTrue(lines.any { it.startsWith("--> GET ") && it.contains(lookup) })
+                    assertTrue(lines.any { it.startsWith("<-- 200 ") && it.contains(lookup) })
+                }
+                assertFalse(lines.any { it.contains(parentId) })
+            } else {
+                assertEquals(emptyList<String>(), lines)
+            }
+        }
+    }
+
+    @Test
     fun fillLookupLogsFollowBuildVariant() {
         MockWebServer().use { origin ->
             origin.start()

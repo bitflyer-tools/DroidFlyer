@@ -254,6 +254,18 @@ class MarketOrderPresenterTest {
     }
 
     @Test
+    fun changedLivePositionReportsIncompleteClosureWithoutSubmitting() {
+        status.position.value = listOf(openPosition("BUY", 2.0))
+        Mockito.`when`(apiClient.getPositions()).thenReturn(Observable.just(listOf(openPosition("BUY", 1.0))))
+
+        confirmPositionClose()
+
+        Mockito.verify(apiClient, Mockito.never()).sendChildOrder(any())
+        assertEquals(listOf(R.string.close_positions_incomplete), messages)
+        assertEquals(false, presenter.isLoading.value)
+    }
+
+    @Test
     fun changedPositionRequiresReconfirmationBeforeSubmittingClose() {
         status.position.value = listOf(openPosition("BUY", 0.5))
         val confirmed = requireNotNull(presenter.positionCloseOrder())
