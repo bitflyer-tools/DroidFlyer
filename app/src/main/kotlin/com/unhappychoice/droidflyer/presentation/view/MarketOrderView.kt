@@ -9,6 +9,7 @@ import com.unhappychoice.droidflyer.databinding.MarketOrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.CloseConfirmation
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.extension.bindTo
 import com.unhappychoice.droidflyer.extension.splitByComma
 import com.unhappychoice.droidflyer.extension.subscribeNext
@@ -60,12 +61,14 @@ class MarketOrderView(context: Context?, attr: AttributeSet?) : BaseView(context
 
         Observable.combineLatest(
             currentStatusService.position.asObservable(),
+            currentStatusService.positionStatus.asObservable(),
             presenter.isLoading.asObservable(),
             presenter.privateClientAvailable
-        ) { position: List<Position>, isLoading: Boolean, available: Boolean ->
+        ) { position: List<Position>, positionStatus: ReadStatus, isLoading: Boolean, available: Boolean ->
             val size = abs(position.wholeSize())
             val belowMinimum = size != 0.0 && !CryptoCfdOrderSize.meetsMinimum(size)
-            Pair(available && !isLoading && CryptoCfdOrderSize.meetsMinimum(size), belowMinimum)
+            val enabled = available && !isLoading && positionStatus == ReadStatus.AVAILABLE && CryptoCfdOrderSize.meetsMinimum(size)
+            Pair(enabled, belowMinimum)
         }
             .subscribeNext { (enabled, belowMinimum) ->
                 binding.clearButton.isEnabled = enabled

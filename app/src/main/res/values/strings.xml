@@ -113,4 +113,6 @@
     <string name="funding_unavailable">Next funding rate unavailable</string>
     <string name="funding_details">Next funding %1$s · %2$s</string>
     <string name="funding_stale">%1$s (stale)</string>
+    <string name="stale_value">%1$s (stale)</string>
+    <string name="position_unavailable">Position unavailable</string>
 </resources>

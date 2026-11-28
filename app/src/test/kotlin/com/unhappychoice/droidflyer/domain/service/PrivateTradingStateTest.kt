@@ -1,6 +1,7 @@
 package com.unhappychoice.droidflyer.domain.service
 
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
+import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ReadStatus
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
@@ -17,6 +18,7 @@ import io.reactivex.rxjava3.subjects.PublishSubject
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -113,6 +115,98 @@ class PrivateTradingStateTest {
         scheduler.triggerActions()
         loaded.assertComplete()
         totals.assertValueAt(totals.values().lastIndex, TradingTotals(0L, 120L, 0L, 120L)).assertNoErrors()
+    }
+
+    @Test
+    fun initialPositionAndCollateralFailuresAreUnavailable() {
+        assertEquals(ReadStatus.INITIAL, state.positionStatus.value)
+        assertEquals(ReadStatus.INITIAL, state.collateralStatus.value)
+
+        val refresh = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        accountA.positions.onError(ordersUnavailable())
+        accountA.collateral.onError(ordersUnavailable())
+        scheduler.triggerActions()
+
+        refresh.assertResult()
+        assertEquals(ReadStatus.UNAVAILABLE, state.positionStatus.value)
+        assertEquals(ReadStatus.UNAVAILABLE, state.collateralStatus.value)
+    }
+
+    @Test
+    fun positionFailureAfterSuccessMarksItStaleWhileCollateralStaysCurrent() {
+        val initial = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(listOf(position))
+        accountA.collateral.onNext(mapOf("collateral" to 10.0))
+        scheduler.triggerActions()
+        initial.assertResult()
+        assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+
+        accountA.positions = PublishSubject.create()
+        accountA.collateral = PublishSubject.create()
+        val refresh = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        accountA.positions.onError(ordersUnavailable())
+        accountA.collateral.onNext(mapOf("collateral" to 20.0))
+        scheduler.triggerActions()
+
+        refresh.assertResult()
+        assertEquals(ReadStatus.STALE, state.positionStatus.value)
+        assertEquals(listOf(position), state.position.value)
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+        assertEquals(20.0, state.collateral.value.amount)
+        assertNotNull(state.closeConfirmation())
+    }
+
+    @Test
+    fun collateralFailureAfterSuccessMarksItStaleWhilePositionStaysCurrent() {
+        val initial = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(listOf(position))
+        accountA.collateral.onNext(mapOf("collateral" to 10.0))
+        scheduler.triggerActions()
+        initial.assertResult()
+        assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+
+        accountA.positions = PublishSubject.create()
+        accountA.collateral = PublishSubject.create()
+        val refresh = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        val updatedPosition = position.copy(size = 1.0)
+        accountA.positions.onNext(listOf(updatedPosition))
+        accountA.collateral.onError(ordersUnavailable())
+        scheduler.triggerActions()
+
+        refresh.assertResult()
+        assertEquals(ReadStatus.AVAILABLE, state.positionStatus.value)
+        assertEquals(listOf(updatedPosition), state.position.value)
+        assertEquals(ReadStatus.STALE, state.collateralStatus.value)
+        assertEquals(10.0, state.collateral.value.amount)
+    }
+
+    @Test
+    fun missingCollateralIsUnavailableBeforeAnySuccessfulRead() {
+        refreshCollateral(emptyMap())
+
+        assertEquals(ReadStatus.UNAVAILABLE, state.collateralStatus.value)
+        assertNull(state.collateral.value.amount)
+    }
+
+    @Test
+    fun nonNumericCollateralMarksCachedAmountStaleUntilNextSuccessfulRead() {
+        refreshCollateral(mapOf("collateral" to 10.0))
+        refreshCollateral(mapOf("collateral" to "invalid"))
+
+        assertEquals(ReadStatus.STALE, state.collateralStatus.value)
+        assertEquals(10.0, state.collateral.value.amount)
+
+        refreshCollateral(mapOf("collateral" to 0))
+
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+        assertEquals(0.0, state.collateral.value.amount)
     }
 
     @Test
@@ -349,6 +443,16 @@ class PrivateTradingStateTest {
         assertFalse(accountA.executions.hasObservers())
     }
 
+    private fun refreshCollateral(response: Map<String, Any>) {
+        accountA.collateral = PublishSubject.create()
+        val refresh = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(emptyList())
+        accountA.collateral.onNext(response)
+        scheduler.triggerActions()
+        refresh.assertComplete()
+    }
+
     private fun refreshAll(): Completable =
         Completable.mergeArray(state.refreshPositionsAndCollateral(), state.refreshActiveOrders())
 
@@ -379,7 +483,7 @@ class PrivateTradingStateTest {
     }
 
     private class TradingApi {
-        val positions = PublishSubject.create<List<Position>>()
+        var positions = PublishSubject.create<List<Position>>()
         var collateral = PublishSubject.create<Map<String, Any>>()
         var orders = PublishSubject.create<List<ChildOrder>>()
         val executions = PublishSubject.create<List<PrivateExecution>>()
