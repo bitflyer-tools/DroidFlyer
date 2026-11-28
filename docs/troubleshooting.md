@@ -97,7 +97,7 @@ it loaded; tap into **Active** again or reopen the Order screen to retry.
 
 ## Order fill notifications
 
-**I'm not getting a notification when an order fills.**
+**I'm not getting a notification when an order fills, is rejected, or is canceled.**
 Check that notifications are allowed for DroidFlyer in Android's app settings; the permission is
 requested the first time you link an account, but it can be denied or revoked later. Also check
 that battery optimization isn't preventing the app from running in the background, and that the
@@ -107,8 +107,8 @@ connection to bitFlyer.
 On Android 15 and later, Android can stop background monitoring after six
 hours of background use in a 24-hour period. Open DroidFlyer again with your
 account still linked to reset the allowance and resume notifications for new
-fills.
+order updates.
 
-**Does watching for fills use more battery or data?**
+**Does watching for order updates use more battery or data?**
 Yes. While monitoring is active, DroidFlyer keeps a realtime connection open so it can notify
-you of fills even when the app isn't open. Unlinking the account under **Setting** stops monitoring.
+you of fills, rejections, and cancellations even when the app isn't open. Unlinking the account under **Setting** stops monitoring.

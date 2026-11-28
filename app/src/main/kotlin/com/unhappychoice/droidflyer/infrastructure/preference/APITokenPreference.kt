@@ -15,7 +15,7 @@ class APITokenPreference internal constructor(
     private val unlinks = PublishSubject.create<Unit>()
     internal val accountUnlinked = unlinks.hide()
 
-    private val changes = PublishSubject.create<Unit>()
+    private val changes = PublishSubject.create<Unit>().toSerialized()
     /** Emitted whenever the saved credentials may have changed, including on unlink. */
     internal val credentialsChanged = changes.hide()
 

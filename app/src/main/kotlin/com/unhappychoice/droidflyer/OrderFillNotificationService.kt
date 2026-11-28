@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Keeps a [RealtimeSession] alive independent of [MainActivity] so a system notification is
- * posted for order fills while the app is backgrounded. Started and stopped by
+ * posted for order outcomes while the app is backgrounded. Started and stopped by
  * [OrderFillNotificationController] as the linked account changes.
  */
 class OrderFillNotificationService : Service() {
@@ -36,7 +36,7 @@ class OrderFillNotificationService : Service() {
         createNotificationChannels()
         startForeground(SERVICE_NOTIFICATION_ID, watchingNotification())
         session = sessionFactory(application as DroidFlyerApplication).apply {
-            notifyExecutions(::notifyFill)
+            notifyOrderOutcomes(::notifyOutcome)
         }
     }
 
@@ -54,16 +54,22 @@ class OrderFillNotificationService : Service() {
         super.onDestroy()
     }
 
-    private fun notifyFill(event: ChildOrderEvent) {
+    private fun notifyOutcome(event: ChildOrderEvent) {
         val notification = NotificationCompat.Builder(this, FILL_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(executionMessage(event))
+            .setContentText(outcomeMessage(event))
             .setContentIntent(openAppIntent())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(this).notify(nextFillNotificationId.incrementAndGet(), notification)
+    }
+
+    private fun outcomeMessage(event: ChildOrderEvent): String = when (event.eventType) {
+        "ORDER_FAILED" -> getString(R.string.order_notification_rejected, event.productCode)
+        "CANCEL" -> getString(R.string.order_notification_canceled, event.productCode)
+        else -> executionMessage(event)
     }
 
     private fun watchingNotification() =
@@ -109,15 +115,12 @@ class OrderFillNotificationService : Service() {
             val api = module.direct.instance<APIClient>()
             val stopSubmissions = StopSubmissionPreference(application)
             val client = RealtimeClient(module.direct.instance(), preference)
-            val status = CurrentStatusService(module.direct.instance<APIClientV1>(), client, null).apply {
-                initializeAccount {
-                    val credentials = preference.read()
-                    api.privateStatusClient(credentials)?.let { client ->
-                        client to stopSubmissions.forApiKey(credentials.key)
-                    }
+            val status = CurrentStatusService(module.direct.instance<APIClientV1>(), client, null)
+            return RealtimeSession(client, status).apply {
+                watchSavedAccount { credentials ->
+                    api.privateStatusClient(credentials) to stopSubmissions.forApiKey(credentials.key)
                 }
             }
-            return RealtimeSession(client, status)
         }
 
         fun start(context: Context) {

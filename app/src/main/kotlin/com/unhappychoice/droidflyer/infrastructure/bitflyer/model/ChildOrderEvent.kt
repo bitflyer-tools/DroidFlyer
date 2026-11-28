@@ -20,6 +20,9 @@ data class ChildOrderEvent(
 ) {
     fun isExecution(): Boolean = eventType == "EXECUTION"
 
+    internal fun isNotificationOutcome(): Boolean =
+        isExecution() || eventType == "ORDER_FAILED" || eventType == "CANCEL"
+
     internal fun affectsStopOrderStatus(): Boolean =
         (childOrderType == null || childOrderType == "MARKET") && eventType in stopOrderStatusEvents
 

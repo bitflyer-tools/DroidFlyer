@@ -33,7 +33,10 @@ internal class PrivateRealtimeConnection(
     private lateinit var availability: (PrivateEvent<Boolean>) -> Unit
 
     fun canReuse(other: APICredentials): Boolean =
-        authenticated != null && !subscriptionRejected && credentials.key == other.key && credentials.secret == other.secret
+        authenticated != null && !subscriptionRejected && matches(other)
+
+    fun matches(other: APICredentials): Boolean =
+        credentials.key == other.key && credentials.secret == other.secret
 
     fun connect(
         childOrders: (PrivateEvent<List<ChildOrderEvent>>) -> Unit,

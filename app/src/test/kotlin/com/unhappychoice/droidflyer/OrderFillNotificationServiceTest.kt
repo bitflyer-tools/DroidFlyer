@@ -6,6 +6,7 @@ import android.content.pm.ServiceInfo
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopSubmissionGuard
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
@@ -71,7 +72,7 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun startsForegroundAndNotifiesOnExecutionThenClosesSessionOnDestroy() {
+    fun notifiesOrderOutcomesAfterCredentialReplacementAndClosesSessionOnDestroy() {
         val socket = TestSocket()
         val accountSockets = mutableListOf<TestSocket>()
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
@@ -84,7 +85,11 @@ class OrderFillNotificationServiceTest {
         ) { _, _, _ -> Observable.empty<Any>() } as APIClientV1
         val client = RealtimeClient(gson, preference, socket) { TestSocket().also(accountSockets::add) }
         val status = CurrentStatusService(api, client, api)
-        OrderFillNotificationService.sessionFactory = { RealtimeSession(client, status) }
+        OrderFillNotificationService.sessionFactory = {
+            RealtimeSession(client, status).apply {
+                watchSavedAccount { api to StopSubmissionGuard.inMemory() }
+            }
+        }
 
         val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
         try {
@@ -92,32 +97,53 @@ class OrderFillNotificationServiceTest {
             val manager = service.getSystemService(NotificationManager::class.java)
             assertNotNull(shadowOf(manager).getNotification(1))
 
-            val account = accountSockets.single()
-            account.authenticate()
-            account.receiveExecution()
+            val previousAccount = accountSockets.last()
+            previousAccount.authenticate()
+            previousAccount.receiveEvent("EXECUTION")
+
+            preference.save(APICredentials("new-key", "new-secret"))
+            val replacement = accountSockets.last()
+            assertFalse(previousAccount.connected())
+            assertEquals("new-key", replacement.authKey)
+            preference.save(APICredentials("new-key", "new-secret"))
+            assertEquals(listOf(previousAccount, replacement), accountSockets)
+            time.triggerActions()
+            assertEquals(1, shadowOf(manager).allNotifications.size)
+
+            replacement.authenticate()
+            replacement.receiveEvent("EXECUTION")
+            replacement.receiveEvent("ORDER_FAILED")
+            replacement.receiveEvent("CANCEL")
+            replacement.receiveEvent("CANCEL_FAILED")
             time.triggerActions()
 
-            val fillNotification = shadowOf(manager).getNotification(2)
-            assertNotNull(fillNotification)
             val expectedEvent = ChildOrderEvent(
                 "FX_BTC_JPY", "JFX20180101-000000-000001F", "JRF20180101-000000-000001",
                 "2018-01-01T00:00:00.1234567Z", "EXECUTION", null, null, null, 123L, "BUY",
                 BigDecimal("1000000"), 0.01, 0.0, 0.0
             )
             assertEquals(
-                service.executionMessage(expectedEvent),
-                fillNotification.extras.getCharSequence(Notification.EXTRA_TEXT).toString()
+                listOf(
+                    service.executionMessage(expectedEvent),
+                    service.getString(R.string.order_notification_rejected, "FX_BTC_JPY"),
+                    service.getString(R.string.order_notification_canceled, "FX_BTC_JPY")
+                ).sorted(),
+                shadowOf(manager).allNotifications.mapNotNull {
+                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                }.sorted()
             )
         } finally {
             controller.destroy()
             assertFalse(socket.connected())
-            assertFalse(accountSockets.single().connected())
+            assertTrue(accountSockets.none { it.connected() })
         }
     }
 
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
         private var open = false
         private var ack: Ack? = null
+        var authKey: String? = null
+            private set
 
         override fun connect(): Socket = apply {
             open = true
@@ -125,7 +151,10 @@ class OrderFillNotificationServiceTest {
         }
 
         override fun emit(event: String, vararg args: Any): Emitter {
-            if (event == "auth") ack = args.last() as Ack
+            if (event == "auth") {
+                ack = args.last() as Ack
+                authKey = (args.first() as JSONObject).getString("api_key")
+            }
             return this
         }
 
@@ -135,14 +164,14 @@ class OrderFillNotificationServiceTest {
 
         override fun connected(): Boolean = open
 
-        fun receiveExecution() {
+        fun receiveEvent(eventType: String) {
             val events = JSONArray(
                 """[{
                     "product_code": "FX_BTC_JPY",
                     "child_order_id": "JFX20180101-000000-000001F",
                     "child_order_acceptance_id": "JRF20180101-000000-000001",
                     "event_date": "2018-01-01T00:00:00.1234567Z",
-                    "event_type": "EXECUTION",
+                    "event_type": "$eventType",
                     "exec_id": 123,
                     "side": "BUY",
                     "price": 1000000,

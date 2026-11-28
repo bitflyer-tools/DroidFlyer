@@ -83,6 +83,14 @@ class RealtimeClient internal constructor(
         if (!disconnected) connectSavedAccount()
     }
 
+    internal fun refreshSavedAccount(): APICredentials = synchronized(credentialLock) {
+        val credentials = preference.read()
+        synchronized(accountLock) {
+            if (!disconnected && account?.matches(credentials) != true) connectAccount(credentials)
+        }
+        credentials
+    }
+
     fun disconnect(): Unit = synchronized(accountLock) {
         if (disconnected) return@synchronized
         disconnected = true
