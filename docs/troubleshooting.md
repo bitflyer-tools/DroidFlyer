@@ -38,10 +38,15 @@ submitting again, to avoid placing the same order twice.
 bitFlyer rejected the order submission itself (for example insufficient balance or an invalid
 price). Check your balance and the order details, then try again.
 
-**Clear all positions failed with "Could not confirm that all positions were closed."**
-DroidFlyer reads your open positions, submits a market order to close them, then reads the
-resulting child order to confirm it filled. This message means the confirmation step failed;
-check **Order** → **Orders** → **Active** and your positions, then retry if a position remains.
+**Clear all positions showed "Could not confirm that all positions were closed. Check your positions and orders."**
+DroidFlyer rereads your positions before submitting a closing order. If the live net position
+size is still nonzero and differs from the size you confirmed, the app stops before sending
+an order. The same message can also appear if the app cannot verify closure after sending a
+closing order.
+
+The message alone cannot tell you whether a closing order was sent. Before retrying, check
+your positions and orders, including **Order** → **Orders** → **Active** and any recent fills.
+Retry only if a position remains and no closing order is still active.
 If the position is smaller than the minimum order size (0.001 BTC-CFD), DroidFlyer cannot submit a
 closing order for it.
 
