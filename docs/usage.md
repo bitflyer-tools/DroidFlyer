@@ -16,9 +16,16 @@ under **Order** → **Limit** before connecting an account.
   its acceptance ID to confirm the order filled. **Limit** shows the live
   order book and lets you select a price level for a limit order. Use
   **Grouping** to change how the book combines price levels.
-- **Order** → **Orders** → **Active** lists active orders and lets you cancel them.
-  **Fills** shows recent executions for your account. Tap **Refresh** to
-  reload them or **Load older fills** to see earlier executions.
+- **Order** → **Stop** places a Crypto CFD stop order: choose Buy or Sell, a
+  quantity, and a trigger price, then review and submit. When the trigger
+  price is reached, bitFlyer submits a market order; the execution price may
+  differ from the trigger price. Reviewing and canceling stop orders needs
+  the **Receive order events** permission; see
+  [Stop orders](troubleshooting.md#stop-orders) if it's unavailable.
+- **Order** → **Orders** → **Active** lists active child orders and stop
+  orders waiting to trigger, and lets you cancel them. **Fills** shows recent
+  executions for your account. Tap **Refresh** to reload them or **Load
+  older fills** to see earlier executions.
 
 ## Account settings
 
@@ -55,5 +62,10 @@ Lightning API.
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
 | Clear all positions | `GET /v1/me/getpositions`, `POST /v1/me/sendchildorder`, `GET /v1/me/getchildorders` |
+| Submit or track a stop order | `POST /v1/me/sendparentorder`, `GET /v1/me/getparentorders`, `GET /v1/me/getparentorder`, `GET /v1/me/getchildorders` |
+| Cancel a stop order | `POST /v1/me/cancelparentorder` |
+
+Stop orders also need the **Receive order events** permission, enabled separately from the
+REST permissions above, so DroidFlyer can track them over bitFlyer's private realtime channels.
 
 See [FAQ and troubleshooting](troubleshooting.md) for what each in-app error message means and how to fix it.
