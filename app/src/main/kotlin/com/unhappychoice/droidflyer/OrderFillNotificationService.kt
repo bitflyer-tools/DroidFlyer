@@ -34,20 +34,23 @@ class OrderFillNotificationService : Service() {
     private var session: RealtimeSession? = null
     private var orderChecks: Disposable? = null
     private var parentAccessWarningShown = false
+    private var latestStartId = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val app = application as DroidFlyerApplication
+        latestStartId = startId
         if (intent?.action != ACTION_START || !notificationsAllowed(this)) {
-            stopSelf()
+            stopWatching(startId)
             return START_NOT_STICKY
         }
+
+        createNotificationChannels()
+        if (!notificationsAllowed(this)) {
+            stopWatching(startId)
+            return START_NOT_STICKY
+        }
+        startForeground(SERVICE_NOTIFICATION_ID, watchingNotification())
         if (orderChecks == null) {
-            createNotificationChannels()
-            if (!notificationsAllowed(this)) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            startForeground(SERVICE_NOTIFICATION_ID, watchingNotification())
+            val app = application as DroidFlyerApplication
             app.orderFillNotifications.running.value = true
             watchOpenOrders(app)
         }
@@ -57,16 +60,29 @@ class OrderFillNotificationService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        stopSelf()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopWatching(latestStartId)
         notifyOutcome(getString(R.string.order_fill_monitoring_runtime_limit))
     }
 
     override fun onDestroy() {
-        orderChecks?.dispose()
-        session?.close()
-        session = null
+        clearMonitoring()
         (application as DroidFlyerApplication).orderFillNotifications.running.value = false
         super.onDestroy()
+    }
+
+    private fun stopWatching(startId: Int) {
+        clearMonitoring()
+        // Android keeps the service alive when a newer start is already queued.
+        stopSelf(startId)
+    }
+
+    private fun clearMonitoring() {
+        orderChecks?.dispose()
+        orderChecks = null
+        session?.close()
+        session = null
+        parentAccessWarningShown = false
     }
 
     private fun watchOpenOrders(app: DroidFlyerApplication) {
@@ -96,7 +112,7 @@ class OrderFillNotificationService : Service() {
             }
             .filter { it }
             .take(1)
-            .subscribe({ stopSelf() }, { stopSelf() })
+            .subscribe({ stopWatching(latestStartId) }, { stopWatching(latestStartId) })
         realtime.watchSavedAccount()
     }
 
@@ -154,7 +170,7 @@ class OrderFillNotificationService : Service() {
     @SuppressLint("MissingPermission")
     private fun notifyOutcome(message: String) {
         if (!notificationsAllowed(this)) {
-            stopSelf()
+            stopWatching(latestStartId)
             return
         }
         val notification = NotificationCompat.Builder(this, FILL_CHANNEL_ID)
@@ -204,6 +220,7 @@ class OrderFillNotificationService : Service() {
 
     companion object {
         internal const val ACTION_START = "com.unhappychoice.droidflyer.action.START_ORDER_MONITORING"
+        private const val ACTION_STOP = "com.unhappychoice.droidflyer.action.STOP_ORDER_MONITORING"
         private const val PRODUCT_CODE = "FX_BTC_JPY"
         private const val ORDER_CHECK_SECONDS = 15L
         private const val MAX_CONSECUTIVE_FAILURES = 3
@@ -270,7 +287,8 @@ class OrderFillNotificationService : Service() {
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, OrderFillNotificationService::class.java))
+            val intent = Intent(context, OrderFillNotificationService::class.java).setAction(ACTION_STOP)
+            context.startService(intent)
         }
     }
 }

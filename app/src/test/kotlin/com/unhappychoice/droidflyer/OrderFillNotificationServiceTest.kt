@@ -76,6 +76,45 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
+    fun restartsMonitoringWhenAStartIsQueuedBehindAStop() {
+        val application = RuntimeEnvironment.getApplication()
+        val preference = testAPITokenPreference(application)
+        var sessions = 0
+        OrderFillNotificationService.sessionFactory = {
+            sessions++
+            RealtimeSession(RealtimeClient(GsonBuilder().create(), preference, TestSocket(), publicFeed = false) { TestSocket() })
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            val shadow = shadowOf(service)
+            service.onStartCommand(startIntent(), 0, 1)
+            time.advanceTimeBy(10, TimeUnit.SECONDS)
+
+            OrderFillNotificationService.stop(application)
+            val stopIntent = shadowOf(application).nextStartedService
+            OrderFillNotificationService.start(application)
+            val restartIntent = shadowOf(application).nextStartedService
+
+            service.onStartCommand(stopIntent, 0, 2)
+            assertTrue(shadow.isStoppedBySelf)
+            assertEquals(2, shadow.stopSelfId)
+
+            service.onStartCommand(restartIntent, 0, 3)
+            assertEquals(2, sessions)
+            assertTrue((application as DroidFlyerApplication).orderFillNotifications.running.value)
+
+            time.advanceTimeBy(20, TimeUnit.SECONDS)
+            assertEquals(2, shadow.stopSelfId)
+            time.advanceTimeBy(10, TimeUnit.SECONDS)
+            assertEquals(3, shadow.stopSelfId)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
     @Config(sdk = [36])
     fun stopsAndNotifiesWhenDataSyncTimesOut() {
         val application = RuntimeEnvironment.getApplication()
