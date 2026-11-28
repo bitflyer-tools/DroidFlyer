@@ -6,9 +6,11 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.PriceAlert
 import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
+import java.util.UUID
 
 internal const val PRICE_ALERT_CHANNEL_ID = "price_alerts"
 internal const val PRICE_ALERT_SERVICE_NOTIFICATION_ID = 1
@@ -34,6 +36,12 @@ internal fun Context.priceAlertServiceNotification(): Notification =
         .setSilent(true)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .build()
+
+internal fun Context.notifyPriceAlertTriggered(alert: PriceAlert) {
+    val tag = "price-alert-${UUID.randomUUID()}"
+    NotificationManagerCompat.from(this)
+        .notify(tag, PRICE_ALERT_SERVICE_NOTIFICATION_ID, priceAlertTriggeredNotification(alert))
+}
 
 internal fun Context.priceAlertTriggeredNotification(alert: PriceAlert): Notification {
     val direction = getString(

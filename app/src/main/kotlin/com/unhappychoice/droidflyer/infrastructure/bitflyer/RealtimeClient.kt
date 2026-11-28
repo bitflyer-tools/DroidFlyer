@@ -28,8 +28,8 @@ class RealtimeClient internal constructor(
     constructor(gson: Gson, preference: APITokenPreference) : this(
         gson,
         preference,
-        newSocket(),
-        ::newSocket
+        newRealtimeSocket(),
+        ::newRealtimeSocket
     )
 
     val board: PublishSubject<Board> = PublishSubject.create<Board>()
@@ -48,7 +48,7 @@ class RealtimeClient internal constructor(
     private val publicChannels = listOf(
         "lightning_board_FX_BTC_JPY",
         "lightning_board_snapshot_FX_BTC_JPY",
-        "lightning_executions_FX_BTC_JPY"
+        CRYPTO_CFD_EXECUTIONS_CHANNEL
     )
     private val authenticationWorker = Schedulers.io().createWorker()
     private val credentialLock = Any()
@@ -131,7 +131,7 @@ class RealtimeClient internal constructor(
                 decodeAndPublish(body, Board::class.java, board)
             "lightning_board_snapshot_FX_BTC_JPY" ->
                 decodeAndPublish(body, Board::class.java, boardSnapshot)
-            "lightning_executions_FX_BTC_JPY" ->
+            CRYPTO_CFD_EXECUTIONS_CHANNEL ->
                 decodeAndPublish(body, executionsType, executions)
         }
     }
@@ -139,14 +139,14 @@ class RealtimeClient internal constructor(
     private fun <T : Any> decodeAndPublish(body: String, type: Type, subject: PublishSubject<T>) {
         gson.decodeRealtimePayload<T>(body, type)?.let(subject::onNext)
     }
-
-    private companion object {
-        fun newSocket(): Socket = IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
-            transports = arrayOf("websocket")
-            forceNew = true
-        })
-    }
 }
+
+internal const val CRYPTO_CFD_EXECUTIONS_CHANNEL = "lightning_executions_FX_BTC_JPY"
+
+internal fun newRealtimeSocket(): Socket = IO.socket("https://io.lightstream.bitflyer.com", IO.Options().apply {
+    transports = arrayOf("websocket")
+    forceNew = true
+})
 
 internal fun <T : Any> Gson.decodeRealtimePayload(body: String, type: Type): T? = try {
     fromJson<T>(body, type)

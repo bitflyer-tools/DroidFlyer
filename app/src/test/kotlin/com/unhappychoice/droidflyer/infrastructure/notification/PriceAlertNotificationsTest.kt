@@ -40,6 +40,19 @@ class PriceAlertNotificationsTest {
     }
 
     @Test
+    fun repeatedAlertIdsProduceDistinctNotificationsAlongsideTheService() {
+        context.createPriceAlertNotificationChannel()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.notify(PRICE_ALERT_SERVICE_NOTIFICATION_ID, context.priceAlertServiceNotification())
+
+        context.notifyPriceAlertTriggered(PriceAlert(1, 12_000_000, PriceAlertDirection.ABOVE))
+        context.notifyPriceAlertTriggered(PriceAlert(1, 11_000_000, PriceAlertDirection.BELOW))
+
+        assertEquals(3, manager.activeNotifications.size)
+        assertEquals(3, manager.activeNotifications.map { it.tag }.toSet().size)
+    }
+
+    @Test
     fun triggeredNotificationDescribesTheCrossedDirectionAndPrice() {
         val notification = context.priceAlertTriggeredNotification(PriceAlert(1, 12_000_000, PriceAlertDirection.ABOVE))
 
