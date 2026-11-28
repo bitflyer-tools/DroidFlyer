@@ -237,8 +237,8 @@ class CurrentStatusServiceTest {
         `when`(api.getPositions()).thenReturn(positions.take(1))
         `when`(api.getCollateral()).thenReturn(collateral.take(1))
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(orderResponses.take(1))
-        `when`(api.cancelChildOrder(CancelChildOrderRequest(activeOrder.productCode, activeOrder.childOrderAcceptanceId)))
-            .thenReturn(Completable.complete())
+        val cancellation = CancelChildOrderRequest(activeOrder.productCode, activeOrder.childOrderAcceptanceId)
+        `when`(api.cancelChildOrder(cancellation)).thenReturn(Completable.complete())
         val presenter = OrdersPresenter(service)
         val rows = presenter.orders.test()
 
@@ -260,7 +260,8 @@ class CurrentStatusServiceTest {
         orderResponses.onNext(emptyList())
         scheduler.triggerActions()
 
-        rows.assertValues(emptyList(), listOf(row), emptyList())
+        rows.assertValues(emptyList(), listOf(row), listOf(row.copy(isCancelling = true)), listOf(row), emptyList())
+        verify(api).cancelChildOrder(cancellation)
         assertTrue(positions.hasObservers())
         assertTrue(collateral.hasObservers())
         verify(api, times(2)).getPositions()
