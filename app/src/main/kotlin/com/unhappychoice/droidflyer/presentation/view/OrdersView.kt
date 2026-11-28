@@ -4,9 +4,13 @@ import android.content.Context
 import android.util.AttributeSet
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager.widget.ViewPager
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.R
@@ -18,6 +22,7 @@ import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.FillAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
+import com.unhappychoice.droidflyer.presentation.adapter.OrderViewPagerAdapter.Companion.ORDERS_POSITION
 import com.unhappychoice.droidflyer.presentation.adapter.StopOrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.FillHistory
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
@@ -38,6 +43,23 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
 
     private val stopAdapter by lazy { StopOrderAdapter(::confirmStopCancellation) }
     private var cancellationDialog: AlertDialog? = null
+    private var pager: ViewPager? = null
+    private var lifecycleOwner: LifecycleOwner? = null
+    private var started = false
+    private val lifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            started = true
+            updateActiveOrdersVisibility()
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+            started = false
+            updateActiveOrdersVisibility()
+        }
+    }
+    private val pageListener = object : ViewPager.SimpleOnPageChangeListener() {
+        override fun onPageSelected(position: Int) = updateActiveOrdersVisibility()
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -55,7 +77,6 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
             binding.retryStops.isVisible = it
         }.addTo(subscriptions)
         binding.retryStops.setOnClickListener { presenter.refreshStops() }
-        presenter.refreshStops()
 
         presenter.orders
             .subscribeNext { orderAdapter.updateOrders(it) }
@@ -77,9 +98,18 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         orderAdapter.clickCancel
             .subscribeNext { presenter.cancelOrder(it) }
             .addTo(subscriptions)
+
+        pager = (parent as? ViewPager)?.also { it.addOnPageChangeListener(pageListener) }
+        lifecycleOwner = findViewTreeLifecycleOwner()?.also { it.lifecycle.addObserver(lifecycleObserver) }
     }
 
     override fun onDetachedFromWindow() {
+        lifecycleOwner?.lifecycle?.removeObserver(lifecycleObserver)
+        lifecycleOwner = null
+        pager?.removeOnPageChangeListener(pageListener)
+        pager = null
+        started = false
+        updateActiveOrdersVisibility()
         cancellationDialog?.dismiss()
         cancellationDialog = null
         subscriptions.clear()
@@ -127,7 +157,14 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     private fun showFills(selected: Boolean) {
         binding.activeOrdersPanel.isVisible = !selected
         binding.fillsPanel.isVisible = selected
+        updateActiveOrdersVisibility()
         if (selected && !presenter.fillHistory.state.value.loaded) presenter.fillHistory.refresh()
+    }
+
+    private fun updateActiveOrdersVisibility() {
+        presenter.setActiveOrdersVisible(
+            started && pager?.currentItem == ORDERS_POSITION && binding.ordersTabs.selectedTabPosition == 0
+        )
     }
 
     private fun renderFills(state: FillHistory.State) {

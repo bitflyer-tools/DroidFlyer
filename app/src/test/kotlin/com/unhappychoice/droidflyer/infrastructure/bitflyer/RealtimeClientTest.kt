@@ -417,7 +417,7 @@ class RealtimeClientTest {
                 account.subscriptionAcks.getValue("child_order_events").call()
                 account.subscriptionAcks.getValue("parent_order_events").call(JSONObject().put("message", "Denied"))
                 val stops = service.privateState.stopOrders
-                stops.refresh()
+                stops.setActiveOrdersVisible(true)
                 scheduler.advanceTimeBy(28, SECONDS)
                 assertFalse(stops.orderEventsReady)
                 assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
