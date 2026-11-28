@@ -1088,7 +1088,8 @@ class StopOrderServiceTest {
 
             assertEquals(1, activeParentReadCount() - scansBeforeRecovery)
             assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
-            reportedEligibility.assertNever(true).dispose()
+            reportedEligibility.dispose()
+            assertFalse(reportedEligibility.values().contains(true))
             assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
         }
 
