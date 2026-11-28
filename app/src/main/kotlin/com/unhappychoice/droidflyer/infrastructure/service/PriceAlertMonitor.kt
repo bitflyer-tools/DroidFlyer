@@ -12,7 +12,7 @@ import io.reactivex.rxkotlin.addTo
 internal class PriceAlertMonitor(
     private val preference: PriceAlertPreference,
     executions: Observable<List<Execution>>,
-    private val onTriggered: (PriceAlert) -> Unit
+    private val postNotification: (PriceAlert) -> Boolean
 ) {
     private val bag = CompositeDisposable()
     private var previousPrice: Double? = null
@@ -31,8 +31,7 @@ internal class PriceAlertMonitor(
 
     private fun evaluatePrice(price: Double) {
         triggeredAlerts(previousPrice, price, preference.read()).forEach { alert ->
-            preference.remove(alert.id)
-            onTriggered(alert)
+            if (postNotification(alert)) preference.remove(alert.id)
         }
         previousPrice = price
     }

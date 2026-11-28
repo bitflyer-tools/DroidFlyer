@@ -1,8 +1,10 @@
 package com.unhappychoice.droidflyer.infrastructure.service
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import com.google.gson.FieldNamingPolicy
@@ -52,7 +54,13 @@ internal class PriceAlertService : Service() {
 
     companion object {
         fun start(context: Context) {
-            ContextCompat.startForegroundService(context, Intent(context, PriceAlertService::class.java))
+            try {
+                ContextCompat.startForegroundService(context, Intent(context, PriceAlertService::class.java))
+            } catch (exception: IllegalStateException) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                    exception !is ForegroundServiceStartNotAllowedException
+                ) throw exception
+            }
         }
     }
 }

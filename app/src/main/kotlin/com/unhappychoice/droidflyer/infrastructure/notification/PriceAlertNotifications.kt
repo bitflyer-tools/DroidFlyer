@@ -1,12 +1,15 @@
 package com.unhappychoice.droidflyer.infrastructure.notification
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.PriceAlert
 import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
@@ -37,10 +40,29 @@ internal fun Context.priceAlertServiceNotification(): Notification =
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .build()
 
-internal fun Context.notifyPriceAlertTriggered(alert: PriceAlert) {
-    val tag = "price-alert-${UUID.randomUUID()}"
-    NotificationManagerCompat.from(this)
-        .notify(tag, PRICE_ALERT_SERVICE_NOTIFICATION_ID, priceAlertTriggeredNotification(alert))
+internal fun Context.notifyPriceAlertTriggered(alert: PriceAlert): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    ) return false
+
+    val manager = NotificationManagerCompat.from(this)
+    if (!manager.canPostPriceAlert()) return false
+
+    return try {
+        val tag = "price-alert-${UUID.randomUUID()}"
+        manager.notify(tag, PRICE_ALERT_SERVICE_NOTIFICATION_ID, priceAlertTriggeredNotification(alert))
+        true
+    } catch (_: SecurityException) {
+        false
+    }
+}
+
+private fun NotificationManagerCompat.canPostPriceAlert(): Boolean {
+    if (!areNotificationsEnabled()) return false
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+
+    val importance = getNotificationChannel(PRICE_ALERT_CHANNEL_ID)?.importance
+    return importance != null && importance != NotificationManager.IMPORTANCE_NONE
 }
 
 internal fun Context.priceAlertTriggeredNotification(alert: PriceAlert): Notification {

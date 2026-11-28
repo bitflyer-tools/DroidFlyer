@@ -4,7 +4,6 @@ import android.app.Application
 import com.unhappychoice.droidflyer.infrastructure.notification.createPriceAlertNotificationChannel
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
-import com.unhappychoice.droidflyer.infrastructure.service.PriceAlertService
 import mortar.MortarScope
 
 class DroidFlyerApplication : Application() {
@@ -19,7 +18,6 @@ class DroidFlyerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         createPriceAlertNotificationChannel()
-        if (priceAlertPreference.read().isNotEmpty()) PriceAlertService.start(this)
     }
 
     override fun getSystemService(name: String): Any? {

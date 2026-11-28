@@ -19,7 +19,10 @@ class PriceAlertMonitorTest {
     private val preference = PriceAlertPreference(RuntimeEnvironment.getApplication())
     private val executions = PublishSubject.create<List<Execution>>()
     private val triggered = mutableListOf<PriceAlert>()
-    private val monitor = PriceAlertMonitor(preference, executions, triggered::add)
+    private var notificationsEnabled = true
+    private val monitor = PriceAlertMonitor(preference, executions) {
+        notificationsEnabled && triggered.add(it)
+    }
 
     @Test
     fun firesOnlyWhenThePriceCrossesTheTargetAndThenClearsTheAlert() {
@@ -36,6 +39,23 @@ class PriceAlertMonitorTest {
         executions.onNext(listOf(execution(1, 90.0)))
         executions.onNext(listOf(execution(1, 110.0)))
         assertEquals(emptyList<PriceAlert>(), triggered)
+    }
+
+    @Test
+    fun keepsAnUndeliveredAlertArmedForTheNextCrossing() {
+        val alert = requireNotNull(preference.add(100, PriceAlertDirection.ABOVE))
+        notificationsEnabled = false
+
+        executions.onNext(listOf(execution(1, 90.0), execution(2, 110.0)))
+        assertEquals(listOf(alert), preference.read())
+        assertEquals(emptyList<PriceAlert>(), triggered)
+
+        notificationsEnabled = true
+        executions.onNext(listOf(execution(3, 120.0)))
+        assertEquals(emptyList<PriceAlert>(), triggered)
+        executions.onNext(listOf(execution(4, 90.0), execution(5, 110.0)))
+        assertEquals(listOf(alert), triggered)
+        assertEquals(emptyList<PriceAlert>(), preference.read())
     }
 
     @Test

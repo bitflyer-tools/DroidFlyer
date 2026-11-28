@@ -41,12 +41,13 @@ Under **Setting** → **Price Alerts**, enter a target price in JPY, choose
 **Above** or **Below**, and tap **Add alert** to watch the Crypto CFD
 (BTC-CFD/JPY) market price. You can have up to 10 alerts at a time.
 
-An alert fires a system notification the moment the market crosses the
-target price and is then removed automatically; set a new alert if you
-want to watch the same level again. Alerts only cover Crypto CFD and keep
-watching the price in the background through a foreground service, so
-you do not need to keep the app open or the screen on. Allow DroidFlyer
-to post notifications when prompted, or alerts will not be shown.
+An alert posts a system notification when the market crosses the target
+price and is then removed automatically. If DroidFlyer or the Price
+Alerts notification channel is blocked, the alert stays saved and can
+notify you on a later crossing after notifications are enabled. Open
+DroidFlyer to resume monitoring saved alerts after the app has been
+stopped. While the foreground service is running, monitoring continues
+in the background with the screen off.
 
 ## Private REST API permissions
 
