@@ -23,3 +23,11 @@ The `jacoco` task runs the debug unit tests and generates coverage reports. `scr
 ## Open a pull request
 
 Push your branch to your fork and open a pull request against `bitflyer-tools/DroidFlyer:master`. Describe what changed, how you verified it, and any checks you could not run. Follow the [Code of Conduct](CODE_OF_CONDUCT.md) when participating.
+
+## Publish to Google Play
+
+After tests pass on `master`, CircleCI holds deployment at `approve-play-release`.
+Before approving a release that includes background price alerts, verify in Play Console under
+**App content** that the `specialUse` foreground service declaration for price alerts is complete.
+Leave the job on hold until this is confirmed. See the
+[Google Play foreground service requirements](https://support.google.com/googleplay/android-developer/answer/13392821?hl=en).

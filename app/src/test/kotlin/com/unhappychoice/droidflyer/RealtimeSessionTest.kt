@@ -5,6 +5,7 @@ import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.Collateral
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopSubmissionGuard
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
@@ -17,7 +18,7 @@ import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
 import io.reactivex.schedulers.Schedulers
 import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
-import io.socket.client.Ack
+import io.socket.client.AckWithTimeout
 import io.socket.client.Manager
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
@@ -162,13 +163,15 @@ class RealtimeSessionTest {
             TestSocket().also(accountSockets::add)
         }.also { accountSockets.single().authenticate() }
         val status = CurrentStatusService(api, client, api)
-        val lifecycle = RealtimeSession(client, status).apply { notifyExecutions { notifications++ } }
+        val lifecycle = RealtimeSession(client, status) {
+            it.credentials.takeIf { it.isConfigured }?.let { api to StopSubmissionGuard.inMemory() }
+        }.apply { notifyExecutions { notifications++ } }
     }
 
     private class TestSocket : Socket(Manager(), "/", Manager.Options()) {
         private var open = false
 
-        private var ack: Ack? = null
+        private var ack: AckWithTimeout? = null
 
         override fun connect(): Socket = apply {
             open = true
@@ -176,7 +179,13 @@ class RealtimeSessionTest {
         }
 
         override fun emit(event: String, vararg args: Any): Emitter {
-            if (event == "auth") ack = args.last() as Ack
+            val acknowledgment = args.lastOrNull() as? AckWithTimeout ?: return this
+            if (event == "auth") {
+                acknowledgment.cancelTimer()
+                ack = acknowledgment
+            } else {
+                acknowledgment.call(JSONObject.NULL)
+            }
             return this
         }
 

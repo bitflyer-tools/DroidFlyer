@@ -8,8 +8,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.*
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import io.reactivex.Completable
-import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
@@ -74,6 +74,8 @@ class CurrentStatusService internal constructor(
     private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
     private var accountChanged = CompletableSubject.create()
+    private var appliedGeneration: Long? = null
+    @Volatile private var explicitAccountSwitch = 0L
     private var channelAvailability: PrivateEvent<Boolean>? = null
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val activeOrderRefresh = StatusRefreshCoordinator(privateState::refreshActiveOrders)
@@ -167,18 +169,45 @@ class CurrentStatusService internal constructor(
         boardRefresh.request(followUp = false)
     }
 
-    internal fun initializeAccount(loadAccount: () -> Pair<APIClientV1, StopSubmissionGuard>?) {
-        val initialAccount = accountChanged
-        Maybe.fromCallable<Pair<APIClientV1, StopSubmissionGuard>> { loadAccount() }
-            .toObservable()
+    internal fun initializeAccount(
+        preference: APITokenPreference,
+        loadAccount: (APITokenPreference.Snapshot) -> Pair<APIClientV1, StopSubmissionGuard>?
+    ) = loadSavedAccount(preference, loadAccount, clearIfUnconfigured = false)
+
+    internal fun applyAccountChange(
+        preference: APITokenPreference,
+        loadAccount: (APITokenPreference.Snapshot) -> Pair<APIClientV1, StopSubmissionGuard>?
+    ) = loadSavedAccount(preference, loadAccount, clearIfUnconfigured = true)
+
+    private fun loadSavedAccount(
+        preference: APITokenPreference,
+        loadAccount: (APITokenPreference.Snapshot) -> Pair<APIClientV1, StopSubmissionGuard>?,
+        clearIfUnconfigured: Boolean
+    ) {
+        val explicitSwitch = explicitAccountSwitch
+        Observable.fromCallable {
+            val snapshot = preference.readSnapshot()
+            snapshot.generation to loadAccount(snapshot)
+        }
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { (client, guard) ->
-                if (accountChanged === initialAccount) switchAccount(client, guard)
+            .subscribeNext { (generation, account) ->
+                if (explicitSwitch != explicitAccountSwitch || generation != preference.credentialsGeneration ||
+                    generation == appliedGeneration || (account == null && !clearIfUnconfigured)
+                ) return@subscribeNext
+
+                appliedGeneration = generation
+                replaceAccount(account?.first, account?.second ?: StopSubmissionGuard.inMemory())
             }
             .addTo(bag)
     }
 
     internal fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
+        explicitAccountSwitch++
+        appliedGeneration = null
+        replaceAccount(client, guard)
+    }
+
+    private fun replaceAccount(client: APIClientV1?, guard: StopSubmissionGuard) {
         if (bag.isDisposed) return
 
         val previous = accountChanged

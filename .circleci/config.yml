@@ -79,6 +79,10 @@ workflows:
     jobs:
       - build
       - test: { requires: [build] }
-      - deploy:
+      - approve-play-release:
+          type: approval
           filters: pipeline.git.branch == "master"
           requires: [test]
+      - deploy:
+          filters: pipeline.git.branch == "master"
+          requires: [approve-play-release]
