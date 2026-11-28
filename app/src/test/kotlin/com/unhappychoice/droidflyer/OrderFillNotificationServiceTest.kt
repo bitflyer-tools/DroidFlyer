@@ -177,7 +177,7 @@ class OrderFillNotificationServiceTest {
             time.triggerActions()
             previousAccount.receiveEvent("EXECUTION")
 
-            preference.save(APICredentials("new-key", "new-secret"))
+            assertTrue(preference.saveIfChanged(APICredentials("new-key", "new-secret"), preference.credentialsGeneration))
             assertTrue(previousAccount.connected())
             previousAccount.receiveEvent("EXECUTION")
             time.triggerActions()

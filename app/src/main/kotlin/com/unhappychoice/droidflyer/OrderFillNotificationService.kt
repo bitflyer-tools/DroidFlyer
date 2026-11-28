@@ -224,8 +224,8 @@ class OrderFillNotificationService : Service() {
         }
 
         private fun checkOrderStatus(app: DroidFlyerApplication): Observable<OrderStatus> {
-            val credentials = app.tokenPreference.read()
-            val api = app.module.direct.instance<APIClient>().privateStatusClient(credentials)
+            val account = app.tokenPreference.readSnapshot()
+            val api = app.module.direct.instance<APIClient>().privateStatusClient(account)
                 ?: return Observable.just(OrderStatus.EMPTY)
             return checkOrderStatus(api)
         }

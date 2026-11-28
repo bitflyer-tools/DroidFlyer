@@ -473,9 +473,7 @@ class SettingsViewTest {
             val presenter = SettingsPresenter(
                 APIClient(Gson(), preference, transport),
                 preference,
-                switchAccount = { _, _ -> },
                 accountPreference = CryptoCfdAccountPreference(this),
-                updateRealtimeAccount = { it() },
                 requestNotificationPermission = { notificationPermissionRequests++ },
                 monitoring = monitoring,
                 toggleMonitoring = { monitoring.value = !monitoring.value }

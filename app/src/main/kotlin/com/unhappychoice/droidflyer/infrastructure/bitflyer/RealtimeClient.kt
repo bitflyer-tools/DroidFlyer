@@ -90,7 +90,7 @@ class RealtimeClient internal constructor(
     }
 
     internal fun refreshSavedAccount(): APICredentials = synchronized(credentialLock) {
-        val (credentials, generation) = preference.readWithGeneration()
+        val (credentials, generation) = preference.readRealtimeSnapshot()
         synchronized(accountLock) {
             if (!disconnected && account?.matches(credentials, generation) != true) connectAccount(credentials, generation)
         }
@@ -108,7 +108,7 @@ class RealtimeClient internal constructor(
     }
 
     private fun connectSavedAccount() {
-        val (credentials, generation) = preference.readWithGeneration()
+        val (credentials, generation) = preference.readRealtimeSnapshot()
         synchronized(accountLock) {
             if (!disconnected) connectAccount(credentials, generation)
         }
@@ -121,7 +121,7 @@ class RealtimeClient internal constructor(
         if (!credentials.isConfigured) return
         // Private channel messages carry no account identity, so each account needs its own socket.
         val connection = PrivateRealtimeConnection(gson, credentials, generation, createPrivateSocket(), accountLock) {
-            preference.credentialGeneration == generation
+            preference.realtimeGeneration == generation
         }
         account = connection
         connection.connect(childEvents::onNext, parentEvents::onNext, availability::onNext)

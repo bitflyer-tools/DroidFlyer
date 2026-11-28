@@ -47,6 +47,10 @@ class OrderFillNotificationControllerTest {
             controller.startMonitoring()
             assertEquals(listOf(true), states)
 
+            preference.saveIfChanged(APICredentials("new-key", "new-secret"), preference.credentialsGeneration)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(listOf(true), states)
+
             preference.clear()
             shadowOf(Looper.getMainLooper()).idle()
             assertEquals(listOf(true, false), states)

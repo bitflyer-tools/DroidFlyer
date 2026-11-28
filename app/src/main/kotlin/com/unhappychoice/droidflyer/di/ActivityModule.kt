@@ -4,11 +4,12 @@ import android.os.SystemClock
 import com.unhappychoice.droidflyer.DroidFlyerApplication
 import com.unhappychoice.droidflyer.MainActivity
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.StopSubmissionGuard
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
-import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.presenter.*
 import org.kodein.di.DI
@@ -24,29 +25,17 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindSingleton<RealtimeClient> { RealtimeClient(instance(), instance()) }
     bind<CurrentStatusService> {
         eagerSingleton {
-            val preference = instance<APITokenPreference>()
-            val api = instance<APIClient>()
-            val stopSubmissions = instance<StopSubmissionPreference>()
             CurrentStatusService(
                 instance(), instance(), null,
                 maximumOrderSize = instance<CryptoCfdAccountPreference>().maximumOrderSize
-            ).apply {
-                initializeAccount {
-                    val credentials = preference.read()
-                    api.privateStatusClient(credentials)?.let { client ->
-                        client to stopSubmissions.forApiKey(credentials.key)
-                    }
-                }
-            }
+            )
         }
     }
     bindSingleton<SettingsPresenter> {
         val notifications = (activity.application as DroidFlyerApplication).orderFillNotifications
         SettingsPresenter(
-            instance(), instance(), instance(),
-            realtimeClient = instance(),
+            instance(), instance(),
             accountPreference = instance(),
-            stopSubmissions = instance(),
             requestNotificationPermission = activity::requestNotificationPermission,
             monitoring = notifications.running,
             toggleMonitoring = {
@@ -65,4 +54,14 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         LimitOrderPresenter(instance<CurrentStatusService>(), accountPreference = instance(), activity.resources, activity::showSnackbar)
     }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
+}
+
+internal fun loadTradingAccount(
+    api: APIClient,
+    stopSubmissions: StopSubmissionPreference,
+    snapshot: APITokenPreference.Snapshot
+): Pair<APIClientV1, StopSubmissionGuard>? {
+    return api.privateStatusClient(snapshot)?.let { client ->
+        client to stopSubmissions.forApiKey(snapshot.credentials.key)
+    }
 }
