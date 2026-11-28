@@ -15,6 +15,7 @@ import com.unhappychoice.droidflyer.domain.service.StopOrderService.Cancellation
 import com.unhappychoice.droidflyer.domain.service.StopOrderStatus
 import com.unhappychoice.droidflyer.domain.service.TradingTotals
 import com.unhappychoice.droidflyer.extension.splitByComma
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.CryptoCfdExecutionFeed.Event
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSide
@@ -96,7 +97,7 @@ class RealtimeClientTest {
     fun priceAlertFeedSubscribesOnlyToExecutionsAcrossReconnects() {
         preference.save(APICredentials("key", "secret"))
         val feed = CryptoCfdExecutionFeed(gson, socket)
-        val prices = feed.executions.map { batch -> batch.single().price }.test()
+        val updates = feed.events.test()
 
         feed.connect()
         authentication.triggerActions()
@@ -104,16 +105,20 @@ class RealtimeClientTest {
         socket.receive(CRYPTO_CFD_EXECUTIONS_CHANNEL, JSONArray("""[{"price":12000000.0}]"""))
         socket.receive(Socket.EVENT_DISCONNECT)
         socket.receive(Socket.EVENT_CONNECT)
+        socket.receive(CRYPTO_CFD_EXECUTIONS_CHANNEL, JSONArray("""[{"price":13000000.0}]"""))
 
         assertEquals(List(2) { CRYPTO_CFD_EXECUTIONS_CHANNEL }, socket.subscriptions)
         assertEquals(0, socket.authAttempts)
-        prices.assertValue(12_000_000.0)
+        updates.assertValueCount(3)
+            .assertValueAt(0) { it is Event.Executions && it.batch.single().price == 12_000_000.0 }
+            .assertValueAt(1, Event.Disconnected)
+            .assertValueAt(2) { it is Event.Executions && it.batch.single().price == 13_000_000.0 }
 
         feed.disconnect()
         socket.receive(Socket.EVENT_CONNECT)
         socket.receive(CRYPTO_CFD_EXECUTIONS_CHANNEL, JSONArray("""[{"price":12000000.0}]"""))
         assertEquals(2, socket.subscriptions.size)
-        prices.assertValueCount(1)
+        updates.assertValueCount(3)
     }
 
     @Test

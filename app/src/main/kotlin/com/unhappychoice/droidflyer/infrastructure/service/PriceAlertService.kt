@@ -35,7 +35,7 @@ internal class PriceAlertService : Service() {
         startForeground(PRICE_ALERT_SERVICE_NOTIFICATION_ID, priceAlertServiceNotification())
         monitor = PriceAlertMonitor(
             preference,
-            executionFeed.executions.observeOn(androidMainThreadScheduler())
+            executionFeed.events.observeOn(androidMainThreadScheduler())
         ) { alert -> notifyPriceAlertTriggered(alert) }
         executionFeed.connect()
         preference.alertsChanged.startWith(preference.read())
