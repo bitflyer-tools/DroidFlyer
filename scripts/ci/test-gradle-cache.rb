@@ -44,8 +44,18 @@ abort "Expected the Gradle dependency cache key to include each dependency input
 expected_restores = [dependency_key, *expected_keys.values]
 abort "Expected each Gradle cache to be restored independently" unless restored_keys == expected_restores
 
-workflow_jobs = config.fetch("workflows").fetch("test-and-deploy").fetch("jobs")
-test_job = workflow_jobs.grep(Hash).find { |job| job.key?("test") }
-abort "Expected the test job to wait for the build job" unless test_job.fetch("test").fetch("requires").include?("build")
+workflow_jobs = config.fetch("workflows").fetch("test-and-deploy").fetch("jobs").reduce({}, :merge)
+abort "Expected the test job to wait for the build job" unless workflow_jobs.fetch("test").fetch("requires") == ["build"]
+approval = workflow_jobs.fetch("approve-play-release")
+abort "Expected manual release approval after tests pass" unless
+  approval.fetch("type") == "approval" && approval.fetch("requires") == ["test"]
+abort "Expected the deploy job to wait for release approval" unless
+  workflow_jobs.fetch("deploy").fetch("requires") == ["approve-play-release"]
 
-puts "CircleCI Gradle cache configuration passed"
+release_filter = 'pipeline.git.tag matches /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/'
+abort "Expected release approval and deployment to run only for stable release tags" unless
+  workflow_jobs.values_at("approve-play-release", "deploy").all? { |job| job.fetch("filters") == release_filter }
+abort "Expected the build and test jobs to run for branches and release tags" unless
+  workflow_jobs.values_at("build", "test").all? { |job| job.fetch("filters") == "pipeline.git.branch or (#{release_filter})" }
+
+puts "CircleCI Gradle cache and release configuration passed"

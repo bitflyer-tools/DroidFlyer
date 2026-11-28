@@ -26,7 +26,7 @@ Push your branch to your fork and open a pull request against `bitflyer-tools/Dr
 
 ## Publish to Google Play
 
-After tests pass on `master`, CircleCI holds deployment at `approve-play-release`.
+For a release tag such as `v1.2.3`, CircleCI holds deployment at `approve-play-release` after tests pass.
 Before approving a release that includes background price alerts, verify in Play Console under
 **App content** that the `specialUse` foreground service declaration for price alerts is complete.
 Leave the job on hold until this is confirmed. See the
