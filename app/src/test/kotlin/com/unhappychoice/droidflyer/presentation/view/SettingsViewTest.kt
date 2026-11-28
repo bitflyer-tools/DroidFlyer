@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Looper
 import android.os.Parcelable
+import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -102,7 +103,7 @@ class SettingsViewTest {
     }
 
     @Test
-    fun linkedAccountCanRequestNotificationPermissionWithoutApplyingCredentials() {
+    fun linkedAccountCanRequestNotificationPermissionOrOpenSystemSettings() {
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
             val application = shadowOf(RuntimeEnvironment.getApplication())
@@ -116,8 +117,16 @@ class SettingsViewTest {
             assertEquals(1, host.notificationPermissionRequests)
             assertEquals(0, host.applyRequests)
 
+            assertEquals(View.VISIBLE, settings.notificationSettingsButton.visibility)
+            settings.notificationSettingsButton.performClick()
+            val intent = shadowOf(host).nextStartedActivity
+            assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, intent.action)
+            assertEquals(host.packageName, intent.getStringExtra(Settings.EXTRA_APP_PACKAGE))
+            assertEquals(1, host.notificationPermissionRequests)
+
             application.grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
             settings.root.onWindowFocusChanged(true)
+            assertEquals(View.GONE, settings.notificationSettingsButton.visibility)
             assertEquals(View.VISIBLE, settings.enableNotificationsButton.visibility)
             assertEquals(host.getString(R.string.start_order_monitoring), settings.enableNotificationsButton.text)
             settings.enableNotificationsButton.performClick()

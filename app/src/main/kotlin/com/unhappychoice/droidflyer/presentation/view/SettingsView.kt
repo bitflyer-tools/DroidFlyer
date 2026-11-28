@@ -42,14 +42,20 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         setupStyle()
 
         presenter.accountLinked.asObservable()
-            .subscribeNext { updateNotificationButton(it) }
+            .subscribeNext { updateNotificationButtons(it) }
             .addTo(bag)
         presenter.monitoring.asObservable()
-            .subscribeNext { updateNotificationButton(presenter.accountLinked.value) }
+            .subscribeNext { updateNotificationButtons(presenter.accountLinked.value) }
             .addTo(bag)
         binding.enableNotificationsButton.clicks()
             .subscribeNext {
                 if (binding.enableNotificationsButton.isVisible) onNotificationButtonClicked()
+            }
+            .addTo(bag)
+
+        binding.notificationSettingsButton.clicks()
+            .subscribeNext {
+                if (binding.notificationSettingsButton.isVisible) openNotificationSettings()
             }
             .addTo(bag)
 
@@ -104,11 +110,13 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
         super.onWindowFocusChanged(hasWindowFocus)
-        if (hasWindowFocus && isAttachedToWindow) updateNotificationButton(presenter.accountLinked.value)
+        if (hasWindowFocus && isAttachedToWindow) updateNotificationButtons(presenter.accountLinked.value)
     }
 
-    private fun updateNotificationButton(accountLinked: Boolean) {
+    private fun updateNotificationButtons(accountLinked: Boolean) {
         binding.enableNotificationsButton.isVisible = accountLinked || presenter.monitoring.value
+        binding.notificationSettingsButton.isVisible =
+            accountLinked && !presenter.monitoring.value && needsNotificationPermission()
         binding.enableNotificationsButton.setText(
             when {
                 presenter.monitoring.value -> R.string.stop_order_monitoring
@@ -122,12 +130,15 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         when {
             presenter.monitoring.value || OrderFillNotificationService.notificationsAllowed(context) ->
                 presenter.toggleMonitoring()
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED -> presenter.requestNotificationPermission()
+            needsNotificationPermission() -> presenter.requestNotificationPermission()
             else -> openNotificationSettings()
         }
     }
+
+    private fun needsNotificationPermission(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
 
     private fun openNotificationSettings() {
         val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -154,6 +165,8 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         binding.saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         binding.unlinkButton.setTextColor(DefaultStyle.accentColor)
         binding.unlinkButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.notificationSettingsButton.setTextColor(DefaultStyle.accentColor)
+        binding.notificationSettingsButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         binding.enableNotificationsButton.setTextColor(DefaultStyle.accentColor)
         binding.enableNotificationsButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }

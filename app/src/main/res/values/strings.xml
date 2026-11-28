@@ -116,6 +116,7 @@
     <string name="order_notification_rejected">%1$s order rejected</string>
     <string name="order_notification_canceled">%1$s order canceled</string>
     <string name="order_fill_notification_channel_name">Order updates</string>
+    <string name="open_notification_settings">Open notification settings</string>
     <string name="enable_order_notifications">Enable order notifications</string>
     <string name="start_order_monitoring">Start order monitoring</string>
     <string name="stop_order_monitoring">Stop order monitoring</string>
