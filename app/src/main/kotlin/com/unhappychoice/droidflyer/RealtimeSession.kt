@@ -38,6 +38,16 @@ internal class RealtimeSession(
     fun notifyOrderOutcomes(onOutcome: (ChildOrderEvent) -> Unit) =
         notifyChildOrders(ChildOrderEvent::isNotificationOutcome, onOutcome)
 
+    fun notifyParentOrderCancellations(onCancellation: (String) -> Unit) {
+        client.parentOrderEvents
+            .subscribeOnIoObserveOnUI()
+            .filter { it.isCurrent() }
+            .subscribeNext { batch ->
+                batch.value.filter { it.eventType == "CANCEL" }.forEach { onCancellation(it.productCode) }
+            }
+            .addTo(subscriptions)
+    }
+
     fun close() {
         subscriptions.dispose()
         status?.dispose()

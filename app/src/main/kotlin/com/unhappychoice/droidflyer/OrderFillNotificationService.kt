@@ -74,7 +74,12 @@ class OrderFillNotificationService : Service() {
             .subscribe(
                 {
                     if (session == null) {
-                        session = sessionFactory(app).apply { notifyOrderOutcomes(::notifyOutcome) }
+                        session = sessionFactory(app).apply {
+                            notifyOrderOutcomes { notifyOutcome(outcomeMessage(it)) }
+                            notifyParentOrderCancellations {
+                                notifyOutcome(getString(R.string.order_notification_canceled, it))
+                            }
+                        }
                     }
                 },
                 { stopSelf() },
@@ -83,7 +88,7 @@ class OrderFillNotificationService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun notifyOutcome(event: ChildOrderEvent) {
+    private fun notifyOutcome(message: String) {
         if (!notificationsAllowed(this)) {
             stopSelf()
             return
@@ -91,7 +96,7 @@ class OrderFillNotificationService : Service() {
         val notification = NotificationCompat.Builder(this, FILL_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(outcomeMessage(event))
+            .setContentText(message)
             .setContentIntent(openAppIntent())
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

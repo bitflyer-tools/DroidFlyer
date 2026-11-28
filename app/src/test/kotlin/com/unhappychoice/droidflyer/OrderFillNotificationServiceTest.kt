@@ -164,6 +164,49 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
+    fun notifiesWhenTheLastUntriggeredStopOrderIsCanceled() {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        var hasOpenOrders = true
+        OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
+        OrderFillNotificationService.sessionFactory = {
+            val client = RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account }
+            RealtimeSession(client).apply { watchSavedAccount() }
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            account.authenticate()
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+
+            account.receiveParentEvent("ORDER")
+            time.triggerActions()
+            assertEquals(1, notifications.allNotifications.size)
+
+            hasOpenOrders = false
+            account.receiveParentEvent("CANCEL")
+            time.triggerActions()
+            assertFalse(shadowOf(service).isStoppedBySelf)
+
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            assertEquals(
+                listOf(service.getString(R.string.order_notification_canceled, "FX_BTC_JPY")),
+                notifications.allNotifications.mapNotNull {
+                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                }
+            )
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
     @Config(sdk = [36])
     fun deniedNotificationPermissionStopsBeforeCheckingOrders() {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
@@ -221,6 +264,7 @@ class OrderFillNotificationServiceTest {
                 ack = args.last() as Ack
                 authKey = (args.first() as JSONObject).getString("api_key")
             }
+            if (event == "subscribe") (args.last() as Ack).call(JSONObject.NULL)
             return this
         }
 
@@ -229,6 +273,19 @@ class OrderFillNotificationServiceTest {
         override fun disconnect(): Socket = apply { open = false }
 
         override fun connected(): Boolean = open
+
+        fun receiveParentEvent(eventType: String) {
+            val events = JSONArray(
+                """[{
+                    "product_code": "FX_BTC_JPY",
+                    "parent_order_id": "JCP20180101-000000-000001",
+                    "parent_order_acceptance_id": "JPA20180101-000000-000001",
+                    "event_date": "2018-01-01T00:00:00.1234567Z",
+                    "event_type": "$eventType"
+                }]"""
+            )
+            listeners("parent_order_events").forEach { it.call(events) }
+        }
 
         fun receiveEvent(eventType: String) {
             val events = JSONArray(
