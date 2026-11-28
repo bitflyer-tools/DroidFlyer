@@ -120,7 +120,9 @@
     <string name="enable_order_notifications">Enable order notifications</string>
     <string name="start_order_monitoring">Start order monitoring</string>
     <string name="stop_order_monitoring">Stop order monitoring</string>
-    <string name="order_fill_notification_channel_description">Notifies you when a Crypto CFD order fills, is rejected, or is canceled while DroidFlyer is in the background.</string>
+    <string name="order_fill_notification_channel_description">Notifies you when a Crypto CFD order fills, is rejected, or is canceled, or when order monitoring stops because of an error.</string>
     <string name="order_fill_service_channel_name">Watching for order updates</string>
     <string name="order_fill_service_notification_title">Watching for Crypto CFD order updates</string>
+    <string name="order_fill_monitoring_permission_error">Order monitoring stopped. Check that your bitFlyer API key can view active orders.</string>
+    <string name="order_fill_monitoring_check_error">Order monitoring stopped after repeated failures to check active orders.</string>
 </resources>

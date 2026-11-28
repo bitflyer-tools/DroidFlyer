@@ -24,6 +24,7 @@ import io.socket.client.Ack
 import io.socket.client.Manager
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -39,6 +40,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import retrofit2.HttpException
+import retrofit2.Response
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.math.BigDecimal
@@ -282,6 +285,73 @@ class OrderFillNotificationServiceTest {
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertEquals(4, checks)
             assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun stopsImmediatelyAndNotifiesWhenActiveOrderCredentialsAreRejected() =
+        assertActiveOrderAccessDenied(401)
+
+    @Test
+    fun stopsImmediatelyAndNotifiesWhenActiveOrderPermissionIsDenied() =
+        assertActiveOrderAccessDenied(403)
+
+    @Test
+    fun stopsAndNotifiesAfterThreeConsecutiveFailuresFollowingARecovery() {
+        assertMonitoringStops(
+            expectedChecks = 6,
+            messageId = R.string.order_fill_monitoring_check_error
+        ) { check ->
+            if (check == 3) Observable.just(true) else Observable.error(TimeoutException())
+        }
+    }
+
+    private fun assertActiveOrderAccessDenied(status: Int) {
+        assertMonitoringStops(expectedChecks = 1, messageId = R.string.order_fill_monitoring_permission_error) {
+            Observable.error(HttpException(Response.error<Any>(status, "".toResponseBody())))
+        }
+    }
+
+    private fun assertMonitoringStops(
+        expectedChecks: Int,
+        messageId: Int,
+        result: (Int) -> Observable<Boolean>
+    ) {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        var checks = 0
+        OrderFillNotificationService.openOrdersCheck = { result(++checks) }
+        OrderFillNotificationService.sessionFactory = {
+            RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            account.authenticate()
+            time.triggerActions()
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+            repeat(expectedChecks - 1) {
+                assertFalse(shadowOf(service).isStoppedBySelf)
+                assertEquals(1, notifications.allNotifications.size)
+                time.advanceTimeBy(15, TimeUnit.SECONDS)
+            }
+
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            assertEquals(
+                listOf(service.getString(messageId)),
+                notifications.allNotifications.mapNotNull {
+                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                }
+            )
+            time.advanceTimeBy(60, TimeUnit.SECONDS)
+            assertEquals(expectedChecks, checks)
         } finally {
             controller.destroy()
         }

@@ -24,6 +24,7 @@ import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import org.kodein.di.direct
 import org.kodein.di.instance
+import retrofit2.HttpException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -98,13 +99,32 @@ class OrderFillNotificationService : Service() {
     private fun checkUntilIdle(app: DroidFlyerApplication, availability: PrivateEvent<Boolean>): Observable<Boolean> =
         Observable.defer { openOrdersCheck(app) }
             .subscribeOn(Schedulers.io())
-            // Require two consecutive successful empty checks before stopping.
-            .onErrorReturnItem(true)
+            .map { Result.success(it) }
+            .onErrorReturn { Result.failure(it) }
             .repeatWhen { completed -> completed.delay(ORDER_CHECK_SECONDS, TimeUnit.SECONDS) }
-            .scan(0) { emptyChecks, hasOrders -> if (hasOrders) 0 else emptyChecks + 1 }
+            .scan(OrderChecks()) { checks, result -> checks.record(result) }
             .skip(1)
             .observeOn(androidMainThreadScheduler())
-            .map { availability.isCurrent() && (it >= 2 || !notificationsAllowed(this)) }
+            .filter { availability.isCurrent() }
+            .map { checks ->
+                checks.stopMessage?.let { notifyOutcome(getString(it)) }
+                checks.stopMessage != null || checks.empty >= 2 || !notificationsAllowed(this)
+            }
+
+    private data class OrderChecks(val empty: Int = 0, val failures: Int = 0, val stopMessage: Int? = null) {
+        fun record(result: Result<Boolean>): OrderChecks = result.fold(
+            onSuccess = { hasOrders -> OrderChecks(empty = if (hasOrders) 0 else empty + 1) },
+            onFailure = { error ->
+                val message = when {
+                    (error as? HttpException)?.code() in listOf(401, 403) ->
+                        R.string.order_fill_monitoring_permission_error
+                    failures + 1 >= MAX_CONSECUTIVE_FAILURES -> R.string.order_fill_monitoring_check_error
+                    else -> null
+                }
+                OrderChecks(failures = failures + 1, stopMessage = message)
+            }
+        )
+    }
 
     @SuppressLint("MissingPermission")
     private fun notifyOutcome(message: String) {
@@ -161,6 +181,7 @@ class OrderFillNotificationService : Service() {
         internal const val ACTION_START = "com.unhappychoice.droidflyer.action.START_ORDER_MONITORING"
         private const val PRODUCT_CODE = "FX_BTC_JPY"
         private const val ORDER_CHECK_SECONDS = 15L
+        private const val MAX_CONSECUTIVE_FAILURES = 3
         private const val CONNECTION_TIMEOUT_SECONDS = 30L
         private const val FILL_CHANNEL_ID = "order_fills"
         private const val SERVICE_CHANNEL_ID = "order_fill_service"
