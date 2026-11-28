@@ -23,12 +23,16 @@ class RealtimeClient internal constructor(
     val gson: Gson,
     val preference: APITokenPreference,
     private val socket: Socket,
+    private val publicFeed: Boolean = true,
     private val createPrivateSocket: () -> Socket
 ) {
-    constructor(gson: Gson, preference: APITokenPreference) : this(
+    constructor(gson: Gson, preference: APITokenPreference) : this(gson, preference, publicFeed = true)
+
+    internal constructor(gson: Gson, preference: APITokenPreference, publicFeed: Boolean) : this(
         gson,
         preference,
         newSocket(),
+        publicFeed,
         ::newSocket
     )
 
@@ -69,11 +73,13 @@ class RealtimeClient internal constructor(
                 if (!disconnected) publicDisconnects.onNext(Unit)
             }
         }
-        socket.connect()
-        authenticationWorker.schedule {
-            synchronized(credentialLock) {
-                val needsAccount = synchronized(accountLock) { !disconnected && account == null }
-                if (needsAccount) connectSavedAccount()
+        if (publicFeed) {
+            socket.connect()
+            authenticationWorker.schedule {
+                synchronized(credentialLock) {
+                    val needsAccount = synchronized(accountLock) { !disconnected && account == null }
+                    if (needsAccount) connectSavedAccount()
+                }
             }
         }
     }
@@ -81,6 +87,14 @@ class RealtimeClient internal constructor(
     internal fun updateAccount(save: () -> Unit) = synchronized(credentialLock) {
         save()
         if (!disconnected) connectSavedAccount()
+    }
+
+    internal fun refreshSavedAccount(): APICredentials = synchronized(credentialLock) {
+        val (credentials, generation) = preference.readRealtimeSnapshot()
+        synchronized(accountLock) {
+            if (!disconnected && account?.matches(credentials, generation) != true) connectAccount(credentials, generation)
+        }
+        credentials
     }
 
     fun disconnect(): Unit = synchronized(accountLock) {
@@ -94,19 +108,21 @@ class RealtimeClient internal constructor(
     }
 
     private fun connectSavedAccount() {
-        val credentials = preference.read()
+        val (credentials, generation) = preference.readRealtimeSnapshot()
         synchronized(accountLock) {
-            if (!disconnected) connectAccount(credentials)
+            if (!disconnected) connectAccount(credentials, generation)
         }
     }
 
-    private fun connectAccount(credentials: APICredentials) {
-        if (account?.canReuse(credentials) == true) return
+    private fun connectAccount(credentials: APICredentials, generation: Long) {
+        if (account?.canReuse(credentials, generation) == true) return
 
         closeAccount()
         if (!credentials.isConfigured) return
         // Private channel messages carry no account identity, so each account needs its own socket.
-        val connection = PrivateRealtimeConnection(gson, credentials, createPrivateSocket(), accountLock)
+        val connection = PrivateRealtimeConnection(gson, credentials, generation, createPrivateSocket(), accountLock) {
+            preference.realtimeGeneration == generation
+        }
         account = connection
         connection.connect(childEvents::onNext, parentEvents::onNext, availability::onNext)
     }

@@ -44,6 +44,20 @@
         android:layout_height="wrap_content"
         android:text="@string/unlink_account"/>
 
+    <Button
+        android:id="@+id/enableNotificationsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:text="@string/enable_order_notifications"/>
+
+    <Button
+        android:id="@+id/notificationSettingsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:text="@string/open_notification_settings"/>
+
     <CheckBox
         android:id="@+id/corporateAccount"
         android:layout_width="wrap_content"

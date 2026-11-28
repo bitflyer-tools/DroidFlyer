@@ -99,3 +99,27 @@ Tap **Refresh** to retry.
 **Active orders show "Could not refresh active child orders. The child orders shown may be out of date."**
 A refresh request failed after an earlier load succeeded. The list keeps showing the last orders
 it loaded; tap into **Active** again or reopen the Order screen to retry.
+
+## Order fill notifications
+
+**I'm not getting a notification when an order fills, is rejected, or is canceled.**
+Check that notifications and both order notification channels are enabled in Android's
+settings. In DroidFlyer, open **Setting** and tap **Start order monitoring** while at
+least one Crypto CFD order is active. Verify your network connection and check that your
+API key can [read orders and receive order events](usage.md#private-rest-api-permissions).
+DroidFlyer stops monitoring after two consecutive checks find no active orders or
+when required order checks fail. If the realtime connection cannot be established
+or restored within 30 seconds, DroidFlyer stops monitoring and posts a notification
+explaining why.
+If you get a warning that DroidFlyer cannot check for active parent orders, enable
+`GET /v1/me/getparentorders` on your API key. Without this permission, DroidFlyer stops monitoring
+after two consecutive checks find no active child orders.
+
+On Android 15 and later, Android can stop monitoring after six hours of background
+use in a 24-hour period. DroidFlyer posts a notification when it reaches this limit.
+Bring DroidFlyer to the foreground to reset the allowance, then tap
+**Start order monitoring** again.
+
+**Does watching for order updates use more battery or data?**
+Yes. While monitoring, DroidFlyer keeps a realtime connection open and checks for active
+orders periodically. Tap **Stop order monitoring** in **Setting** to stop.

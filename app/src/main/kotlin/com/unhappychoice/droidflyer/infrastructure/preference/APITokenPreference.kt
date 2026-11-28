@@ -12,26 +12,42 @@ class APITokenPreference internal constructor(
 
     private val preferences by lazy { context.getSharedPreferences("api_token", Context.MODE_PRIVATE) }
 
+    private val unlinks = PublishSubject.create<Unit>().toSerialized()
+    internal val accountUnlinked = unlinks.hide()
+
     private val changes = PublishSubject.create<Unit>().toSerialized()
 
-    /** Fires after an unlink or a validated credential replacement is applied, in every live instance. */
+    /** Fires after a validated replacement or unlink. */
     internal val accountChanged = changes.hide()
+
+    private val directSaves = PublishSubject.create<Unit>().toSerialized()
+    internal val savedCredentialsChanged = accountChanged.mergeWith(directSaves)
 
     @Volatile
     internal var credentialsGeneration = 0L
         private set
 
-    internal class Snapshot(val credentials: APICredentials, val generation: Long)
+    @Volatile
+    internal var realtimeGeneration = 0L
+        private set
+
+    internal data class Snapshot(val credentials: APICredentials, val generation: Long)
 
     internal fun readSnapshot(): Snapshot = synchronized(lock) {
         Snapshot(read(), credentialsGeneration)
     }
 
+    internal fun readRealtimeSnapshot(): Snapshot = synchronized(lock) {
+        Snapshot(read(), realtimeGeneration)
+    }
+
     fun clear(): Boolean {
         val cleared = synchronized(lock) {
             credentialsGeneration++
+            realtimeGeneration++
             preferences.edit().remove(encryptedEntry).remove("key").remove("secret").commit()
         }
+        unlinks.onNext(Unit)
         changes.onNext(Unit)
         return cleared
     }
@@ -50,21 +66,31 @@ class APITokenPreference internal constructor(
             if (generation != credentialsGeneration) return@synchronized false
 
             val saved = read()
-            val isChanged = saved.key != credentials.key || saved.secret != credentials.secret
-            if (isChanged) {
-                save(credentials)
-                // Invalidate clients pinned to the replaced credentials, the same way an unlink does.
-                credentialsGeneration++
-            }
-            isChanged
+            if (saved.key == credentials.key && saved.secret == credentials.secret) return@synchronized false
+            persistCredentials(credentials)
+            credentialsGeneration++
+            realtimeGeneration++
+            true
         }
         if (changed) changes.onNext(Unit)
         return changed
     }
 
-    fun save(credentials: APICredentials) = synchronized(lock) {
+    fun save(credentials: APICredentials) {
+        val changed = synchronized(lock) {
+            val previous = preferences.all
+            val saved = (previous[encryptedEntry] as? String)?.let(::readEncrypted)
+                ?: APICredentials(previous["key"] as? String ?: "", previous["secret"] as? String ?: "")
+            persistCredentials(credentials, previous)
+            val changed = saved.key != credentials.key || saved.secret != credentials.secret
+            if (changed) realtimeGeneration++
+            changed
+        }
+        if (changed) directSaves.onNext(Unit)
+    }
+
+    private fun persistCredentials(credentials: APICredentials, previous: Map<String, *> = preferences.all) {
         val encrypted = cipher.encrypt(credentials)
-        val previous = preferences.all
         try {
             persist(encrypted, null, null)
         } catch (failure: Exception) {
@@ -80,7 +106,7 @@ class APITokenPreference internal constructor(
 
     private fun migrateLegacy(credentials: APICredentials) {
         try {
-            save(credentials)
+            persistCredentials(credentials)
         } catch (_: Exception) {
             // Keep using the legacy pair and retry migration on the next read.
         }

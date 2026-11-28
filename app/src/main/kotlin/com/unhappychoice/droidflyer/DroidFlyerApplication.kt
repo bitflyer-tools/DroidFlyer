@@ -1,14 +1,29 @@
 package com.unhappychoice.droidflyer
 
 import android.app.Application
+import com.unhappychoice.droidflyer.di.applicationModule
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import mortar.MortarScope
+import org.kodein.di.DI
 
 class DroidFlyerApplication : Application() {
     internal val tokenPreference by lazy { APITokenPreference(this) }
 
+    internal val module by lazy { DI { import(applicationModule(this@DroidFlyerApplication)) } }
+
+    internal val orderFillNotifications by lazy {
+        OrderFillNotificationController(tokenPreference, { OrderFillNotificationService.notificationsAllowed(this) }) { running ->
+            if (running) OrderFillNotificationService.start(this) else OrderFillNotificationService.stop(this)
+        }
+    }
+
     private val scope by lazy {
         MortarScope.buildRootScope().build("root_scope")
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        orderFillNotifications.observeUnlink()
     }
 
     override fun getSystemService(name: String): Any? {

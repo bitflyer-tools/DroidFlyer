@@ -1,10 +1,13 @@
 package com.unhappychoice.droidflyer.presentation.view
 
+import android.Manifest
 import android.app.Activity
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Looper
 import android.os.Parcelable
+import android.provider.Settings
+import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -12,6 +15,7 @@ import android.widget.TextView
 import com.google.gson.Gson
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
+import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
@@ -19,8 +23,8 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
-import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.schedulers.Schedulers
 import io.reactivex.rxjava3.schedulers.TestScheduler
 import mortar.MortarScope
@@ -42,6 +46,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindInstance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
@@ -93,6 +98,70 @@ class SettingsViewTest {
             assertEquals("stored-key", attached.apiTokenTextView.text.toString())
             assertEquals("stored-secret", attached.apiSecretTextView.text.toString())
             assertTrue(attached.saveButton.isEnabled)
+        }
+    }
+
+    @Test
+    fun linkedAccountCanRequestNotificationPermissionOrOpenSystemSettings() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val application = shadowOf(RuntimeEnvironment.getApplication())
+            application.denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            val settings = host.openSettings()
+
+            assertEquals(View.VISIBLE, settings.enableNotificationsButton.visibility)
+            assertEquals(0, host.notificationPermissionRequests)
+            settings.enableNotificationsButton.performClick()
+
+            assertEquals(1, host.notificationPermissionRequests)
+            assertEquals(0, host.applyRequests)
+
+            assertEquals(View.VISIBLE, settings.notificationSettingsButton.visibility)
+            settings.notificationSettingsButton.performClick()
+            val intent = shadowOf(host).nextStartedActivity
+            assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, intent.action)
+            assertEquals(host.packageName, intent.getStringExtra(Settings.EXTRA_APP_PACKAGE))
+            assertEquals(1, host.notificationPermissionRequests)
+
+            application.grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            settings.root.onWindowFocusChanged(true)
+            assertEquals(View.GONE, settings.notificationSettingsButton.visibility)
+            assertEquals(View.VISIBLE, settings.enableNotificationsButton.visibility)
+            assertEquals(host.getString(R.string.start_order_monitoring), settings.enableNotificationsButton.text)
+            settings.enableNotificationsButton.performClick()
+            assertEquals(host.getString(R.string.stop_order_monitoring), settings.enableNotificationsButton.text)
+            settings.enableNotificationsButton.performClick()
+            assertEquals(host.getString(R.string.start_order_monitoring), settings.enableNotificationsButton.text)
+        }
+    }
+
+    @Test
+    fun firstValidatedLinkRequestsNotificationPermissionOnce() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            host.startLinked = false
+            val settings = host.openSettings()
+
+            settings.applyCredentials("first-key")
+            assertEquals(1, host.notificationPermissionRequests)
+
+            settings.applyCredentials("replacement-key")
+            assertEquals(2, host.applyRequests)
+            assertEquals(1, host.notificationPermissionRequests)
+        }
+    }
+
+    @Test
+    fun failedFirstLinkDoesNotRequestNotificationPermission() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            host.startLinked = false
+            host.failNextApply = true
+            val settings = host.openSettings()
+
+            settings.applyCredentials("first-key")
+            assertEquals(1, host.applyRequests)
+            assertEquals(0, host.notificationPermissionRequests)
         }
     }
 
@@ -351,11 +420,21 @@ class SettingsViewTest {
         assertEquals("", secret.text.toString())
     }
 
+    private fun SettingsViewBinding.applyCredentials(key: String) {
+        apiTokenTextView.setText(key)
+        apiSecretTextView.setText("new-secret")
+        saveButton.performClick()
+    }
+
     class SettingsHost : Activity() {
         var applyRequests = 0
             private set
         var credentialReads = 0
             private set
+        var notificationPermissionRequests = 0
+            private set
+        var startLinked = true
+        var failNextApply = false
 
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
             val preferences = super.getSharedPreferences(name, mode)
@@ -375,22 +454,28 @@ class SettingsViewTest {
         }
         private val di by lazy {
             val preference = testAPITokenPreference(this).apply {
-                save(APICredentials("stored-key", "stored-secret"))
+                if (startLinked) save(APICredentials("stored-key", "stored-secret"))
             }
             val transport = OkHttpClient.Builder().addInterceptor { chain ->
                 applyRequests++
+                val failed = failNextApply
+                failNextApply = false
                 Response.Builder()
                     .request(chain.request())
                     .protocol(Protocol.HTTP_1_1)
-                    .code(200)
+                    .code(if (failed) 401 else 200)
                     .message("Test response")
                     .body("[]".toResponseBody())
                     .build()
             }.build()
+            val monitoring = Variable(false)
             val presenter = SettingsPresenter(
                 APIClient(Gson(), preference, transport),
                 preference,
-                accountPreference = CryptoCfdAccountPreference(this)
+                accountPreference = CryptoCfdAccountPreference(this),
+                requestNotificationPermission = { notificationPermissionRequests++ },
+                monitoring = monitoring,
+                toggleMonitoring = { monitoring.value = !monitoring.value }
             )
             DI { bindInstance { presenter } }
         }

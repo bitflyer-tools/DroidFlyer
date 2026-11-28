@@ -1,12 +1,17 @@
 package com.unhappychoice.droidflyer
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.doOnAttach
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.databinding.ActivityMainBinding
@@ -102,6 +107,11 @@ class MainActivity : AppCompatActivity() {
         binding.containerView.doOnAttach { Snackbar.make(it, message, duration).show() }
     }
 
+    override fun onResume() {
+        super.onResume()
+        (application as DroidFlyerApplication).orderFillNotifications.stopIfNotificationsDisabled()
+    }
+
     override fun onDestroy() {
         if (realtimeSession.isInitialized()) realtimeSession.value.close()
         scope.destroy()
@@ -150,5 +160,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun showExecution(event: ChildOrderEvent) {
         showSnackbar(executionMessage(event), Snackbar.LENGTH_SHORT)
+    }
+
+    internal fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
+    }
+
+    private companion object {
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1
     }
 }

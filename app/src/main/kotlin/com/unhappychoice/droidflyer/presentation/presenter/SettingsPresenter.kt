@@ -23,10 +23,14 @@ import retrofit2.HttpException
 class SettingsPresenter internal constructor(
     private val api: APIClient,
     private val preference: APITokenPreference,
-    internal val accountPreference: CryptoCfdAccountPreference
+    internal val accountPreference: CryptoCfdAccountPreference,
+    internal val requestNotificationPermission: () -> Unit = {},
+    internal val monitoring: Variable<Boolean> = Variable(false),
+    internal val toggleMonitoring: () -> Unit = {}
 ) : ViewPresenter<SettingsView>() {
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
+    internal val accountLinked = Variable(false)
     private val bag = CompositeDisposable()
     private var pendingSave: CompletableSubject? = null
 
@@ -36,6 +40,7 @@ class SettingsPresenter internal constructor(
             .subscribeNext { credentials ->
                 key.value = credentials.key
                 secret.value = credentials.secret
+                accountLinked.value = credentials.isConfigured
                 onLoaded()
             }
 
@@ -48,6 +53,7 @@ class SettingsPresenter internal constructor(
         if (pendingSave != null) return
         bag.clear()
         val snackbarAnchor = view.rootView.findViewById<View>(android.R.id.content) ?: view
+        val wasLinked = accountLinked.value
         val completion = CompletableSubject.create()
         pendingSave = completion
         saveCredentials()
@@ -56,7 +62,10 @@ class SettingsPresenter internal constructor(
                 completion.onComplete()
             }
             .subscribe(
-                { Snackbar.make(snackbarAnchor, R.string.api_key_saved, Snackbar.LENGTH_SHORT).show() },
+                {
+                    Snackbar.make(snackbarAnchor, R.string.api_key_saved, Snackbar.LENGTH_SHORT).show()
+                    if (!wasLinked && accountLinked.value) requestNotificationPermission()
+                },
                 { error ->
                     Snackbar.make(snackbarAnchor, credentialSaveErrorMessage(error), Snackbar.LENGTH_LONG).show()
                 }
@@ -67,6 +76,7 @@ class SettingsPresenter internal constructor(
     fun unlink(onLoaded: () -> Unit = {}): Boolean {
         bag.clear()
         val cleared = preference.clear()
+        accountLinked.value = false
         loadCredentials(onLoaded).addTo(bag)
         return cleared
     }
@@ -80,7 +90,10 @@ class SettingsPresenter internal constructor(
             .subscribeOnIoObserveOnUI()
             // A successful save bumps the generation itself, so expect generation + 1 in that case.
             .filter { (_, changed) -> preference.credentialsGeneration == generation + if (changed) 1 else 0 }
-            .map { (balance, _) -> balance }
+            .map { (balance, _) ->
+                accountLinked.value = submitted.isConfigured
+                balance
+            }
     }
 
     private fun validateCredentials(

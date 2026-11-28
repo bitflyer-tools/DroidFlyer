@@ -36,6 +36,33 @@ order quantities to 10 BTC-CFD under individual account limits. Enable
 40 BTC-CFD. This setting is saved when toggled and does not change your
 account type at bitFlyer.
 
+## Order fill notifications
+
+With an account linked and an open Crypto CFD order, open **Setting** and tap
+**Start order monitoring**. On Android 13 and later, DroidFlyer requests notification
+permission when you first link your account. If Android notifications are disabled, tap
+**Enable order notifications** first. If Android does not show a permission prompt,
+tap **Open notification settings** and allow notifications for DroidFlyer. Return to
+**Setting** and tap **Start order monitoring**. DroidFlyer posts system notifications for fills,
+rejections, and cancellations received while monitoring, including when the app is
+in the background or the screen is off.
+
+Tap **Stop order monitoring** in **Setting** to disconnect. DroidFlyer checks for
+active child and parent orders once the realtime subscriptions are ready and then
+approximately every 15 seconds. Two consecutive checks with no active orders end
+monitoring. If the API key cannot view parent orders, DroidFlyer posts a warning
+once per monitoring session and stops after two consecutive checks find no active
+child orders. Monitoring also ends if notification access is lost, the account is
+unlinked, or the app cannot verify active orders or establish the realtime subscriptions.
+The realtime connection and order checks use extra battery and data.
+
+Android 15 and later also limit background monitoring to six hours in a 24-hour
+period. DroidFlyer posts a notification when monitoring stops at this limit. Bring
+DroidFlyer to the foreground to reset the allowance and start monitoring again
+in **Setting**. Notifications cover events received during monitoring.
+See [Android's foreground service time limits](https://developer.android.com/develop/background-work/services/fgs/timeout)
+and [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications).
+
 ## Private REST API permissions
 
 Enable the permissions for the features you use on your bitFlyer API key.
@@ -48,6 +75,7 @@ Lightning API.
 | Show collateral | `GET /v1/me/getcollateral` |
 | Show open positions | `GET /v1/me/getpositions` |
 | List active orders | `GET /v1/me/getchildorders` |
+| Monitor order fills | `GET /v1/me/getchildorders`; enable `GET /v1/me/getparentorders` to monitor orders waiting to trigger |
 | List fills | `GET /v1/me/getexecutions` |
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |
@@ -55,7 +83,8 @@ Lightning API.
 | Submit or track a stop order | `POST /v1/me/sendparentorder`, `GET /v1/me/getparentorders`, `GET /v1/me/getparentorder`, `GET /v1/me/getchildorders` |
 | Cancel a stop order | `POST /v1/me/cancelparentorder` |
 
-Stop orders also need the **Receive order events** permission, enabled separately from the
-REST permissions above, so DroidFlyer can track them over bitFlyer's private realtime channels.
+Stop orders and order monitoring also need the **Receive order events** permission,
+enabled separately from the REST permissions above, to receive updates over
+bitFlyer's private realtime channels.
 
 See [FAQ and troubleshooting](troubleshooting.md) for what each in-app error message means and how to fix it.
