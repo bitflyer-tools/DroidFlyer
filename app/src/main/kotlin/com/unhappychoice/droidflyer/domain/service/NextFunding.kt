@@ -11,6 +11,8 @@ internal data class NextFunding(val ratio: BigDecimal, val settlementMillis: Lon
 
 internal data class FundingStatus(val funding: NextFunding? = null, val stale: Boolean = false)
 
+internal fun NextFunding.isExpired(nowMillis: Long): Boolean = nowMillis >= settlementMillis
+
 internal fun FundingRate.toNextFunding(): NextFunding {
     val ratio = requireNotNull(ratio)
     val date = requireNotNull(settlementDate)

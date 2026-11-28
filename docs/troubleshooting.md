@@ -45,9 +45,38 @@ check **Order** → **Orders** → **Active** and your positions, then retry if 
 If the position is smaller than the minimum order size (0.001 BTC-CFD), DroidFlyer cannot submit a
 closing order for it.
 
-**Cancelling an order says "Could not cancel order `<id>`."**
+**Cancelling an order says "Could not cancel order `<id>`"**
 The cancellation request failed, for example because the order already filled or was already
 cancelled. Refresh **Active** to see its current state.
+
+## Stop orders
+
+**Why does reviewing a stop order show "Order events unavailable"?**
+Stop orders need a live connection to bitFlyer's private order events so DroidFlyer can track and
+cancel orders waiting to trigger. Enable **Receive order events** on your API key on the
+[developer page](https://lightning.bitflyer.com/developer), or create a key with that permission,
+then enter it under **Setting** and tap **Apply**. Once connected, review the stop order again.
+
+**I got "The stop order submission result is unknown."**
+DroidFlyer submitted the stop order but could not confirm bitFlyer accepted it before the
+connection was interrupted. Check its status in bitFlyer Lightning, then tap **Check order status
+and resume** once you have confirmed whether it was accepted. Resuming without checking could
+submit the same order twice.
+
+**I got "bitFlyer rejected your stop order."**
+bitFlyer rejected the submission itself (for example an invalid trigger price or insufficient
+balance). You can try again.
+
+**Cancelling a stop order asks me to confirm it's still waiting to trigger.**
+DroidFlyer's connection to bitFlyer order events was interrupted, so it cannot be sure the order
+hasn't already triggered. Confirm in bitFlyer Lightning that the order is still waiting, then tap
+**Still waiting — cancel order**.
+
+**Cancelling a stop order failed because the account changed, the order is no longer available,
+a cancellation is already in progress, or the order is no longer eligible for cancellation.**
+These mean the credentials changed, the order could not be found, a cancellation for it was
+already running, or the order is no longer eligible (for example it already triggered or was
+already canceled). Refresh **Active** to see its current state.
 
 ## Reading orders and fills
 
@@ -62,6 +91,6 @@ Enable the permission for `GET /v1/me/getexecutions` on your API key, then tap *
 The request to `GET /v1/me/getexecutions` failed for another reason, such as a network error.
 Tap **Refresh** to retry.
 
-**Active orders show "Could not refresh active orders. The orders shown may be out of date."**
+**Active orders show "Could not refresh active child orders. The child orders shown may be out of date."**
 A refresh request failed after an earlier load succeeded. The list keeps showing the last orders
 it loaded; tap into **Active** again or reopen the Order screen to retry.

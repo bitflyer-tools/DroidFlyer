@@ -3,6 +3,7 @@ package com.unhappychoice.droidflyer.presentation.adapter
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 import com.unhappychoice.droidflyer.domain.service.StopOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
 import org.junit.Assert.assertEquals
@@ -44,6 +45,45 @@ class StopOrderAdapterTest {
         assertEquals("Status unavailable", details.text.toString().lineSequence().elementAt(1).substringAfter(" · "))
         assertEquals(View.VISIBLE, action.visibility)
         assertEquals("Verify to cancel", action.text.toString())
+    }
+
+    @Test
+    fun refreshingOneOrderOnlyNotifiesThatRowInsteadOfTheWholeList() {
+        val parent1 = ParentOrder("parent-1", "acceptance-1", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0)
+        val parent2 = ParentOrder("parent-2", "acceptance-2", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0)
+        val adapter = StopOrderAdapter {}
+        adapter.updateOrders(listOf(StopOrder(parent1, 5000000L), StopOrder(parent2, 6000000L)))
+        val changes = adapter.recordChanges()
+
+        val refreshedParent2 = parent2.copy(parentOrderState = "COMPLETED")
+        adapter.updateOrders(listOf(StopOrder(parent1, 5000000L), StopOrder(refreshedParent2, 6000000L)))
+
+        assertEquals(listOf("change 1 1"), changes)
+    }
+
+    @Test
+    fun cancellingSetChangesOnlyNotifyTheAffectedRow() {
+        val parent1 = ParentOrder("parent-1", "acceptance-1", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0)
+        val parent2 = ParentOrder("parent-2", "acceptance-2", "FX_BTC_JPY", "STOP", "ACTIVE", "SELL", 0.01, 0.0)
+        val adapter = StopOrderAdapter {}
+        adapter.updateOrders(listOf(StopOrder(parent1, 5000000L), StopOrder(parent2, 6000000L)))
+        val changes = adapter.recordChanges()
+
+        adapter.updateCancellations(setOf("acceptance-2"))
+
+        assertEquals(listOf("change 1 1"), changes)
+    }
+
+    private fun StopOrderAdapter.recordChanges() = mutableListOf<String>().also { changes ->
+        registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onChanged() { changes.add("invalidate") }
+            override fun onItemRangeChanged(positionStart: Int, itemCount: Int) {
+                changes.add("change $positionStart $itemCount")
+            }
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) { changes.add("insert") }
+            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) { changes.add("remove") }
+            override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) { changes.add("move") }
+        })
     }
 
     private fun assertTerminalRow(state: String, executedSize: Double, status: String) {
