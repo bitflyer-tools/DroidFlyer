@@ -89,6 +89,22 @@ class RealtimeSessionTest {
     }
 
     @Test
+    fun spotExecutionsStillDeliverAccountNotifications() {
+        val session = Session()
+        try {
+            session.accountSockets.single().receiveExecution("BTC_JPY")
+            time.advanceTimeBy(1, TimeUnit.SECONDS)
+
+            assertEquals(1, session.notifications)
+            session.positions.onComplete()
+            time.triggerActions()
+            assertEquals(1, session.refreshes)
+        } finally {
+            session.lifecycle.close()
+        }
+    }
+
+    @Test
     fun unlinkSignalClearsActiveSessionAndKeepsPublicSocketOpen() {
         val session = Session()
         try {
@@ -195,8 +211,8 @@ class RealtimeSessionTest {
 
         override fun connected(): Boolean = open
 
-        fun receiveExecution() {
-            val events = JSONArray("""[{"event_type":"EXECUTION"}]""")
+        fun receiveExecution(productCode: String = "FX_BTC_JPY") {
+            val events = JSONArray("""[{"event_type":"EXECUTION","product_code":"$productCode"}]""")
             listeners("child_order_events").forEach { it.call(events) }
         }
     }
