@@ -302,7 +302,7 @@ internal class StopOrderService(
                         waitingConfirmed = realtimeEvent == "ORDER" || restWaitingConfirmed,
                         restWaitingConfirmed = restWaitingConfirmed
                     )
-                    val terminal = row.parentOrderState in terminalParentStates
+                    val terminal = row.parentOrderState in terminalOrderStates
                     val verification = cached?.childVerification?.takeIf { terminal }
                     val needsReverification = verification != null ||
                         (terminal && cached?.childVerificationPending == true)
@@ -502,11 +502,13 @@ internal class StopOrderService(
         stopOrderRead(reads) { client.getParentChildOrders(stop.parent.parentOrderId) }
             .map { children ->
                 val marketOrder = children.firstOrNull { it.childOrderType == "MARKET" }
+                val childVerification = marketOrder?.let { verification(it.childOrderAcceptanceId) }
+                val childIsTerminal = marketOrder?.childOrderState in terminalOrderStates
                 if (marketOrder == null) stop else stop.copy(
                     parent = stop.parent.copy(executedSize = maxOf(stop.parent.executedSize, marketOrder.executedSize)),
                     event = stop.event ?: "TRIGGER",
-                    childVerification = verification(marketOrder.childOrderAcceptanceId),
-                    childVerificationPending = false,
+                    childVerification = childVerification.takeIf { childIsTerminal },
+                    childVerificationPending = childVerification != null && !childIsTerminal,
                     childTermination = when (marketOrder.childOrderState) {
                         "CANCELED" -> StopOrderStatus.CANCELED
                         "EXPIRED" -> StopOrderStatus.EXPIRED
@@ -558,7 +560,7 @@ internal class StopOrderService(
     }
 
     private companion object {
-        val terminalParentStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
+        val terminalOrderStates = setOf("COMPLETED", "CANCELED", "EXPIRED", "REJECTED")
         val activeSubmissions = ConcurrentHashMap.newKeySet<String>()
     }
 }
