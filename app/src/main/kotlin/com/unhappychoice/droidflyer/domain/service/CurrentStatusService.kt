@@ -23,23 +23,37 @@ class CurrentStatusService internal constructor(
     val apiClient: APIClientV1,
     executions: Observable<List<Execution>>,
     boardUpdates: Observable<BoardUpdate>,
-    orderEvents: Observable<PrivateEvent<*>>,
+    orderEvents: Observable<PrivateEvent<List<ChildOrderEvent>>>,
     privateClient: APIClientV1? = apiClient,
-    publicFeedDisconnects: Observable<Unit> = Observable.never()
+    parentEvents: Observable<PrivateEvent<List<ParentOrderEvent>>> = Observable.empty(),
+    privateChannelAvailability: Observable<PrivateEvent<Boolean>> = Observable.empty(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+    publicFeedDisconnects: Observable<Unit> = Observable.never(),
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
-    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) : this(
+    constructor(apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?) :
+        this(apiClient, realtimeClient, privateClient, StopSubmissionGuard.inMemory())
+
+    internal constructor(
+        apiClient: APIClientV1, realtimeClient: RealtimeClient, privateClient: APIClientV1?,
+        submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+        maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
+    ) : this(
         apiClient,
         realtimeClient.executions,
         boardUpdates(realtimeClient.boardSnapshot, realtimeClient.board),
-        Observable.merge(
-            realtimeClient.childOrderEvents,
-            realtimeClient.parentOrderEvents
-        ),
+        realtimeClient.childOrderEvents,
         privateClient,
-        realtimeClient.publicFeedDisconnects
+        realtimeClient.parentOrderEvents,
+        realtimeClient.privateChannelAvailability,
+        submissionGuard,
+        realtimeClient.publicFeedDisconnects,
+        maximumOrderSize
     )
 
-    internal val privateState = PrivateTradingState(privateClient)
+    internal val privateState = PrivateTradingState(
+        privateClient, submissionGuard = submissionGuard, maximumOrderSize = maximumOrderSize
+    )
 
     internal val currentPrice = Variable(MarketPrice(null))
     val buyPrice = Variable(0L)
@@ -59,6 +73,7 @@ class CurrentStatusService internal constructor(
     private val restBoards = PublishSubject.create<BoardUpdate>().toSerialized()
     private val bag = CompositeDisposable()
     private var accountChanged = CompletableSubject.create()
+    private var channelAvailability: PrivateEvent<Boolean>? = null
     private val statusRefresh = StatusRefreshCoordinator(::refreshStatus)
     private val activeOrderRefresh = StatusRefreshCoordinator(privateState::refreshActiveOrders)
     private val boardFallback = OrderBookFallback()
@@ -89,11 +104,43 @@ class CurrentStatusService internal constructor(
             }
             .addTo(bag)
 
-        orderEvents
+        val parentUpdates = parentEvents.filter { batch -> batch.value.any { it.productCode == "FX_BTC_JPY" } }
+        Observable.merge<PrivateEvent<*>>(orderEvents, parentUpdates)
             .debounce(1, TimeUnit.SECONDS)
             .subscribeOnIoObserveOnUI()
             .filter { it.isCurrent() }
             .subscribeNext { updateStatus() }
+            .addTo(bag)
+
+        val stopOrders = privateState.stopOrders
+        val childUpdates = orderEvents.filter { batch ->
+            batch.value.any { it.productCode == "FX_BTC_JPY" && it.affectsStopOrderStatus() }
+        }
+        parentUpdates
+            .observeOn(androidMainThreadScheduler())
+            .filter { it.isCurrent() }
+            .doOnNext { stopOrders.onEvents(it.value) }
+            .sample(1, TimeUnit.SECONDS)
+            .observeOn(androidMainThreadScheduler())
+            .filter { it.isCurrent() }
+            .subscribeNext { stopOrders.onParentUpdates() }
+            .addTo(bag)
+
+        childUpdates.observeOn(androidMainThreadScheduler())
+            .filter { it.isCurrent() }
+            .doOnNext { stopOrders.onChildEvents(it.value) }
+            .sample(1, TimeUnit.SECONDS, true)
+            .observeOn(androidMainThreadScheduler())
+            .filter { it.isCurrent() }
+            .subscribeNext { stopOrders.onChildUpdates() }
+            .addTo(bag)
+
+        privateChannelAvailability.observeOn(androidMainThreadScheduler())
+            .filter { it.isCurrent() }
+            .subscribeNext {
+                channelAvailability = it
+                stopOrders.onPrivateChannelAvailability(it.value)
+            }
             .addTo(bag)
 
         updateStatus()
@@ -119,23 +166,26 @@ class CurrentStatusService internal constructor(
         boardRefresh.request(followUp = false)
     }
 
-    internal fun initializeAccount(loadClient: () -> APIClientV1?) {
+    internal fun initializeAccount(loadAccount: () -> Pair<APIClientV1, StopSubmissionGuard>?) {
         val initialAccount = accountChanged
-        Maybe.fromCallable<APIClientV1> { loadClient() }
+        Maybe.fromCallable<Pair<APIClientV1, StopSubmissionGuard>> { loadAccount() }
             .toObservable()
             .subscribeOnIoObserveOnUI()
-            .subscribeNext { client ->
-                if (accountChanged === initialAccount) switchAccount(client)
+            .subscribeNext { (client, guard) ->
+                if (accountChanged === initialAccount) switchAccount(client, guard)
             }
             .addTo(bag)
     }
 
-    internal fun switchAccount(client: APIClientV1?) {
+    internal fun switchAccount(client: APIClientV1?, guard: StopSubmissionGuard = StopSubmissionGuard.inMemory()) {
         if (bag.isDisposed) return
 
         val previous = accountChanged
         accountChanged = CompletableSubject.create()
-        privateState.switchAccount(client) {
+        privateState.switchAccount(client, guard) {
+            channelAvailability?.takeIf { client != null && it.value && it.isCurrent() }?.let {
+                privateState.stopOrders.onPrivateChannelAvailability(true)
+            }
             // Queue the new account before ending an in-flight refresh.
             updateStatus()
             previous.onComplete()

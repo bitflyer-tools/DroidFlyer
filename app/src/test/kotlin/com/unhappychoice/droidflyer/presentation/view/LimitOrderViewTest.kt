@@ -68,6 +68,7 @@ class LimitOrderViewTest {
         presenter = LimitOrderPresenter(
             status.privateState,
             accountPreference,
+            status::updateStatus,
             RuntimeEnvironment.getApplication().resources
         ) { _, _ -> }
     }
