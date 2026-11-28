@@ -2,7 +2,7 @@ package com.unhappychoice.droidflyer.extension
 
 import android.app.Application
 import android.os.Looper
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner

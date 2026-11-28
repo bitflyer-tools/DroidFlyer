@@ -12,14 +12,13 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.presentation.presenter.OrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.Completable
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.io.IOException
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
@@ -62,8 +61,8 @@ class CurrentStatusServiceTest {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
         RxJavaPlugins.setSingleSchedulerHandler { scheduler }
-        RxAndroidPlugins.setInitMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler { Schedulers.trampoline() }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
 
         `when`(api.getBoard("FX_BTC_JPY"))
             .thenReturn(responses.take(1).doOnSubscribe { boardRequests++ })
@@ -214,17 +213,17 @@ class CurrentStatusServiceTest {
 
         visible.onNext(true)
         scheduler.triggerActions()
-        funding.assertValueAt(funding.valueCount() - 1, FundingStatus(NextFunding(BigDecimal.ZERO, settlementMillis)))
+        funding.assertValueAt(funding.values().lastIndex, FundingStatus(NextFunding(BigDecimal.ZERO, settlementMillis)))
         verify(api, times(1)).getFundingRate("FX_BTC_JPY")
 
         now = settlementMillis
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
-        funding.assertValueAt(funding.valueCount() - 1, FundingStatus())
+        funding.assertValueAt(funding.values().lastIndex, FundingStatus())
         verify(api, times(1)).getFundingRate("FX_BTC_JPY")
 
         scheduler.advanceTimeBy(1, TimeUnit.MINUTES)
         funding.assertValueAt(
-            funding.valueCount() - 1,
+            funding.values().lastIndex,
             FundingStatus(NextFunding(BigDecimal("-0.001"), futureSettlementMillis))
         )
         funding.dispose()
@@ -241,14 +240,14 @@ class CurrentStatusServiceTest {
 
         visible.onNext(true)
         scheduler.triggerActions()
-        funding.assertValueAt(funding.valueCount() - 1, FundingStatus(NextFunding(BigDecimal.ZERO, settlementMillis)))
+        funding.assertValueAt(funding.values().lastIndex, FundingStatus(NextFunding(BigDecimal.ZERO, settlementMillis)))
 
         visible.onNext(false)
         now = settlementMillis
         visible.onNext(true)
         scheduler.triggerActions()
 
-        funding.assertValueAt(funding.valueCount() - 1, FundingStatus())
+        funding.assertValueAt(funding.values().lastIndex, FundingStatus())
         assertTrue(pendingPoll.hasObservers())
         funding.dispose()
     }
@@ -378,8 +377,8 @@ class CurrentStatusServiceTest {
         service.switchAccount(newAccount)
         scheduler.triggerActions()
 
-        orders.assertValueAt(orders.valueCount() - 1, listOf(newOrder))
-        orders.assertNever(listOf(activeOrder))
+        orders.assertValueAt(orders.values().lastIndex, listOf(newOrder))
+        assertFalse(listOf(activeOrder) in orders.values())
         assertFalse(oldOrders.hasObservers())
     }
 
