@@ -157,6 +157,7 @@ internal class StopOrderService(
             client.cancelParentOrder(CancelParentOrderRequest(id))
         }.subscribeOn(io)
         verifyCancellation(client, requireNotNull(order), confirmation)
+            .doOnError { if (current === account) invalidateCancellation(id) }
             .andThen(cancellation)
             .observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
@@ -265,9 +266,11 @@ internal class StopOrderService(
         val canOfferRecovery = orderEventsReady && channelGapCount > 0
         val gapAtStart = channelGapCount
         val readyAtStart = orderEventsReady
-        fun currentChannelEvidence(row: StopOrder): StopOrder =
-            if (gapAtStart == channelGapCount && readyAtStart == orderEventsReady) row
-            else invalidateWaitingOrder(row)
+        fun currentWaitingEvidence(row: StopOrder): StopOrder = when {
+            row.acceptanceId in scan.invalidatedCancellations -> withoutCancellationEvidence(row)
+            gapAtStart != channelGapCount || readyAtStart != orderEventsReady -> invalidateWaitingOrder(row)
+            else -> row
+        }
 
         var historyFailed = false
         val parents = loadActiveParents(client, reads = refreshReads).filter(::isCryptoCfdStop).toList()
@@ -316,14 +319,14 @@ internal class StopOrderService(
             }
         }.doOnNext { refreshed[it.acceptanceId] = it }
             .subscribeOn(io).observeOn(main)
-            .doOnNext { row -> if (isCurrentScan()) publishPacedRow(currentChannelEvidence(row)) }
+            .doOnNext { row -> if (isCurrentScan()) publishPacedRow(currentWaitingEvidence(row)) }
             .toList()
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (isCurrentScan()) {
                 val latest = rows.associateBy { it.acceptanceId }.values
                 val incomplete = latest.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
-                orders.value = latest.map { applyEvent(currentChannelEvidence(it)) }
+                orders.value = latest.map { applyEvent(currentWaitingEvidence(it)) }
                 if (!isCurrentScan()) return@subscribe
                 scheduleFallbackRefresh(incomplete || historyFailed)
                 loadFailed.value = incomplete || historyFailed
@@ -369,6 +372,16 @@ internal class StopOrderService(
             existing + updated
         }
     }
+
+    private fun invalidateCancellation(acceptanceId: String) {
+        activeRefresh?.invalidatedCancellations?.add(acceptanceId)
+        orders.value = orders.value.map {
+            if (it.acceptanceId == acceptanceId) withoutCancellationEvidence(it) else it
+        }
+    }
+
+    private fun withoutCancellationEvidence(order: StopOrder): StopOrder =
+        order.copy(triggerVerified = false, restWaitingConfirmed = false, recoveryAvailable = false)
 
     private fun invalidateWaitingOrders() {
         orders.value = orders.value.map(::invalidateWaitingOrder)
@@ -468,7 +481,9 @@ internal class StopOrderService(
                 if (eligible) Completable.complete() else Completable.error(IneligibleCancellation())
             }
 
-    private class Scan(val update: Refresh)
+    private class Scan(val update: Refresh) {
+        val invalidatedCancellations = mutableSetOf<String>()
+    }
 
     private enum class Refresh { REGULAR, PARENT, CHILD, RECOVERY }
 

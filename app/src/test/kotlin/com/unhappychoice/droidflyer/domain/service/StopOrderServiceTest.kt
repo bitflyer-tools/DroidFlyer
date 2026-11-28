@@ -1023,6 +1023,39 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun failedCancellationRecheckBlocksStaleRowsFromAnOverlappingScan() =
+        withRealtimeStops { stops, _, scheduler ->
+            stops.refresh()
+            scheduler.advanceTimeBy(28, SECONDS)
+            val confirmation = stops.cancellationConfirmation(stops.orders.value.single())
+
+            stops.onChildUpdates()
+            scheduler.triggerActions()
+            childOrders = marketChild(0.0)
+            val failures = mutableListOf<CancellationFailure>()
+            stops.cancel(confirmation) { failures += it }
+            scheduler.triggerActions()
+
+            assertEquals(listOf(CancellationFailure.INELIGIBLE), failures)
+            assertCancellationBlocked(stops, confirmation)
+            val scansBeforeRecovery = activeParentReadCount()
+            val reportedEligibility = stops.orders.asObservable().map { orders ->
+                orders.any { it.canCancel || it.canConfirmRecovery }
+            }.test()
+
+            childOrders = "[]"
+            scheduler.advanceTimeBy(4, SECONDS)
+            assertEquals(scansBeforeRecovery, activeParentReadCount())
+            childOrders = marketChild(0.0)
+            scheduler.advanceTimeBy(44, SECONDS)
+
+            assertEquals(1, activeParentReadCount() - scansBeforeRecovery)
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            reportedEligibility.assertNever(true).dispose()
+            assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+        }
+
+    @Test
     fun cancellationIsBlockedWhileRealtimeIsDisconnectedAfterAConnectionGap() =
         withRealtimeStops { stops, realtime, scheduler ->
             stops.refresh()
