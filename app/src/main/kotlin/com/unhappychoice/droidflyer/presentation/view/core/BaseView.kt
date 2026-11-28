@@ -3,7 +3,7 @@ package com.unhappychoice.droidflyer.presentation.view.core
 import android.content.Context
 import android.util.AttributeSet
 import android.widget.LinearLayout
-import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.rxjava3.disposables.CompositeDisposable
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.DITrigger

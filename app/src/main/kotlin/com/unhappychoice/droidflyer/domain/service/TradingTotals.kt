@@ -5,9 +5,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.average
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.profit
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
-import io.reactivex.Observable
-import io.reactivex.Scheduler
-import io.reactivex.rxkotlin.Observables
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Scheduler
 import java.util.concurrent.TimeUnit
 
 data class TradingTotals(val profit: Long?, val spread: Long?, val balance: Long?, val price: Long?)
@@ -36,8 +35,8 @@ internal fun observeTradingHeader(
     scheduler: Scheduler
 ): Observable<TradingHeaderState> {
     val entries = positions.map { Entry(it, it.average().toLong(), it.wholeSize() < 0.0) }
-    val account = Observables.combineLatest(entries, collateral, ::Account)
-    return Observables.combineLatest(prices, account) { price, currentAccount ->
+    val account = Observable.combineLatest(entries, collateral, ::Account)
+    return Observable.combineLatest(prices, account) { price, currentAccount ->
         Valuation(price.yen?.toLong(), currentAccount)
     }
         .publish { latest ->

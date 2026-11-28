@@ -5,8 +5,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChi
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
-import io.reactivex.Observable
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.HttpException
 import retrofit2.Response

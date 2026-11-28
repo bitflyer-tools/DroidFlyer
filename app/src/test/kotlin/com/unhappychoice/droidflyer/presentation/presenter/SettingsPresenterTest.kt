@@ -17,12 +17,11 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -114,7 +113,7 @@ class SettingsPresenterTest {
             .putString("secret", "saved-secret")
             .apply()
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
         presenter.key.value = "submitted-key"
         presenter.secret.value = "submitted-secret"
     }
@@ -174,7 +173,7 @@ class SettingsPresenterTest {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
         val result = presenter.saveCredentials().test()
 
         assertEquals(emptyList<String>(), requestPaths())
@@ -225,7 +224,7 @@ class SettingsPresenterTest {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
         val status = CurrentStatusService(api.client(), Observable.empty(), Observable.empty(), Observable.empty(), null)
         try {
             val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
@@ -301,7 +300,7 @@ class SettingsPresenterTest {
     @Test
     fun unlinkWorksOfflineAndDropsValidationAlreadyWaitingForTheMainThread() {
         val main = TestScheduler()
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
         val changes = preference.accountChanged.test()
         val pendingSave = presenter.saveCredentials().test()
         assertEquals(1, requests.size)
@@ -335,7 +334,7 @@ class SettingsPresenterTest {
         val timer = TestScheduler()
         RxJavaPlugins.setComputationSchedulerHandler { timer }
         RxJavaPlugins.setSingleSchedulerHandler { timer }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(timer) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { timer }
         val status = createStatus()
         timer.triggerActions()
         assertEquals(listOf("/v1/board"), requestPaths())
@@ -396,7 +395,7 @@ class SettingsPresenterTest {
     @Test
     fun applyAccountChangeIgnoresALoadThatResolvesAfterAnExplicitSwitch() {
         val main = TestScheduler()
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
         val status = createStatus()
         try {
             status.applyAccountChange(preference) { null }
