@@ -9,11 +9,11 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
 import com.unhappychoice.droidflyer.presentation.adapter.BoardType
 import com.unhappychoice.droidflyer.presentation.adapter.activeOrder
-import io.reactivex.Observable
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.BehaviorSubject
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.BehaviorSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

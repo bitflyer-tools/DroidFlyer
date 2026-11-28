@@ -1,6 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.view
 
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
 
 internal fun Observable<CharSequence>.orderAmounts(): Observable<Double> = map { it.toOrderAmount() }
 

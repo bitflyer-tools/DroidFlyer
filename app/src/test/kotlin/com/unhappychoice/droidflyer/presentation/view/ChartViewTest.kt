@@ -9,9 +9,9 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.ChartViewBinding
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ExecutionPrice
 import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
-import io.reactivex.Observable
-import io.reactivex.plugins.RxJavaPlugins
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import org.junit.After

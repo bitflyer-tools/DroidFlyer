@@ -2,15 +2,14 @@ package com.unhappychoice.droidflyer.presentation.presenter.core
 
 import com.unhappychoice.droidflyer.domain.service.CryptoCfdOrderSize
 import com.unhappychoice.droidflyer.extension.Variable
-import io.reactivex.Observable
-import io.reactivex.rxkotlin.Observables
+import io.reactivex.rxjava3.core.Observable
 
 interface OrderEntryGate : HasAmount, Loadable {
     val privateClientAvailable: Observable<Boolean>
     val maximumOrderSize: Variable<Double>
 
     val orderEntryEnabled: Observable<Boolean>
-        get() = Observables.combineLatest(
+        get() = Observable.combineLatest(
             privateClientAvailable,
             isLoading.asObservable(),
             amount.asObservable(),

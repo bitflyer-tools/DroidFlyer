@@ -6,8 +6,8 @@ import com.google.gson.reflect.TypeToken
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
-import io.reactivex.disposables.Disposable
-import io.reactivex.schedulers.Schedulers
+import io.reactivex.rxjava3.disposables.Disposable
+import io.reactivex.rxjava3.schedulers.Schedulers
 import io.socket.client.AckWithTimeout
 import io.socket.client.Socket
 import io.socket.thread.EventThread
