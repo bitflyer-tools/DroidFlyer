@@ -5,6 +5,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.CancelChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Execution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.FundingRate
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
@@ -41,7 +42,7 @@ class CurrentStatusServiceTest {
     private val deltas = PublishSubject.create<Board>()
     private val executions = PublishSubject.create<List<Execution>>()
     private val disconnects = PublishSubject.create<Unit>()
-    private val orderEvents = PublishSubject.create<PrivateEvent<*>>()
+    private val orderEvents = PublishSubject.create<PrivateEvent<List<ChildOrderEvent>>>()
     private val initialBook = Board(100.0, emptyList(), listOf(Order(100, 1.0), Order(110, 1.0)))
     private val updatedBook = initialBook.copy(asks = listOf(Order(110, 1.0)))
     private val activeOrder = ChildOrder(
@@ -282,7 +283,7 @@ class CurrentStatusServiceTest {
         service.updateStatus()
         scheduler.triggerActions()
 
-        orderEvents.onNext(PrivateEvent(Unit) { true })
+        orderEvents.onNext(PrivateEvent(emptyList()) { true })
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
         verify(api, times(2)).getChildOrders("FX_BTC_JPY", count = 500)
 

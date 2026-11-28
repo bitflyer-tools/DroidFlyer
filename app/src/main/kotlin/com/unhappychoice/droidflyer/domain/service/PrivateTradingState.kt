@@ -24,7 +24,9 @@ import io.reactivex.subjects.ReplaySubject
 internal class PrivateTradingState(
     client: APIClientV1?,
     private val requestScheduler: Scheduler = Schedulers.io(),
-    private val stateScheduler: Scheduler = androidMainThreadScheduler()
+    private val stateScheduler: Scheduler = androidMainThreadScheduler(),
+    submissionGuard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+    maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
     enum class ActiveOrdersStatus { INITIAL, EMPTY, AVAILABLE, UNAVAILABLE, STALE }
 
@@ -33,6 +35,8 @@ internal class PrivateTradingState(
     val orders = Variable<List<ChildOrder>>(emptyList())
 
     val activeOrdersStatus = Variable(ActiveOrdersStatus.INITIAL)
+
+    val stopOrders = StopOrderService(client, requestScheduler, stateScheduler, submissionGuard, maximumOrderSize)
 
     val accountChanges: Observable<Unit> get() = accountSwitches.hide()
 
@@ -60,19 +64,25 @@ internal class PrivateTradingState(
 
     fun dispose() {
         disposed = true
+        stopOrders.dispose()
         replaceSession(null)
     }
 
-    fun switchAccount(client: APIClientV1?, onSwitched: () -> Unit = {}) {
+    fun switchAccount(
+        client: APIClientV1?,
+        guard: StopSubmissionGuard = StopSubmissionGuard.inMemory(),
+        onSwitched: () -> Unit = {}
+    ) {
         if (disposed) return
 
         replaceSession(client?.let(::Session)) {
+            stopOrders.switchAccount(client, guard)
             accountSwitches.onNext(Unit)
             onSwitched()
         }
     }
 
-    fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched)
+    fun unlink(onSwitched: () -> Unit = {}) = switchAccount(null, onSwitched = onSwitched)
 
     fun refreshPositionsAndCollateral(): Completable = Completable.defer {
         if (disposed) return@defer Completable.complete()

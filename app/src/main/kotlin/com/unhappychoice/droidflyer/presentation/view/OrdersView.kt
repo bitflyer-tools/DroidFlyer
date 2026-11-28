@@ -2,7 +2,9 @@ package com.unhappychoice.droidflyer.presentation.view
 
 import android.content.Context
 import android.util.AttributeSet
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
@@ -10,14 +12,18 @@ import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.ActiveOrdersStatus
+import com.unhappychoice.droidflyer.domain.service.StopOrder
+import com.unhappychoice.droidflyer.domain.service.StopOrderService.CancellationFailure
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.adapter.FillAdapter
 import com.unhappychoice.droidflyer.presentation.adapter.OrderAdapter
+import com.unhappychoice.droidflyer.presentation.adapter.StopOrderAdapter
 import com.unhappychoice.droidflyer.presentation.presenter.FillHistory
 import com.unhappychoice.droidflyer.presentation.presenter.OrdersPresenter
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
+import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import org.kodein.di.instance
@@ -30,6 +36,9 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     private val subscriptions = CompositeDisposable()
     private var appliedFillsUpdate: FillHistory.State.Update? = null
 
+    private val stopAdapter by lazy { StopOrderAdapter(::confirmStopCancellation) }
+    private var cancellationDialog: AlertDialog? = null
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         presenter.takeView(this)
@@ -37,8 +46,16 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
 
         binding.orderList.apply {
             layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
-            adapter = orderAdapter
+            adapter = ConcatAdapter(stopAdapter, orderAdapter)
         }
+
+        presenter.stopOrders.subscribeNext(stopAdapter::updateOrders).addTo(subscriptions)
+        presenter.stopCancellations.subscribeNext(stopAdapter::updateCancellations).addTo(subscriptions)
+        presenter.stopLoadFailed.subscribeNext {
+            binding.retryStops.isVisible = it
+        }.addTo(subscriptions)
+        binding.retryStops.setOnClickListener { presenter.refreshStops() }
+        presenter.refreshStops()
 
         presenter.orders
             .subscribeNext { orderAdapter.updateOrders(it) }
@@ -63,6 +80,8 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
     }
 
     override fun onDetachedFromWindow() {
+        cancellationDialog?.dismiss()
+        cancellationDialog = null
         subscriptions.clear()
         binding.ordersTabs.removeOnTabSelectedListener(tabListener)
         presenter.fillHistory.clear()
@@ -139,8 +158,36 @@ class OrdersView(context: Context?, attr: AttributeSet?) : BaseView(context, att
         override fun onTabReselected(tab: TabLayout.Tab) = Unit
     }
 
-    private fun showCancellationFailure(order: ChildOrder) {
-        val message = context.getString(R.string.order_cancellation_failed, order.childOrderAcceptanceId)
+    private fun confirmStopCancellation(order: StopOrder) {
+        val confirmation = presenter.stopCancellationConfirmation(order)
+        cancellationDialog = AlertDialog.Builder(context, R.style.DialogStyle)
+            .setTitle(R.string.stop_cancel_title)
+            .setMessage(
+                if (order.canConfirmRecovery) context.getString(R.string.stop_verify_cancel_message, order.acceptanceId)
+                else order.acceptanceId
+            )
+            .setPositiveButton(if (order.canConfirmRecovery) R.string.stop_confirm_waiting_and_cancel else R.string.ok) { _, _ ->
+                presenter.cancelStop(confirmation) { failure ->
+                    showCancellationFailure(confirmation.acceptanceId, failure.message())
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .showTradingConfirmation()
+    }
+
+    private fun showCancellationFailure(order: ChildOrder) = showCancellationFailure(order.childOrderAcceptanceId)
+
+    private fun CancellationFailure.message() = when (this) {
+        CancellationFailure.ACCOUNT_CHANGED -> R.string.stop_cancel_account_changed
+        CancellationFailure.UNAVAILABLE -> R.string.stop_cancel_unavailable
+        CancellationFailure.IN_PROGRESS -> R.string.stop_cancel_in_progress
+        CancellationFailure.INELIGIBLE -> R.string.stop_cancel_ineligible
+        CancellationFailure.REQUEST_FAILED -> R.string.order_cancellation_failed
+    }
+
+    private fun showCancellationFailure(acceptanceId: String, messageId: Int = R.string.order_cancellation_failed) {
+        if (!isAttachedToWindow) return
+        val message = context.getString(messageId, acceptanceId)
         Snackbar.make(this, message, Snackbar.LENGTH_LONG).show()
     }
 }
