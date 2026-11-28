@@ -1,5 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter
 
+import com.unhappychoice.droidflyer.DroidFlyerApplication
+import com.unhappychoice.droidflyer.di.applicationModule
 import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
 import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
 import org.junit.Assert.assertEquals
@@ -7,6 +9,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.kodein.di.DI
+import org.kodein.di.instance
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
@@ -55,5 +59,24 @@ class AlertsPresenterTest {
 
         observed.assertValueCount(1)
         assertEquals(preference.read(), observed.values().single())
+    }
+
+    @Test
+    fun applicationStoreAndPresenterObserveEachOthersRemovals() {
+        val application = RuntimeEnvironment.getApplication() as DroidFlyerApplication
+        val serviceStore = application.priceAlertPreference
+        val di = DI { import(applicationModule(application)) }
+        val presenterStore: PriceAlertPreference by di.instance()
+        val presenter = AlertsPresenter(presenterStore) {}
+        val first = requireNotNull(serviceStore.add(100, PriceAlertDirection.ABOVE))
+        val second = requireNotNull(serviceStore.add(50, PriceAlertDirection.BELOW))
+        val visibleAlerts = presenter.alerts.test()
+        val serviceChanges = serviceStore.alertsChanged.test()
+
+        serviceStore.remove(first.id)
+        presenter.removeAlert(second.id)
+
+        visibleAlerts.assertValues(listOf(first, second), listOf(second), emptyList())
+        serviceChanges.assertValues(listOf(second), emptyList())
     }
 }

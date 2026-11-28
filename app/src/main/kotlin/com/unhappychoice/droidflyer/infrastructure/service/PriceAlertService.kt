@@ -8,21 +8,20 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
+import com.unhappychoice.droidflyer.DroidFlyerApplication
 import com.unhappychoice.droidflyer.domain.service.PriceAlert
-import com.unhappychoice.droidflyer.domain.service.latestMarketPrice
-import com.unhappychoice.droidflyer.extension.filterNotNull
+import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.notification.PRICE_ALERT_SERVICE_NOTIFICATION_ID
 import com.unhappychoice.droidflyer.infrastructure.notification.priceAlertServiceNotification
 import com.unhappychoice.droidflyer.infrastructure.notification.priceAlertTriggeredNotification
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
-import com.unhappychoice.droidflyer.infrastructure.preference.PriceAlertPreference
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 
 internal class PriceAlertService : Service() {
-    private val preference by lazy { PriceAlertPreference(applicationContext) }
+    private val preference by lazy { (application as DroidFlyerApplication).priceAlertPreference }
     private val client by lazy {
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
         RealtimeClient(gson, APITokenPreference(applicationContext))
@@ -37,7 +36,7 @@ internal class PriceAlertService : Service() {
         startForeground(PRICE_ALERT_SERVICE_NOTIFICATION_ID, priceAlertServiceNotification())
         monitor = PriceAlertMonitor(
             preference,
-            client.executions.map(::latestMarketPrice).map { it.yen }.filterNotNull(),
+            client.executions.observeOn(androidMainThreadScheduler()),
             ::notifyTriggered
         )
         preference.alertsChanged.startWith(preference.read())

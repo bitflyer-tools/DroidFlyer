@@ -10,6 +10,8 @@ import mortar.MortarScope
 class DroidFlyerApplication : Application() {
     internal val tokenPreference by lazy { APITokenPreference(this) }
 
+    internal val priceAlertPreference by lazy { PriceAlertPreference(this) }
+
     private val scope by lazy {
         MortarScope.buildRootScope().build("root_scope")
     }
@@ -17,7 +19,7 @@ class DroidFlyerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         createPriceAlertNotificationChannel()
-        if (PriceAlertPreference(this).read().isNotEmpty()) PriceAlertService.start(this)
+        if (priceAlertPreference.read().isNotEmpty()) PriceAlertService.start(this)
     }
 
     override fun getSystemService(name: String): Any? {
