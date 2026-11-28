@@ -91,7 +91,7 @@ class CurrentStatusService internal constructor(
             }.filter { it.yen != null },
             publicFeedDisconnects.map { MarketPrice(null) }
         )
-            .observeOn(androidMainThreadScheduler())
+            .observeMarketPricesOn(androidMainThreadScheduler())
             .subscribeNext { currentPrice.value = it }
             .addTo(bag)
 
