@@ -16,6 +16,7 @@ import com.unhappychoice.droidflyer.di.loadTradingAccount
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
+import com.unhappychoice.droidflyer.infrastructure.service.PriceAlertService
 import com.unhappychoice.droidflyer.presentation.executionMessage
 import com.unhappychoice.droidflyer.presentation.core.GsonParceler
 import com.unhappychoice.droidflyer.presentation.core.ScreenChanger
@@ -100,6 +101,12 @@ class MainActivity : AppCompatActivity() {
 
     internal fun showSnackbar(message: String, duration: Int) {
         binding.containerView.doOnAttach { Snackbar.make(it, message, duration).show() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val preferences = (application as DroidFlyerApplication).priceAlertPreference
+        if (preferences.read().isNotEmpty()) PriceAlertService.start(this)
     }
 
     override fun onDestroy() {

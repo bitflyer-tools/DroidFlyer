@@ -11,6 +11,7 @@ import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
+import com.unhappychoice.droidflyer.domain.service.PriceAlertDirection
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
@@ -24,6 +25,7 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.testCredentialKey
+import com.unhappychoice.droidflyer.infrastructure.service.PriceAlertService
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderPresenter
 import com.unhappychoice.droidflyer.presentation.presenter.LimitOrderSide
 import com.unhappychoice.droidflyer.presentation.presenter.MarketOrderPresenter
@@ -46,6 +48,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -93,6 +96,21 @@ class MainActivityNavigationTest {
     @After
     fun resetSchedulers() {
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    fun resumesMonitoringSavedPriceAlertsWhenTheActivityResumes() {
+        val application = RuntimeEnvironment.getApplication() as DroidFlyerApplication
+        application.priceAlertPreference.add(100, PriceAlertDirection.ABOVE)
+        val shadowApplication = shadowOf(application)
+
+        Robolectric.buildActivity(MainActivity::class.java).create().start().use { controller ->
+            assertNull(shadowApplication.nextStartedService)
+
+            controller.resume()
+
+            assertEquals(PriceAlertService::class.java.name, shadowApplication.nextStartedService?.component?.className)
+        }
     }
 
     @Test

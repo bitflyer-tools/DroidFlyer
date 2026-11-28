@@ -10,6 +10,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
+import com.unhappychoice.droidflyer.infrastructure.service.PriceAlertService
 import com.unhappychoice.droidflyer.presentation.presenter.*
 import org.kodein.di.DI
 import org.kodein.di.bind
@@ -44,6 +45,7 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
         LimitOrderPresenter(instance<CurrentStatusService>(), accountPreference = instance(), activity.resources, activity::showSnackbar)
     }
     bindSingleton<OrdersPresenter> { OrdersPresenter(instance()) }
+    bindSingleton<AlertsPresenter> { AlertsPresenter(instance()) { PriceAlertService.start(activity) } }
 }
 
 internal fun loadTradingAccount(
