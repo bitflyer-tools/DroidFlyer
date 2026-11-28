@@ -10,6 +10,7 @@ import androidx.core.view.children
 import androidx.viewpager.widget.ViewPager
 import com.google.android.material.tabs.TabLayout
 import com.unhappychoice.droidflyer.databinding.OrderViewBinding
+import com.unhappychoice.droidflyer.databinding.OrdersViewBinding
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
@@ -18,6 +19,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentialCipher
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
@@ -31,6 +33,7 @@ import com.unhappychoice.droidflyer.presentation.view.ChartView
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import com.unhappychoice.droidflyer.presentation.view.OrderView
+import com.unhappychoice.droidflyer.presentation.view.OrdersView
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
 import flow.Flow
 import io.reactivex.Observable
@@ -184,6 +187,63 @@ class MainActivityNavigationTest {
             polling.triggerActions()
             drainStatusRequests()
             assertEquals(statusRead, requests)
+        }
+    }
+
+    @Test
+    @Config(
+        shadows = [OfflineApi::class],
+        instrumentedPackages = ["com.unhappychoice.droidflyer.infrastructure.bitflyer.http"]
+    )
+    fun stopOrderFallbackRunsOnlyWhileActiveOrdersIsVisibleAndStarted() {
+        val requests = mutableListOf<String>()
+        val api = recordingStatusClient(mutableListOf())
+        whenever(api.getMyExecutions(count = 50)).thenReturn(Observable.just(emptyList()))
+        fun record(state: String) = Observable.just(emptyList<ParentOrder>()).doOnSubscribe {
+            requests.add(state)
+        }
+        whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(record("ACTIVE"))
+        listOf("COMPLETED", "CANCELED", null).forEach { state ->
+            whenever(api.getParentOrders(orderState = state)).thenReturn(record(state ?: "ALL"))
+        }
+
+        Robolectric.buildActivity(MainActivity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            activity.module.direct.instance<CurrentStatusService>().switchAccount(api)
+            activity.tapTab(R.id.orderIcon)
+            val order = OrderViewBinding.bind(activity.binding.containerView.getChildAt(0))
+            order.viewPager.showPage(2)
+            drainStatusRequests()
+            assertNoStopReads(requests)
+
+            order.viewPager.showPage(3)
+            assertRecoveryAndOneFallback(requests)
+            val orders = order.viewPager.children.filterIsInstance<OrdersView>().single()
+            val tabs = OrdersViewBinding.bind(orders).ordersTabs
+            tabs.getTabAt(1)!!.select()
+            assertNoStopReads(requests)
+            tabs.getTabAt(0)!!.select()
+            assertRecoveryAndOneFallback(requests)
+
+            order.viewPager.showPage(2)
+            assertTrue(orders.isAttachedToWindow)
+            assertNoStopReads(requests)
+            order.viewPager.showPage(3)
+            assertRecoveryAndOneFallback(requests)
+
+            controller.pause().stop()
+            assertTrue(orders.isAttachedToWindow)
+            assertNoStopReads(requests)
+            controller.restart()
+            assertRecoveryAndOneFallback(requests)
+            controller.resume()
+
+            activity.tapTab(R.id.chartIcon)
+            assertNoStopReads(requests)
+            activity.tapTab(R.id.orderIcon)
+            val reopened = OrderViewBinding.bind(activity.binding.containerView.getChildAt(0))
+            reopened.viewPager.showPage(3)
+            assertRecoveryAndOneFallback(requests)
         }
     }
 
@@ -510,6 +570,41 @@ class MainActivityNavigationTest {
             assertEquals(activity.expectedMessage(), message?.text?.toString())
             verify(apiClient).sendChildOrder(SendChildOrderRequest("FX_BTC_JPY", "MARKET", "BUY", null, 0.001))
         }
+    }
+
+    private fun ViewPager.showPage(position: Int) {
+        setCurrentItem(position, false)
+        val size = View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.EXACTLY)
+        measure(size, size)
+        layout(0, 0, 600, 600)
+    }
+
+    private fun assertNoStopReads(requests: MutableList<String>) {
+        requests.clear()
+        background.advanceTimeBy(120, TimeUnit.SECONDS)
+        drainStatusRequests()
+        assertTrue(requests.isEmpty())
+    }
+
+    private fun assertRecoveryAndOneFallback(requests: MutableList<String>) {
+        requests.clear()
+        drainStatusRequests()
+        val recovery = listOf("ACTIVE", "COMPLETED", "CANCELED", "ALL")
+        assertEquals(recovery.take(1), requests)
+        repeat(3) {
+            background.advanceTimeBy(4, TimeUnit.SECONDS)
+            drainStatusRequests()
+        }
+        assertEquals(recovery, requests)
+        background.advanceTimeBy(29, TimeUnit.SECONDS)
+        drainStatusRequests()
+        assertEquals(recovery, requests)
+        background.advanceTimeBy(1, TimeUnit.SECONDS)
+        drainStatusRequests()
+        assertEquals(recovery + "ACTIVE", requests)
+        background.advanceTimeBy(12, TimeUnit.SECONDS)
+        drainStatusRequests()
+        assertEquals(recovery + recovery, requests)
     }
 
     private fun MainActivity.tapTab(itemId: Int) {

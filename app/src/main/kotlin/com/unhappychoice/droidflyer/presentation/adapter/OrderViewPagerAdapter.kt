@@ -54,5 +54,6 @@ class OrderViewPagerAdapter(val context: Context, val di: DI) : PagerAdapter() {
 
     companion object {
         internal const val LIMIT_POSITION = 1
+        internal const val ORDERS_POSITION = 3
     }
 }

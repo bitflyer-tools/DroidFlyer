@@ -288,7 +288,7 @@ class StopOrderServiceTest {
     @Test
     fun retriesFailedParentListAfterChildExecutionWithoutAnotherEvent() =
         withRealtimeStops { stops, realtime, scheduler ->
-            stops.refresh()
+            stops.setActiveOrdersVisible(true)
             scheduler.advanceTimeBy(28, SECONDS)
             parentOrderStatus = 503
             childOrders = marketChild(0.005)
@@ -306,7 +306,7 @@ class StopOrderServiceTest {
     @Test
     fun retriesFailedMarketChildReadAfterTriggerWithoutAnotherEvent() =
         withRealtimeStops { stops, realtime, scheduler ->
-            stops.refresh()
+            stops.setActiveOrdersVisible(true)
             scheduler.advanceTimeBy(28, SECONDS)
             childOrderStatus = 503
             realtime.parent(listOf(triggerEvent()))
@@ -607,7 +607,7 @@ class StopOrderServiceTest {
     @Test
     fun pollsStopOrdersWhenRealtimeNeverConnectsAtStartup() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
-            stops.refresh()
+            stops.setActiveOrdersVisible(true)
             scheduler.advanceTimeBy(28, SECONDS)
             assertEquals(StopOrderStatus.UNKNOWN, stops.orders.value.single().status)
 
@@ -627,6 +627,29 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun hidingActiveOrdersCancelsRemainingFallbackReadsAndKeepsPrivateEvents() =
+        withRealtimeStops(connected = false) { stops, realtime, scheduler ->
+            stops.setActiveOrdersVisible(true)
+            scheduler.advanceTimeBy(28, SECONDS)
+            val initialReads = stopReadPaths().size
+            scheduler.advanceTimeBy(23, SECONDS)
+            val reads = stopReadPaths().size
+            assertTrue(reads > initialReads)
+            stops.setActiveOrdersVisible(false)
+            realtime.parent(listOf(triggerEvent()))
+            scheduler.advanceTimeBy(120, SECONDS)
+            assertEquals(reads, stopReadPaths().size)
+
+            stops.setActiveOrdersVisible(true)
+            stops.setActiveOrdersVisible(true)
+            scheduler.advanceTimeBy(28, SECONDS)
+            assertEquals(StopOrderStatus.TRIGGERED, stops.orders.value.single().status)
+            val recoveryReads = requests.filter { it.url.encodedPath == "/v1/me/getparentorders" }
+                .filter { it.url.queryParameter("parent_order_state") == "ACTIVE" }
+            assertEquals(3, recoveryReads.size)
+        }
+
+    @Test
     fun blocksCancellationAfterPrivateChannelAuthenticationFailsAtStartup() =
         withRealtimeStops(connected = false) { stops, realtime, scheduler ->
             realtime.available(false)
@@ -642,7 +665,7 @@ class StopOrderServiceTest {
     @Test
     fun reconnectKeepsStopUnknownAfterDisconnectedRefreshFails() =
         withRealtimeStops { stops, realtime, scheduler ->
-            stops.refresh()
+            stops.setActiveOrdersVisible(true)
             scheduler.advanceTimeBy(28, SECONDS)
             assertTrue(stops.orders.value.single().canCancel)
             val confirmation = stops.cancellationConfirmation(stops.orders.value.single())

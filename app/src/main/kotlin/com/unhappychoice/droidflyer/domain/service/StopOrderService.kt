@@ -43,7 +43,9 @@ internal class StopOrderService(
     private var account = Account(client, guard)
     private val requests = CompositeDisposable()
     private var enabled = false
+    private var activeOrdersVisible = false
     private var refreshing = false
+    private var refreshingFromFallback = false
     private var realtimeRefresh: RealtimeRefresh? = null
     private var pendingRealtimeRefresh: RealtimeRefresh? = null
     private var recoverOnRefresh = false
@@ -65,6 +67,7 @@ internal class StopOrderService(
         refreshRequest.set(null)
         fallbackRefresh.set(null)
         refreshing = false
+        refreshingFromFallback = false
         realtimeRefresh = null
         pendingRealtimeRefresh = null
         privateChannelsUnavailable = true
@@ -220,6 +223,20 @@ internal class StopOrderService(
 
     fun onChildUpdates() = queueRealtimeRefresh(RealtimeRefresh.CHILD)
 
+    fun setActiveOrdersVisible(visible: Boolean) {
+        if (activeOrdersVisible == visible) return
+        activeOrdersVisible = visible
+        if (visible) {
+            refresh(recoverTriggers = true)
+        } else {
+            fallbackRefresh.set(null)
+            if (refreshingFromFallback) {
+                refreshRequest.set(null)
+                finishRefresh()
+            }
+        }
+    }
+
     fun refresh(recoverTriggers: Boolean = false) = refresh(recoverTriggers, realtime = null)
 
     private fun queueRealtimeRefresh(update: RealtimeRefresh) {
@@ -239,12 +256,17 @@ internal class StopOrderService(
         refresh(recoverTriggers = false, realtime = update)
     }
 
-    private fun refresh(recoverTriggers: Boolean, realtime: RealtimeRefresh?) {
+    private fun refresh(
+        recoverTriggers: Boolean,
+        realtime: RealtimeRefresh?,
+        fromFallback: Boolean = false
+    ) {
         if (requests.isDisposed) return
         enabled = true
         val current = account
         val client = current.client ?: return
         refreshing = true
+        refreshingFromFallback = fromFallback
         if (privateChannelsUnavailable || recoverTriggers) {
             pendingRealtimeRefresh = null
         } else {
@@ -332,17 +354,22 @@ internal class StopOrderService(
 
     private fun finishRefresh() {
         refreshing = false
+        refreshingFromFallback = false
         realtimeRefresh = null
         refreshPendingRealtimeUpdates()
     }
 
     private fun scheduleFallbackRefresh(retry: Boolean) {
-        if (privateChannelsUnavailable || retry) {
+        if (activeOrdersVisible && (privateChannelsUnavailable || retry)) {
             fallbackRefresh.set(
                 Observable.timer(30, TimeUnit.SECONDS, io)
                     .observeOn(main)
                     .subscribeNext {
-                        if (privateChannelsUnavailable) refresh() else onChildUpdates()
+                        refresh(
+                            recoverTriggers = false,
+                            realtime = if (privateChannelsUnavailable) null else RealtimeRefresh.CHILD,
+                            fromFallback = true
+                        )
                     }
             )
         }

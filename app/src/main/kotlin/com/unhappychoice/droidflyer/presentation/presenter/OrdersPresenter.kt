@@ -25,6 +25,8 @@ class OrdersPresenter internal constructor(
     internal val stopLoadFailed = privateState.stopOrders.loadFailed.asObservable()
     internal val stopCancellations = privateState.stopOrders.cancelling.asObservable()
 
+    internal fun setActiveOrdersVisible(visible: Boolean) = privateState.stopOrders.setActiveOrdersVisible(visible)
+
     internal fun refreshStops() = privateState.stopOrders.refresh(recoverTriggers = true)
 
     internal fun stopCancellationConfirmation(order: StopOrder) =
