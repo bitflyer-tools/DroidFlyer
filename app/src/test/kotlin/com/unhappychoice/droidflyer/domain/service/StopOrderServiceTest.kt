@@ -67,6 +67,8 @@ class StopOrderServiceTest {
         val maximum = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
         val service = StopOrderService(client(), serviceScheduler, serviceScheduler, maximumOrderSize = maximum)
             .apply { onPrivateChannelAvailability(true) }
+        val twentyBtcConfirmation = service.confirmation(stopRequest("20"))
+        assertFalse(service.submit(twentyBtcConfirmation) { fail("Submitted above the individual maximum") })
 
         listOf("0.000999999999999999999", "10.000000000000000001").forEach { quantity ->
             val confirmation = service.confirmation(stopRequest(quantity))
@@ -87,9 +89,11 @@ class StopOrderServiceTest {
         assertTrue(service.submit(service.confirmation(stopRequest("10"))) { assertTrue(it.isSuccess) })
         serviceScheduler.triggerActions()
         maximum.value = CryptoCfdOrderSize.CORPORATE_MAXIMUM
+        assertTrue(service.submit(twentyBtcConfirmation) { assertTrue(it.isSuccess) })
+        serviceScheduler.triggerActions()
         assertTrue(service.submit(corporateConfirmation) { assertTrue(it.isSuccess) })
         serviceScheduler.triggerActions()
-        assertEquals(3, requests.count { it.method == "POST" })
+        assertEquals(4, requests.count { it.method == "POST" })
     }
 
     @Test
