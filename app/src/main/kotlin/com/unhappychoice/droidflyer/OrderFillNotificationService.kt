@@ -18,7 +18,6 @@ import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
-import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.presentation.executionMessage
 import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
@@ -69,9 +68,11 @@ class OrderFillNotificationService : Service() {
     private fun watchOpenOrders(app: DroidFlyerApplication) {
         val realtime = sessionFactory(app)
         session = realtime
-        realtime.notifyOrderOutcomes { notifyOutcome(outcomeMessage(it)) }
-        realtime.notifyParentOrderCancellations {
-            notifyOutcome(getString(R.string.order_notification_canceled, it))
+        realtime.notifyOrderOutcomes {
+            notifyOutcome(terminationMessage(it.eventType, it.productCode) ?: executionMessage(it))
+        }
+        realtime.notifyParentOrderOutcomes {
+            terminationMessage(it.eventType, it.productCode)?.let(::notifyOutcome)
         }
 
         orderChecks = realtime.privateChannelAvailability
@@ -117,10 +118,10 @@ class OrderFillNotificationService : Service() {
         NotificationManagerCompat.from(this).notify(nextFillNotificationId.incrementAndGet(), notification)
     }
 
-    private fun outcomeMessage(event: ChildOrderEvent): String = when (event.eventType) {
-        "ORDER_FAILED" -> getString(R.string.order_notification_rejected, event.productCode)
-        "CANCEL" -> getString(R.string.order_notification_canceled, event.productCode)
-        else -> executionMessage(event)
+    private fun terminationMessage(eventType: String, productCode: String): String? = when (eventType) {
+        "ORDER_FAILED" -> getString(R.string.order_notification_rejected, productCode)
+        "CANCEL" -> getString(R.string.order_notification_canceled, productCode)
+        else -> null
     }
 
     private fun watchingNotification() =

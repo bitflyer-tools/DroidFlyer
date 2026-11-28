@@ -5,6 +5,7 @@ import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.addTo
 import io.reactivex.schedulers.Schedulers
@@ -39,12 +40,12 @@ internal class RealtimeSession(
     fun notifyOrderOutcomes(onOutcome: (ChildOrderEvent) -> Unit) =
         notifyChildOrders(ChildOrderEvent::isNotificationOutcome, onOutcome)
 
-    fun notifyParentOrderCancellations(onCancellation: (String) -> Unit) {
+    fun notifyParentOrderOutcomes(onOutcome: (ParentOrderEvent) -> Unit) {
         client.parentOrderEvents
             .observeOn(androidMainThreadScheduler())
             .filter { it.isCurrent() }
             .subscribeNext { batch ->
-                batch.value.filter { it.eventType == "CANCEL" }.forEach { onCancellation(it.productCode) }
+                batch.value.filter { it.eventType == "CANCEL" || it.eventType == "ORDER_FAILED" }.forEach(onOutcome)
             }
             .addTo(subscriptions)
     }

@@ -165,48 +165,12 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun notifiesWhenTheLastUntriggeredStopOrderIsCanceled() {
-        val account = TestSocket()
-        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
-        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
-        preference.save(APICredentials("key", "secret"))
-        var hasOpenOrders = true
-        OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
-        OrderFillNotificationService.sessionFactory = {
-            val client = RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account }
-            RealtimeSession(client)
-        }
+    fun notifiesWhenTheLastUntriggeredStopOrderIsCanceled() =
+        assertLastParentOrderOutcome("CANCEL", R.string.order_notification_canceled)
 
-        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
-        try {
-            val service = controller.get()
-            service.onStartCommand(startIntent(), 0, 1)
-            time.triggerActions()
-            account.authenticate()
-            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
-
-            account.receiveParentEvent("ORDER")
-            time.triggerActions()
-            assertEquals(1, notifications.allNotifications.size)
-
-            hasOpenOrders = false
-            time.advanceTimeBy(15, TimeUnit.SECONDS)
-            assertFalse(shadowOf(service).isStoppedBySelf)
-
-            account.receiveParentEvent("CANCEL")
-            time.triggerActions()
-            time.advanceTimeBy(15, TimeUnit.SECONDS)
-            assertTrue(shadowOf(service).isStoppedBySelf)
-            assertEquals(
-                listOf(service.getString(R.string.order_notification_canceled, "FX_BTC_JPY")),
-                notifications.allNotifications.mapNotNull {
-                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
-                }
-            )
-        } finally {
-            controller.destroy()
-        }
-    }
+    @Test
+    fun notifiesWhenTheLastUntriggeredStopOrderIsRejected() =
+        assertLastParentOrderOutcome("ORDER_FAILED", R.string.order_notification_rejected)
 
     @Test
     @Config(sdk = [36])
@@ -268,6 +232,49 @@ class OrderFillNotificationServiceTest {
             assertFalse(shadowOf(service).isStoppedBySelf)
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    private fun assertLastParentOrderOutcome(eventType: String, messageId: Int) {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        var hasOpenOrders = true
+        OrderFillNotificationService.openOrdersCheck = { Observable.just(hasOpenOrders) }
+        OrderFillNotificationService.sessionFactory = {
+            val client = RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account }
+            RealtimeSession(client)
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            account.authenticate()
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+
+            account.receiveParentEvent("ORDER")
+            time.triggerActions()
+            assertEquals(1, notifications.allNotifications.size)
+
+            hasOpenOrders = false
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+
+            account.receiveParentEvent(eventType)
+            time.triggerActions()
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertTrue(shadowOf(service).isStoppedBySelf)
+            assertEquals(
+                listOf(service.getString(messageId, "FX_BTC_JPY")),
+                notifications.allNotifications.mapNotNull {
+                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                }
+            )
         } finally {
             controller.destroy()
         }
