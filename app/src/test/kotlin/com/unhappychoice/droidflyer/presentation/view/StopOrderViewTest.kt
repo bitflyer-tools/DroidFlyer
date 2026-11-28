@@ -43,7 +43,7 @@ import org.robolectric.shadows.ShadowDialog
 import java.math.BigDecimal
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], application = Application::class)
+@Config(sdk = [28], application = Application::class, qualifiers = "en-rUS")
 class StopOrderViewTest {
     private val api = mock<APIClientV1>()
     private val requests = TestScheduler()
@@ -75,7 +75,20 @@ class StopOrderViewTest {
     }
 
     @Test
-    fun acceptsReviewedStopTermsAndClearsTheFormAfterSubmission() {
+    fun acceptsReviewedStopTermsAndClearsTheFormAfterSubmission() =
+        assertReviewedQuantity("0.01", BigDecimal("0.01"), listOf("1,000", "1,000.01"))
+
+    @Test
+    @Config(qualifiers = "de-rDE")
+    fun acceptsGermanDecimalQuantity() =
+        assertReviewedQuantity("0,01", BigDecimal("0.01"), listOf("1.000", "1.000,01", "0,0,1"))
+
+    @Test
+    @Config(qualifiers = "de-rDE")
+    fun preservesExactGermanDecimalQuantity() =
+        assertReviewedQuantity("0,010000000000000001", BigDecimal("0.010000000000000001"), emptyList())
+
+    private fun assertReviewedQuantity(input: String, expected: BigDecimal, invalidQuantities: List<String>) {
         status.privateState.stopOrders.onPrivateChannelAvailability(true)
         whenever(api.getParentOrders(orderState = "ACTIVE", count = 100)).thenReturn(Observable.just(emptyList()))
         whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("accepted-stop")))
@@ -85,7 +98,12 @@ class StopOrderViewTest {
             sides.children.filterIsInstance<RadioButton>()
                 .single { it.text == form.resources.getString(R.string.sell) }.performClick()
             val (quantity, triggerPrice) = form.children.filterIsInstance<EditText>().toList()
-            quantity.setText("0.01")
+            quantity.text.append(input)
+            assertEquals(input, quantity.text.toString())
+            invalidQuantities.forEach { invalid ->
+                quantity.text.replace(0, quantity.length(), invalid)
+                assertEquals(input, quantity.text.toString())
+            }
             triggerPrice.setText("5000000")
 
             form.review()
@@ -100,7 +118,7 @@ class StopOrderViewTest {
             verify(api).sendParentOrder(request.capture())
             val order = request.firstValue.parameters.single()
             assertEquals(StopSide.SELL, order.side)
-            assertEquals(BigDecimal("0.01"), order.size)
+            assertEquals(expected, order.size)
             assertEquals(5_000_000L, order.triggerPrice)
             assertTrue(quantity.text.isEmpty())
             assertTrue(triggerPrice.text.isEmpty())
