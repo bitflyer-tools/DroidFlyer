@@ -18,6 +18,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,7 @@ class CurrentStatusFundingViewTest {
         Locale.setDefault(Locale.US)
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
+        RxJavaPlugins.setComputationSchedulerHandler { scheduler }
         RxAndroidPlugins.setMainThreadSchedulerHandler { scheduler }
 
         val api = mock<APIClientV1>()
@@ -55,7 +57,10 @@ class CurrentStatusFundingViewTest {
             Observable.just(FundingRate(BigDecimal("0.00375"), "2024-04-15T13:00:00")),
             refresh
         )
-        val service = CurrentStatusService(api, Observable.empty(), Observable.empty(), Observable.empty())
+        val beforeSettlement = 1713186000000L - TimeUnit.HOURS.toMillis(1)
+        val service = CurrentStatusService(
+            api, Observable.empty(), Observable.empty(), Observable.empty(), now = { beforeSettlement }
+        )
         try {
             Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
                 val activity = controller.get()
