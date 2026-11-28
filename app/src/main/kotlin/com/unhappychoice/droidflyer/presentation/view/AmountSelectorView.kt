@@ -19,9 +19,9 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.textChanges
-import io.reactivex.rxkotlin.Observables
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.kotlin.addTo
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.math.BigDecimal
 import java.text.DecimalFormatSymbols
 import java.util.Locale
@@ -54,7 +54,7 @@ class AmountSelectorView(context: Context?, attr: AttributeSet?) : BaseView(cont
         amountField.keyListener = AmountKeyListener(amountSymbols)
         amountField.setText(formatAmount(amount.value))
 
-        Observables.combineLatest(amount.asObservable(), maximumOrderSize.asObservable(), ::orderSizeMessage)
+        Observable.combineLatest(amount.asObservable(), maximumOrderSize.asObservable(), ::orderSizeMessage)
             .subscribeNext { message ->
                 binding.orderSizeMessage.text = message
                 binding.orderSizeMessage.isVisible = message.isNotEmpty()

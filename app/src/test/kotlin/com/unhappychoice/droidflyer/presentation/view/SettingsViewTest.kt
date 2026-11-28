@@ -19,11 +19,10 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import okhttp3.OkHttpClient
@@ -53,7 +52,7 @@ class SettingsViewTest {
     @Before
     fun setSchedulers() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
     }
 
     @After
@@ -76,7 +75,7 @@ class SettingsViewTest {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
 
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()

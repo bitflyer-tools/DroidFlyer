@@ -1,6 +1,6 @@
 package com.unhappychoice.droidflyer.presentation.view
 
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 import org.junit.Test
 
 class OrderAmountTest {

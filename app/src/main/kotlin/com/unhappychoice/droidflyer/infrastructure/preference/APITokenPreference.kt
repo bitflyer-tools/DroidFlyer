@@ -1,7 +1,7 @@
 package com.unhappychoice.droidflyer.infrastructure.preference
 
 import android.content.Context
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 import java.io.IOException
 
 class APITokenPreference internal constructor(

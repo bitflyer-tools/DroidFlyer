@@ -12,7 +12,7 @@ import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
 import okio.Buffer
 import retrofit2.Retrofit
-import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
+import retrofit2.adapter.rxjava3.RxJava3CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
 
@@ -84,7 +84,8 @@ class APIClient internal constructor(
         .baseUrl(baseUrl)
         .addConverterFactory(OrderRequestBodyConverterFactory())
         .addConverterFactory(GsonConverterFactory.create(gson))
-        .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
+        // Run each HTTP call on the scheduler chosen by its subscriber.
+        .addCallAdapterFactory(RxJava3CallAdapterFactory.createSynchronous())
         .build()
         .create(APIClientV1::class.java)
 

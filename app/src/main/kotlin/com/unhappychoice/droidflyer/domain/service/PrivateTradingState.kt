@@ -11,14 +11,14 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcce
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
-import io.reactivex.Completable
-import io.reactivex.Maybe
-import io.reactivex.Observable
-import io.reactivex.Scheduler
-import io.reactivex.Single
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.subjects.PublishSubject
-import io.reactivex.subjects.ReplaySubject
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Maybe
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Scheduler
+import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.ReplaySubject
 
 // Access the session and its cached data on the UI thread.
 internal class PrivateTradingState(
@@ -44,7 +44,7 @@ internal class PrivateTradingState(
 
     fun observePrivateClientAvailability(): Observable<Boolean> = Observable.defer {
         accountChanges.map { hasPrivateClient }
-            .startWith(hasPrivateClient)
+            .startWithItem(hasPrivateClient)
             .distinctUntilChanged()
     }
 

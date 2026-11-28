@@ -22,8 +22,8 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.StopSid
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.showTradingConfirmation
-import io.reactivex.Observable
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.kotlin.addTo
 import org.kodein.di.instance
 
 class StopOrderView(context: Context) : BaseView(context, null) {

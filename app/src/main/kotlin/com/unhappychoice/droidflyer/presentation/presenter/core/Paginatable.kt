@@ -1,7 +1,7 @@
 package com.unhappychoice.droidflyer.presentation.presenter.core
 
 import com.unhappychoice.droidflyer.extension.Variable
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
 
 interface Paginatable {
     val page: Variable<Int>

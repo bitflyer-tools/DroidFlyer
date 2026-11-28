@@ -11,7 +11,7 @@ import com.unhappychoice.droidflyer.presentation.presenter.CandleHistory
 import com.unhappychoice.droidflyer.presentation.presenter.CandleInterval
 import com.unhappychoice.droidflyer.presentation.presenter.ChartPresenter
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
-import io.reactivex.disposables.SerialDisposable
+import io.reactivex.rxjava3.disposables.SerialDisposable
 import org.kodein.di.instance
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
