@@ -156,14 +156,17 @@ internal class StopOrderService(
         val cancellation = Completable.defer {
             client.cancelParentOrder(CancelParentOrderRequest(id))
         }.subscribeOn(io)
+        var verificationSucceeded = false
         verifyCancellation(client, requireNotNull(order), confirmation)
-            .doOnError { if (current === account) invalidateCancellation(id) }
+            .doOnComplete { verificationSucceeded = true }
             .andThen(cancellation)
             .observeOn(main)
             .toObservable<Unit>().takeUntil(current.ended.toObservable<Unit>())
             .doFinally { cancelling.value = cancelling.value - id }
             .subscribe({}, {
                 if (current === account) {
+                    if (!verificationSucceeded) invalidateCancellation(id)
+                    if (current !== account) return@subscribe
                     requestRefresh(Refresh.RECOVERY, requiresNewScan = true)
                     val failure = if (it is IneligibleCancellation) {
                         CancellationFailure.INELIGIBLE

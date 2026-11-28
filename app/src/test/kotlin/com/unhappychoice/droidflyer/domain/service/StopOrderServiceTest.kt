@@ -1121,6 +1121,35 @@ class StopOrderServiceTest {
         }
 
     @Test
+    fun cancellationRecheckFailureInvalidatesOrderWhenMainHandlesError() {
+        val io = TestScheduler()
+        val main = TestScheduler()
+        val stops = StopOrderService(client(), io, main)
+        stops.onPrivateChannelAvailability(true)
+        stops.refresh()
+        io.advanceTimeBy(32, SECONDS)
+        main.triggerActions()
+        val order = stops.orders.value.single()
+        assertTrue(order.canCancel)
+
+        parentOrderStatus = 503
+        val failures = mutableListOf<CancellationFailure>()
+        stops.cancel(stops.cancellationConfirmation(order)) { failures += it }
+        io.triggerActions()
+
+        assertEquals(order, stops.orders.value.single())
+        main.scheduleDirect {
+            assertEquals(order, stops.orders.value.single())
+            assertTrue(failures.isEmpty())
+        }
+        main.triggerActions()
+
+        assertFalse(stops.orders.value.single().canCancel)
+        assertEquals(listOf(CancellationFailure.REQUEST_FAILED), failures)
+        assertFalse(requests.any { it.url.encodedPath == "/v1/me/cancelparentorder" })
+    }
+
+    @Test
     fun parentListFailureBlocksOpenConfirmationAndRetryChecksForMissedTrigger() {
         val stops = service()
         stops.refresh()
