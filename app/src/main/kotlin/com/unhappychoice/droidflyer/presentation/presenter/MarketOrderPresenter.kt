@@ -14,20 +14,18 @@ import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
-import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
-import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
+import com.unhappychoice.droidflyer.presentation.presenter.core.OrderEntryGate
 import com.unhappychoice.droidflyer.presentation.view.MarketOrderView
 import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
 class MarketOrderPresenter internal constructor(
     private val state: PrivateTradingState,
-    internal val maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
+    override val maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
     private val updateStatus: () -> Unit,
     private val notify: (Int) -> Unit
-) : ViewPresenter<MarketOrderView>(), HasAmount, Loadable {
+) : ViewPresenter<MarketOrderView>(), OrderEntryGate {
     constructor(
         currentStatusService: CurrentStatusService,
         maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM),
@@ -52,15 +50,7 @@ class MarketOrderPresenter internal constructor(
     override val unitSize = Variable(1.0)
     override val amount = Variable(0.0)
 
-    internal val privateClientAvailable = state.observePrivateClientAvailability()
-
-    internal val orderEntryEnabled = Observables.combineLatest(
-        privateClientAvailable,
-        isLoading.asObservable(),
-        amount.asObservable(),
-        maximumOrderSize.asObservable(),
-        ::isOrderEntryEnabled
-    ).distinctUntilChanged()
+    override val privateClientAvailable = state.observePrivateClientAvailability()
 
     private val bag = CompositeDisposable()
 
@@ -118,7 +108,4 @@ class MarketOrderPresenter internal constructor(
             })
             .addTo(bag)
     }
-
-    private fun isOrderEntryEnabled(available: Boolean, loading: Boolean, amount: Double, maximum: Double): Boolean =
-        available && !loading && CryptoCfdOrderSize.isValid(amount, maximum)
 }

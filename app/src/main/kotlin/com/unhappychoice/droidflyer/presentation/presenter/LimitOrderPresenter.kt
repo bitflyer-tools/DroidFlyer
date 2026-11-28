@@ -11,11 +11,9 @@ import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.OrderAcceptanceUncertainException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
-import com.unhappychoice.droidflyer.presentation.presenter.core.HasAmount
-import com.unhappychoice.droidflyer.presentation.presenter.core.Loadable
+import com.unhappychoice.droidflyer.presentation.presenter.core.OrderEntryGate
 import com.unhappychoice.droidflyer.presentation.view.LimitOrderView
 import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.Observables
 import io.reactivex.rxkotlin.addTo
 import mortar.ViewPresenter
 
@@ -25,7 +23,7 @@ class LimitOrderPresenter internal constructor(
     private val refreshActiveOrders: () -> Unit,
     private val resources: Resources,
     private val showSnackbar: (String, Int) -> Unit
-) : ViewPresenter<LimitOrderView>(), HasAmount, Loadable {
+) : ViewPresenter<LimitOrderView>(), OrderEntryGate {
     constructor(
         currentStatusService: CurrentStatusService,
         accountPreference: CryptoCfdAccountPreference,
@@ -39,17 +37,9 @@ class LimitOrderPresenter internal constructor(
 
     val groupingSize = Variable(1L)
 
-    internal val maximumOrderSize = accountPreference.maximumOrderSize
+    override val maximumOrderSize = accountPreference.maximumOrderSize
 
-    internal val privateClientAvailable = state.observePrivateClientAvailability()
-
-    internal val orderEntryEnabled = Observables.combineLatest(
-        privateClientAvailable,
-        isLoading.asObservable(),
-        amount.asObservable(),
-        maximumOrderSize.asObservable(),
-        ::isOrderEntryEnabled
-    ).distinctUntilChanged()
+    override val privateClientAvailable = state.observePrivateClientAvailability()
 
     val canSubmitOrder: Boolean
         get() = isOrderEntryEnabled(state.hasPrivateClient, isLoading.value, amount.value, maximumOrderSize.value)
@@ -99,9 +89,6 @@ class LimitOrderPresenter internal constructor(
             })
             .addTo(bag)
     }
-
-    private fun isOrderEntryEnabled(available: Boolean, loading: Boolean, amount: Double, maximum: Double): Boolean =
-        available && !loading && CryptoCfdOrderSize.isValid(amount, maximum)
 }
 
 internal class LimitOrderConfirmation(val side: LimitOrderSide, val order: NewOrder)
