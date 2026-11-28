@@ -20,6 +20,10 @@ import io.reactivex.schedulers.TestScheduler
 import io.reactivex.subjects.PublishSubject
 import java.io.IOException
 import java.math.BigDecimal
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import org.junit.After
@@ -49,6 +53,7 @@ class CurrentStatusServiceTest {
     private val api = mock(APIClientV1::class.java)
     private lateinit var service: CurrentStatusService
     private var boardRequests = 0
+    private var now = 1713186000000L - TimeUnit.HOURS.toMillis(1)
 
     @Before
     fun setUp() {
@@ -65,10 +70,15 @@ class CurrentStatusServiceTest {
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(Observable.empty())
         service = CurrentStatusService(
             api, Observable.empty(), boardUpdates(snapshots, deltas), orderEvents,
-            publicFeedDisconnects = disconnects
+            publicFeedDisconnects = disconnects, now = { now }
         )
         scheduler.triggerActions()
     }
+
+    private fun settlementDate(millis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date(millis))
 
     @After
     fun tearDown() {
@@ -191,6 +201,57 @@ class CurrentStatusServiceTest {
     }
 
     @Test
+    fun fundingBecomesUnavailableAtSettlementTimeWhileVisibleThenRestoresOnAFutureQuote() {
+        val settlementMillis = now + TimeUnit.MINUTES.toMillis(5)
+        val futureSettlementMillis = settlementMillis + TimeUnit.HOURS.toMillis(8)
+        val expiringQuote = FundingRate(BigDecimal.ZERO, settlementDate(settlementMillis))
+        val futureQuote = FundingRate(BigDecimal("-0.001"), settlementDate(futureSettlementMillis))
+        `when`(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.just(expiringQuote), Observable.just(futureQuote))
+        val visible = PublishSubject.create<Boolean>()
+        val funding = service.observeFunding(visible).test()
+
+        visible.onNext(true)
+        scheduler.triggerActions()
+        funding.assertValueAt(funding.valueCount() - 1, FundingStatus(NextFunding(BigDecimal.ZERO, settlementMillis)))
+        verify(api, times(1)).getFundingRate("FX_BTC_JPY")
+
+        now = settlementMillis
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS)
+        funding.assertValueAt(funding.valueCount() - 1, FundingStatus())
+        verify(api, times(1)).getFundingRate("FX_BTC_JPY")
+
+        scheduler.advanceTimeBy(1, TimeUnit.MINUTES)
+        funding.assertValueAt(
+            funding.valueCount() - 1,
+            FundingStatus(NextFunding(BigDecimal("-0.001"), futureSettlementMillis))
+        )
+        funding.dispose()
+    }
+
+    @Test
+    fun returningAfterSettlementShowsUnavailableBeforeAFreshQuoteArrives() {
+        val settlementMillis = now + TimeUnit.MINUTES.toMillis(10)
+        val expiringQuote = FundingRate(BigDecimal.ZERO, settlementDate(settlementMillis))
+        val pendingPoll = PublishSubject.create<FundingRate>()
+        `when`(api.getFundingRate("FX_BTC_JPY")).thenReturn(Observable.just(expiringQuote), pendingPoll)
+        val visible = PublishSubject.create<Boolean>()
+        val funding = service.observeFunding(visible).test()
+
+        visible.onNext(true)
+        scheduler.triggerActions()
+        funding.assertValueAt(funding.valueCount() - 1, FundingStatus(NextFunding(BigDecimal.ZERO, settlementMillis)))
+
+        visible.onNext(false)
+        now = settlementMillis
+        visible.onNext(true)
+        scheduler.triggerActions()
+
+        funding.assertValueAt(funding.valueCount() - 1, FundingStatus())
+        assertTrue(pendingPoll.hasObservers())
+        funding.dispose()
+    }
+
+    @Test
     fun completedRefreshesReleaseBoardRequestsAndKeepRealtimeSubscribed() {
         repeat(10) {
             assertTrue(responses.hasObservers())
@@ -237,8 +298,8 @@ class CurrentStatusServiceTest {
         `when`(api.getPositions()).thenReturn(positions.take(1))
         `when`(api.getCollateral()).thenReturn(collateral.take(1))
         `when`(api.getChildOrders("FX_BTC_JPY", count = 500)).thenReturn(orderResponses.take(1))
-        `when`(api.cancelChildOrder(CancelChildOrderRequest(activeOrder.productCode, activeOrder.childOrderAcceptanceId)))
-            .thenReturn(Completable.complete())
+        val cancellation = CancelChildOrderRequest(activeOrder.productCode, activeOrder.childOrderAcceptanceId)
+        `when`(api.cancelChildOrder(cancellation)).thenReturn(Completable.complete())
         val presenter = OrdersPresenter(service)
         val rows = presenter.orders.test()
 
@@ -260,7 +321,8 @@ class CurrentStatusServiceTest {
         orderResponses.onNext(emptyList())
         scheduler.triggerActions()
 
-        rows.assertValues(emptyList(), listOf(row), emptyList())
+        rows.assertValues(emptyList(), listOf(row), listOf(row.copy(isCancelling = true)), listOf(row), emptyList())
+        verify(api).cancelChildOrder(cancellation)
         assertTrue(positions.hasObservers())
         assertTrue(collateral.hasObservers())
         verify(api, times(2)).getPositions()
