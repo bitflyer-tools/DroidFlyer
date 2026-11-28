@@ -193,6 +193,28 @@ class PrivateTradingStateTest {
     }
 
     @Test
+    fun missingCollateralIsUnavailableBeforeAnySuccessfulRead() {
+        refreshCollateral(emptyMap())
+
+        assertEquals(ReadStatus.UNAVAILABLE, state.collateralStatus.value)
+        assertNull(state.collateral.value.amount)
+    }
+
+    @Test
+    fun nonNumericCollateralMarksCachedAmountStaleUntilNextSuccessfulRead() {
+        refreshCollateral(mapOf("collateral" to 10.0))
+        refreshCollateral(mapOf("collateral" to "invalid"))
+
+        assertEquals(ReadStatus.STALE, state.collateralStatus.value)
+        assertEquals(10.0, state.collateral.value.amount)
+
+        refreshCollateral(mapOf("collateral" to 0))
+
+        assertEquals(ReadStatus.AVAILABLE, state.collateralStatus.value)
+        assertEquals(0.0, state.collateral.value.amount)
+    }
+
+    @Test
     fun switchingClearsAllPrivateDataAndIgnoresResponsesFromThePreviousAccount() {
         val initial = refreshAll().test()
         scheduler.triggerActions()
@@ -424,6 +446,16 @@ class PrivateTradingStateTest {
         stale.assertNoValues().assertError(NoSuchElementException::class.java)
         state.getMyExecutions(50, null).test().assertError(IllegalStateException::class.java)
         assertFalse(accountA.executions.hasObservers())
+    }
+
+    private fun refreshCollateral(response: Map<String, Any>) {
+        accountA.collateral = PublishSubject.create()
+        val refresh = state.refreshPositionsAndCollateral().test()
+        scheduler.triggerActions()
+        accountA.positions.onNext(emptyList())
+        accountA.collateral.onNext(response)
+        scheduler.triggerActions()
+        refresh.assertComplete()
     }
 
     private fun refreshAll(): Completable =

@@ -12,7 +12,6 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.wholeSize
 import io.reactivex.Completable
-import io.reactivex.Maybe
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
@@ -105,10 +104,12 @@ internal class PrivateTradingState(
                         positionStatus.value = ReadStatus.AVAILABLE
                     }
                 },
-            client.getCollateral().flatMapMaybe { response ->
-                val amount = response["collateral"] as? Number
-                amount?.let { Maybe.just(Collateral(it.toDouble())) } ?: Maybe.empty()
-            }
+            client.getCollateral()
+                .map { response ->
+                    val amount = response["collateral"] as? Number
+                        ?: throw IllegalArgumentException("Expected a numeric collateral amount")
+                    Collateral(amount.toDouble())
+                }
                 .subscribeOn(requestScheduler)
                 .observeOn(stateScheduler)
                 .doOnError { if (!disposed && current === session) collateralStatus.value = collateralStatus.value.toFailed() }
