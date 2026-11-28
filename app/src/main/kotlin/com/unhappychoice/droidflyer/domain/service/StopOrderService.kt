@@ -273,7 +273,7 @@ internal class StopOrderService(
         val canConfirmWaitingFromRest = canUseRestWaitingEvidence
         val canOfferRecovery = orderEventsReady && channelGapCount > 0
         refreshRequest.set(null)
-        var historyFailed = false
+        val failedHistoryStates = mutableSetOf<String>()
         val parents = loadActiveParents(client, reads = refreshReads).filter(::isCryptoCfdStop).toList()
             .flatMapObservable { active ->
                 val activeIds = active.map { it.parentOrderAcceptanceId }.toSet()
@@ -284,7 +284,7 @@ internal class StopOrderService(
                 Observable.fromIterable(active.map { it to it.isFullyOutstanding() } +
                     missing.map { it.parent to false })
             }
-        val history = loadRecentParents(client) { historyFailed = true }.map { it to false }
+        val history = loadRecentParents(client, failedHistoryStates).map { it to false }
         val refreshed = LinkedHashMap<String, StopOrder>()
         val request = Observable.just(parents, history).concatMap { source ->
             source.concatMap { (row, activeAndOutstanding) ->
@@ -344,7 +344,12 @@ internal class StopOrderService(
             .toList()
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
-                val latest = rows.associateBy { it.acceptanceId }.values
+                val received = rows.associateBy { it.acceptanceId }
+                val retained = previous.values.filter {
+                    it.acceptanceId !in received && it.parent.parentOrderState in failedHistoryStates
+                }
+                val latest = received.values + retained
+                val historyFailed = failedHistoryStates.isNotEmpty()
                 val incomplete = latest.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
                 orders.value = latest.map(::applyEvent)
@@ -420,17 +425,19 @@ internal class StopOrderService(
             }
     }
 
-    private fun loadRecentParents(client: APIClientV1, onFailure: () -> Unit): Observable<ParentOrder> {
+    private fun loadRecentParents(
+        client: APIClientV1,
+        failedStates: MutableSet<String>
+    ): Observable<ParentOrder> {
+        val unfilteredStates = setOf("EXPIRED", "REJECTED")
         fun read(state: String?) = refreshReads.read { client.getParentOrders(orderState = state) }
             .onErrorReturn {
-                onFailure()
+                failedStates.addAll(state?.let(::setOf) ?: unfilteredStates)
                 emptyList()
             }
             .flatMapIterable { it }
 
-        val expiredOrRejected = read(null).filter {
-            it.parentOrderState == "EXPIRED" || it.parentOrderState == "REJECTED"
-        }
+        val expiredOrRejected = read(null).filter { it.parentOrderState in unfilteredStates }
         return Observable.concat(read("COMPLETED"), read("CANCELED"), expiredOrRejected)
             .filter(::isCryptoCfdStop)
             .toList()
