@@ -20,8 +20,8 @@ import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
 import com.unhappychoice.droidflyer.presentation.view.core.BaseView
 import com.unhappychoice.droidflyer.presentation.view.core.clicks
 import com.unhappychoice.droidflyer.presentation.view.core.textChanges
-import io.reactivex.disposables.SerialDisposable
-import io.reactivex.rxkotlin.addTo
+import io.reactivex.rxjava3.disposables.SerialDisposable
+import io.reactivex.rxjava3.kotlin.addTo
 import org.kodein.di.instance
 
 

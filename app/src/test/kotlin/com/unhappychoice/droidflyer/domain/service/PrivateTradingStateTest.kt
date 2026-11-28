@@ -10,10 +10,10 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Position
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
-import io.reactivex.Completable
-import io.reactivex.Observable
-import io.reactivex.schedulers.TestScheduler
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.schedulers.TestScheduler
+import io.reactivex.rxjava3.subjects.PublishSubject
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -112,7 +112,7 @@ class PrivateTradingStateTest {
         accountA.orders.onNext(emptyList())
         scheduler.triggerActions()
         loaded.assertComplete()
-        totals.assertValueAt(totals.valueCount() - 1, TradingTotals(0L, 120L, 0L, 120L)).assertNoErrors()
+        totals.assertValueAt(totals.values().lastIndex, TradingTotals(0L, 120L, 0L, 120L)).assertNoErrors()
     }
 
     @Test

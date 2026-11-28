@@ -7,7 +7,7 @@ import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.extension.subscribeNext
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
-import io.reactivex.disposables.Disposable
+import io.reactivex.rxjava3.disposables.Disposable
 
 internal class OrderFillNotificationController(
     private val preference: APITokenPreference,

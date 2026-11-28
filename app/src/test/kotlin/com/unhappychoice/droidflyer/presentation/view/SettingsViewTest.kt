@@ -23,11 +23,10 @@ import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPrefer
 import com.unhappychoice.droidflyer.presentation.presenter.SettingsPresenter
 import com.unhappychoice.droidflyer.presentation.screen.SettingsScreen
 import flow.State
-import hu.akarnokd.rxjava3.bridge.RxJavaBridge.toV3Scheduler
-import io.reactivex.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.schedulers.Schedulers
-import io.reactivex.schedulers.TestScheduler
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.schedulers.Schedulers
+import io.reactivex.rxjava3.schedulers.TestScheduler
 import mortar.MortarScope
 import mortar.bundler.BundleServiceRunner
 import okhttp3.OkHttpClient
@@ -58,7 +57,7 @@ class SettingsViewTest {
     @Before
     fun setSchedulers() {
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(Schedulers.trampoline()) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
     }
 
     @After
@@ -81,7 +80,7 @@ class SettingsViewTest {
         val io = TestScheduler()
         val main = TestScheduler()
         RxJavaPlugins.setIoSchedulerHandler { io }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { main }
 
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
@@ -137,38 +136,31 @@ class SettingsViewTest {
     }
 
     @Test
-    fun applyingValidatedCredentialsDoesNotRequestNotificationPermission() {
+    fun firstValidatedLinkRequestsNotificationPermissionOnce() {
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
+            host.startLinked = false
             val settings = host.openSettings()
-            val saveIo = TestScheduler()
-            RxJavaPlugins.setIoSchedulerHandler { saveIo }
-            settings.apiTokenTextView.setText("new-key")
-            settings.apiSecretTextView.setText("new-secret")
 
-            settings.saveButton.performClick()
-            saveIo.triggerActions()
-            shadowOf(Looper.getMainLooper()).idle()
+            settings.applyCredentials("first-key")
+            assertEquals(1, host.notificationPermissionRequests)
 
-            assertEquals(0, host.notificationPermissionRequests)
+            settings.applyCredentials("replacement-key")
+            assertEquals(2, host.applyRequests)
+            assertEquals(1, host.notificationPermissionRequests)
         }
     }
 
     @Test
-    fun failedApplyDoesNotRequestNotificationPermission() {
+    fun failedFirstLinkDoesNotRequestNotificationPermission() {
         Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
             val host = controller.get()
+            host.startLinked = false
             host.failNextApply = true
             val settings = host.openSettings()
-            val saveIo = TestScheduler()
-            RxJavaPlugins.setIoSchedulerHandler { saveIo }
-            settings.apiTokenTextView.setText("new-key")
-            settings.apiSecretTextView.setText("new-secret")
 
-            settings.saveButton.performClick()
-            saveIo.triggerActions()
-            shadowOf(Looper.getMainLooper()).idle()
-
+            settings.applyCredentials("first-key")
+            assertEquals(1, host.applyRequests)
             assertEquals(0, host.notificationPermissionRequests)
         }
     }
@@ -428,6 +420,12 @@ class SettingsViewTest {
         assertEquals("", secret.text.toString())
     }
 
+    private fun SettingsViewBinding.applyCredentials(key: String) {
+        apiTokenTextView.setText(key)
+        apiSecretTextView.setText("new-secret")
+        saveButton.performClick()
+    }
+
     class SettingsHost : Activity() {
         var applyRequests = 0
             private set
@@ -435,6 +433,7 @@ class SettingsViewTest {
             private set
         var notificationPermissionRequests = 0
             private set
+        var startLinked = true
         var failNextApply = false
 
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
@@ -455,7 +454,7 @@ class SettingsViewTest {
         }
         private val di by lazy {
             val preference = testAPITokenPreference(this).apply {
-                save(APICredentials("stored-key", "stored-secret"))
+                if (startLinked) save(APICredentials("stored-key", "stored-secret"))
             }
             val transport = OkHttpClient.Builder().addInterceptor { chain ->
                 applyRequests++

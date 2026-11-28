@@ -20,9 +20,9 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.presentation.executionMessage
-import io.reactivex.Observable
-import io.reactivex.disposables.Disposable
-import io.reactivex.schedulers.Schedulers
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.disposables.Disposable
+import io.reactivex.rxjava3.schedulers.Schedulers
 import org.kodein.di.direct
 import org.kodein.di.instance
 import retrofit2.HttpException
@@ -84,7 +84,7 @@ class OrderFillNotificationService : Service() {
         }
 
         orderChecks = realtime.privateChannelAvailability
-            .startWith(PrivateEvent(false) { true })
+            .startWithItem(PrivateEvent(false) { true })
             .observeOn(androidMainThreadScheduler())
             .filter { it.isCurrent() }
             .distinctUntilChanged { it.value }

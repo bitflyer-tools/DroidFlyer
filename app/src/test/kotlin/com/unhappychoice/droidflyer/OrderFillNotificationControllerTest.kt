@@ -4,8 +4,8 @@ import android.app.ForegroundServiceStartNotAllowedException
 import android.os.Looper
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
-import io.reactivex.plugins.RxJavaPlugins
-import io.reactivex.schedulers.Schedulers
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
+import io.reactivex.rxjava3.schedulers.Schedulers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before

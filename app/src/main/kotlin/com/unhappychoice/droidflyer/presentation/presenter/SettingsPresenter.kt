@@ -11,12 +11,12 @@ import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
 import com.unhappychoice.droidflyer.presentation.view.SettingsView
-import io.reactivex.Completable
-import io.reactivex.Observable
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.disposables.Disposable
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.subjects.CompletableSubject
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.disposables.Disposable
+import io.reactivex.rxjava3.kotlin.addTo
+import io.reactivex.rxjava3.subjects.CompletableSubject
 import mortar.ViewPresenter
 import retrofit2.HttpException
 
@@ -53,6 +53,7 @@ class SettingsPresenter internal constructor(
         if (pendingSave != null) return
         bag.clear()
         val snackbarAnchor = view.rootView.findViewById<View>(android.R.id.content) ?: view
+        val wasLinked = accountLinked.value
         val completion = CompletableSubject.create()
         pendingSave = completion
         saveCredentials()
@@ -61,7 +62,10 @@ class SettingsPresenter internal constructor(
                 completion.onComplete()
             }
             .subscribe(
-                { Snackbar.make(snackbarAnchor, R.string.api_key_saved, Snackbar.LENGTH_SHORT).show() },
+                {
+                    Snackbar.make(snackbarAnchor, R.string.api_key_saved, Snackbar.LENGTH_SHORT).show()
+                    if (!wasLinked && accountLinked.value) requestNotificationPermission()
+                },
                 { error ->
                     Snackbar.make(snackbarAnchor, credentialSaveErrorMessage(error), Snackbar.LENGTH_LONG).show()
                 }

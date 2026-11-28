@@ -15,7 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import retrofit2.HttpException
 import retrofit2.Retrofit
-import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
+import retrofit2.adapter.rxjava3.RxJava3CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
 
 class APIClientV1Test {
@@ -136,7 +136,7 @@ class APIClientV1Test {
             .baseUrl("https://api.bitflyer.jp/v1/")
             .client(client)
             .addConverterFactory(GsonConverterFactory.create(gson))
-            .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
+            .addCallAdapterFactory(RxJava3CallAdapterFactory.createSynchronous())
             .build()
             .create(APIClientV1::class.java)
     }
@@ -166,7 +166,7 @@ class APIClientV1Test {
             .baseUrl("https://api.bitflyer.jp/v1/")
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
-            .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
+            .addCallAdapterFactory(RxJava3CallAdapterFactory.createSynchronous())
             .build()
             .create(APIClientV1::class.java)
 

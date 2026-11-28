@@ -38,7 +38,8 @@ does not change your account type at bitFlyer.
 ## Order fill notifications
 
 With an account linked and an open Crypto CFD order, open **Setting** and tap
-**Start order monitoring**. If Android notifications are disabled, tap
+**Start order monitoring**. On Android 13 and later, DroidFlyer requests notification
+permission when you first link your account. If Android notifications are disabled, tap
 **Enable order notifications** first. If Android does not show a permission prompt,
 tap **Open notification settings** and allow notifications for DroidFlyer. Return to
 **Setting** and tap **Start order monitoring**. DroidFlyer posts system notifications for fills,

@@ -9,9 +9,9 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
-import io.reactivex.disposables.CompositeDisposable
-import io.reactivex.rxkotlin.addTo
-import io.reactivex.schedulers.Schedulers
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.kotlin.addTo
+import io.reactivex.rxjava3.schedulers.Schedulers
 
 internal class RealtimeSession(
     private val client: RealtimeClient,
@@ -27,7 +27,7 @@ internal class RealtimeSession(
 
     fun watchSavedAccount() {
         client.preference.savedCredentialsChanged
-            .startWith(Unit)
+            .startWithItem(Unit)
             .observeOn(Schedulers.io())
             .subscribeNext { client.refreshSavedAccount() }
             .addTo(subscriptions)

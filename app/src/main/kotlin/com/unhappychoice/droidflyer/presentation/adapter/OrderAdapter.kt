@@ -10,7 +10,7 @@ import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.domain.service.PrivateTradingState.OrderRow
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.presentation.style.DefaultStyle
-import io.reactivex.subjects.PublishSubject
+import io.reactivex.rxjava3.subjects.PublishSubject
 
 internal class OrderAdapter(val context: Context?) : RecyclerView.Adapter<OrderAdapter.ViewHolder>() {
     val clickCancel = PublishSubject.create<OrderRow>()

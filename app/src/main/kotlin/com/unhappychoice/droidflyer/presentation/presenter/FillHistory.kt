@@ -2,8 +2,8 @@ package com.unhappychoice.droidflyer.presentation.presenter
 
 import com.unhappychoice.droidflyer.extension.Variable
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.PrivateExecution
-import io.reactivex.Single
-import io.reactivex.disposables.SerialDisposable
+import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.disposables.SerialDisposable
 import retrofit2.HttpException
 import java.util.concurrent.ConcurrentSkipListMap
 

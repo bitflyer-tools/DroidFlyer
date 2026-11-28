@@ -3,10 +3,9 @@ package com.unhappychoice.droidflyer.presentation.view
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Board
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.Order
-import io.reactivex.Observable
-import io.reactivex.Scheduler
-import io.reactivex.rxkotlin.Observables
-import io.reactivex.schedulers.Schedulers
+import io.reactivex.rxjava3.core.Observable
+import io.reactivex.rxjava3.core.Scheduler
+import io.reactivex.rxjava3.schedulers.Schedulers
 
 private const val DISPLAY_DEPTH = 50
 
@@ -22,7 +21,7 @@ internal fun observeLimitOrderRows(
     preparationScheduler: Scheduler = Schedulers.computation()
 ): Observable<Pair<LimitOrderRows, List<ChildOrder>>> = selected.distinctUntilChanged().switchMap { isSelected ->
     if (!isSelected) return@switchMap Observable.empty()
-    Observables.combineLatest(
+    Observable.combineLatest(
         prepareLimitOrderRows(boards, groupingSizes, preparationScheduler),
         orders
     ) { rows, activeOrders -> rows to activeOrders }
@@ -34,7 +33,7 @@ private fun prepareLimitOrderRows(
     groupingSizes: Observable<Long>,
     scheduler: Scheduler
 ): Observable<LimitOrderRows> =
-    Observables.combineLatest(
+    Observable.combineLatest(
         boards,
         groupingSizes
     ) { board, size -> board to size }
