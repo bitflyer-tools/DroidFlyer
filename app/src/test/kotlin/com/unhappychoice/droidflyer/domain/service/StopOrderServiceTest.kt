@@ -937,7 +937,7 @@ class StopOrderServiceTest {
         }
 
     @Test
-    fun disconnectedRefreshPacesListsDetailsAndChildLookupsAcrossManyStops() =
+    fun reconnectRestartsPacedRecoveryAcrossManyStops() =
         withRealtimeStops { stops, realtime, scheduler ->
             activeParentPage = { before ->
                 if (before == null) (201 downTo 102).joinToString(prefix = "[", postfix = "]") {
@@ -963,11 +963,17 @@ class StopOrderServiceTest {
 
             val disconnectedReads = stopReadPaths().size
             realtime.available(true)
-            scheduler.advanceTimeBy(299, SECONDS)
+            scheduler.advanceTimeBy(1, SECONDS)
+            assertEquals(3, activeParentReadCount())
+            assertEquals(listOf("/v1/me/getparentorders"), stopReadPaths().drop(disconnectedReads))
+
+            stops.refresh(recoverTriggers = true)
+            scheduler.advanceTimeBy(298, SECONDS)
             assertEquals(75, stopReadPaths().size - disconnectedReads)
             assertTrue(stops.orders.value.size < 101)
 
-            scheduler.advanceTimeBy(701, SECONDS)
+            scheduler.advanceTimeBy(401, SECONDS)
+            assertEquals(4, activeParentReadCount())
             assertEquals(101, stops.orders.value.size)
             val requestCount = stopReadPaths().size
             scheduler.advanceTimeBy(60, SECONDS)
