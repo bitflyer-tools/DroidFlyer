@@ -43,9 +43,8 @@ internal class StopOrderService(
     private var account = Account(client, guard)
     private val requests = CompositeDisposable()
     private var enabled = false
-    private var refreshing = false
-    private var realtimeRefresh: RealtimeRefresh? = null
-    private var pendingRealtimeRefresh: RealtimeRefresh? = null
+    private var activeRefresh: Refresh? = null
+    private var pendingRefresh: Refresh? = null
     private var recoverOnRefresh = false
     private var privateChannelsUnavailable = true
     private var channelGapOpen = false
@@ -61,17 +60,17 @@ internal class StopOrderService(
         val previous = account
         account = Account(client, guard)
         previous.ended.onComplete()
-        reconcilingSubmission.value = guard.pending() != null
         refreshRequest.set(null)
         fallbackRefresh.set(null)
-        refreshing = false
-        realtimeRefresh = null
-        pendingRealtimeRefresh = null
+        activeRefresh = null
+        pendingRefresh = null
+        recoverOnRefresh = false
         privateChannelsUnavailable = true
         channelGapOpen = false
         channelGapCount = 0
         events.clear()
         childTerminations.clear()
+        reconcilingSubmission.value = guard.pending() != null
         orders.value = emptyList()
         loadFailed.value = false
         if (enabled) refresh(recoverTriggers = true)
@@ -130,7 +129,7 @@ internal class StopOrderService(
                 if (outcome.isSuccess || outcome.exceptionOrNull() is SubmissionRejected) current.guard.release(id)
                 reconcilingSubmission.value = current.guard.pending() != null
                 result(outcome)
-                refresh()
+                if (current === account) requestRefresh(Refresh.REGULAR, requiresNewScan = true)
             }
             .addTo(requests)
         return true
@@ -164,13 +163,13 @@ internal class StopOrderService(
             .doFinally { cancelling.value = cancelling.value - id }
             .subscribe({}, {
                 if (current === account) {
-                    refresh(recoverTriggers = true)
+                    requestRefresh(Refresh.RECOVERY, requiresNewScan = true)
                     val failure = if (it is IneligibleCancellation) {
                         CancellationFailure.INELIGIBLE
                     } else CancellationFailure.REQUEST_FAILED
                     failed(failure)
                 }
-            }, { if (current === account) refresh() })
+            }, { if (current === account) requestRefresh(Refresh.REGULAR, requiresNewScan = true) })
             .addTo(requests)
     }
 
@@ -213,53 +212,52 @@ internal class StopOrderService(
         }
         privateChannelsUnavailable = !ready
         channelGapOpen = !ready
-        if (enabled) refresh(recoverTriggers = true)
+        if (enabled) {
+            if (activeRefresh != null) invalidateWaitingOrders()
+            requestRefresh(Refresh.RECOVERY, requiresNewScan = true)
+        }
     }
 
-    fun onParentUpdates() = queueRealtimeRefresh(RealtimeRefresh.PARENT)
+    fun onParentUpdates() = requestRealtimeRefresh(Refresh.PARENT)
 
-    fun onChildUpdates() = queueRealtimeRefresh(RealtimeRefresh.CHILD)
+    fun onChildUpdates() = requestRealtimeRefresh(Refresh.CHILD)
 
-    fun refresh(recoverTriggers: Boolean = false) = refresh(recoverTriggers, realtime = null)
+    fun refresh(recoverTriggers: Boolean = false) =
+        requestRefresh(if (recoverTriggers) Refresh.RECOVERY else Refresh.REGULAR)
 
-    private fun queueRealtimeRefresh(update: RealtimeRefresh) {
-        if (!enabled || privateChannelsUnavailable || requests.isDisposed) return
-        enqueueRealtimeRefresh(update)
-        refreshPendingRealtimeUpdates()
+    private fun requestRealtimeRefresh(update: Refresh) {
+        if (enabled && orderEventsReady) requestRefresh(update, requiresNewScan = true)
     }
 
-    private fun enqueueRealtimeRefresh(update: RealtimeRefresh) {
-        pendingRealtimeRefresh = maxOf(pendingRealtimeRefresh ?: update, update)
-    }
-
-    private fun refreshPendingRealtimeUpdates() {
-        if (refreshing || privateChannelsUnavailable || requests.isDisposed) return
-        val update = pendingRealtimeRefresh ?: return
-        pendingRealtimeRefresh = null
-        refresh(recoverTriggers = false, realtime = update)
-    }
-
-    private fun refresh(recoverTriggers: Boolean, realtime: RealtimeRefresh?) {
+    private fun requestRefresh(update: Refresh, requiresNewScan: Boolean = false) {
         if (requests.isDisposed) return
         enabled = true
+        val running = activeRefresh
+        if (running == null) {
+            startRefresh(update)
+        } else if (requiresNewScan || update > running) {
+            pendingRefresh = maxOf(pendingRefresh ?: update, update)
+        }
+    }
+
+    private fun startRefresh(update: Refresh) {
         val current = account
         val client = current.client ?: return
-        refreshing = true
-        if (privateChannelsUnavailable || recoverTriggers) {
-            pendingRealtimeRefresh = null
-        } else {
-            realtimeRefresh?.let(::enqueueRealtimeRefresh)
-        }
-        realtimeRefresh = realtime
+        activeRefresh = update
         fallbackRefresh.set(null)
-        if (recoverTriggers) invalidateWaitingOrders()
-        recoverOnRefresh = recoverOnRefresh || recoverTriggers
-        val recover = recoverOnRefresh || privateChannelsUnavailable || realtime == RealtimeRefresh.CHILD
+        if (update == Refresh.RECOVERY) invalidateWaitingOrders()
+        if (current !== account || requests.isDisposed) return
+        val recover = recoverOnRefresh || privateChannelsUnavailable || update >= Refresh.CHILD
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.mapValues { it.value.eventType }
         val canConfirmWaitingFromRest = canUseRestWaitingEvidence
         val canOfferRecovery = orderEventsReady && channelGapCount > 0
-        refreshRequest.set(null)
+        val gapAtStart = channelGapCount
+        val readyAtStart = orderEventsReady
+        fun currentChannelEvidence(row: StopOrder): StopOrder =
+            if (gapAtStart == channelGapCount && readyAtStart == orderEventsReady) row
+            else invalidateWaitingOrder(row)
+
         var historyFailed = false
         val parents = loadActiveParents(client, reads = refreshReads).filter(::isCryptoCfdStop).toList()
             .flatMapObservable { active ->
@@ -291,7 +289,7 @@ internal class StopOrderService(
                     when {
                         updated.status == StopOrderStatus.TRIGGERED ||
                             updated.isPartiallyExecuted ||
-                            (realtime == RealtimeRefresh.CHILD && updated.childTermination != null) ->
+                            (update >= Refresh.CHILD && updated.childTermination != null) ->
                             reconcileMarketChild(client, updated, refreshReads)
                         parent.parentOrderState == "ACTIVE" &&
                             updated.status in waitingOrUnknown &&
@@ -307,33 +305,36 @@ internal class StopOrderService(
             }
         }.doOnNext { refreshed[it.acceptanceId] = it }
             .subscribeOn(io).observeOn(main)
-            .doOnNext { row -> if (current === account) publishPacedRow(row) }
+            .doOnNext { row -> if (current === account) publishPacedRow(currentChannelEvidence(row)) }
             .toList()
         request.doOnSubscribe { refreshRequest.set(it) }.subscribe({ rows ->
             if (current === account) {
                 val latest = rows.associateBy { it.acceptanceId }.values
                 val incomplete = latest.any { it.triggerPrice == null || !it.triggerVerified }
                 recoverOnRefresh = incomplete
-                orders.value = latest.map(::applyEvent)
+                orders.value = latest.map { applyEvent(currentChannelEvidence(it)) }
+                if (current !== account) return@subscribe
                 scheduleFallbackRefresh(incomplete || historyFailed)
                 loadFailed.value = incomplete || historyFailed
-                finishRefresh()
+                if (current === account) finishRefresh()
             }
         }, {
             if (current === account) {
                 recoverOnRefresh = true
                 scheduleFallbackRefresh(retry = true)
                 invalidateWaitingOrders()
+                if (current !== account) return@subscribe
                 loadFailed.value = true
-                finishRefresh()
+                if (current === account) finishRefresh()
             }
         })
     }
 
     private fun finishRefresh() {
-        refreshing = false
-        realtimeRefresh = null
-        refreshPendingRealtimeUpdates()
+        activeRefresh = null
+        val next = pendingRefresh
+        pendingRefresh = null
+        if (next != null) requestRefresh(next)
     }
 
     private fun scheduleFallbackRefresh(retry: Boolean) {
@@ -456,7 +457,7 @@ internal class StopOrderService(
                 if (eligible) Completable.complete() else Completable.error(IneligibleCancellation())
             }
 
-    private enum class RealtimeRefresh { PARENT, CHILD }
+    private enum class Refresh { REGULAR, PARENT, CHILD, RECOVERY }
 
     private class IneligibleCancellation : RuntimeException()
 
