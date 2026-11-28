@@ -9,6 +9,8 @@ import android.content.pm.ServiceInfo
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrder
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.preference.APICredentials
 import com.unhappychoice.droidflyer.infrastructure.preference.testAPITokenPreference
@@ -35,6 +37,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -284,6 +288,56 @@ class OrderFillNotificationServiceTest {
             assertFalse(shadowOf(service).isStoppedBySelf)
             time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertEquals(4, checks)
+            assertTrue(shadowOf(service).isStoppedBySelf)
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun notifiesChildOrderFillWhenParentOrderLookupIsForbidden() {
+        val account = TestSocket()
+        val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
+        val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
+        preference.save(APICredentials("key", "secret"))
+        val api = mock<APIClientV1>()
+        whenever(api.getParentOrders("FX_BTC_JPY", "ACTIVE", count = 1))
+            .thenReturn(Observable.error(HttpException(Response.error<Any>(403, "".toResponseBody()))))
+        val activeChild = ChildOrder(
+            id = 1, childOrderId = "JFX20180101-000000-000001F", productCode = "FX_BTC_JPY",
+            side = "BUY", childOrderType = "LIMIT", price = 1_000_000, average_price = 0,
+            size = 0.01, childOrderState = "ACTIVE", childOrderAcceptanceId = "JRF20180101-000000-000001",
+            outstandingSize = 0.01, cancelSize = 0.0, executedSize = 0.0, totalCommission = 0.0
+        )
+        whenever(api.getChildOrders("FX_BTC_JPY", count = 1))
+            .thenReturn(Observable.just(listOf(activeChild)), Observable.just(emptyList()))
+        OrderFillNotificationService.openOrdersCheck = { OrderFillNotificationService.hasOpenOrders(api) }
+        OrderFillNotificationService.sessionFactory = {
+            RealtimeSession(RealtimeClient(gson, preference, TestSocket(), publicFeed = false) { account })
+        }
+
+        val controller = Robolectric.buildService(OrderFillNotificationService::class.java).create()
+        try {
+            val service = controller.get()
+            service.onStartCommand(startIntent(), 0, 1)
+            time.triggerActions()
+            account.authenticate()
+            time.triggerActions()
+            assertFalse(shadowOf(service).isStoppedBySelf)
+
+            account.receiveEvent("EXECUTION")
+            time.triggerActions()
+            val notifications = shadowOf(service.getSystemService(NotificationManager::class.java))
+            assertEquals(
+                listOf(service.getString(R.string.order_executed, "FX_BTC_JPY", "BUY", 0.01, "1000000")),
+                notifications.allNotifications.mapNotNull {
+                    it.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                }
+            )
+
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
+            assertFalse(shadowOf(service).isStoppedBySelf)
+            time.advanceTimeBy(15, TimeUnit.SECONDS)
             assertTrue(shadowOf(service).isStoppedBySelf)
         } finally {
             controller.destroy()

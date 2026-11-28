@@ -70,7 +70,7 @@ Lightning API.
 | Show collateral | `GET /v1/me/getcollateral` |
 | Show open positions | `GET /v1/me/getpositions` |
 | List active orders | `GET /v1/me/getchildorders` |
-| Monitor order fills | `GET /v1/me/getchildorders`, `GET /v1/me/getparentorders` |
+| Monitor order fills | `GET /v1/me/getchildorders`; enable `GET /v1/me/getparentorders` to monitor orders waiting to trigger |
 | List fills | `GET /v1/me/getexecutions` |
 | Submit a market or limit order | `POST /v1/me/sendchildorder` |
 | Cancel an active order | `POST /v1/me/cancelchildorder` |

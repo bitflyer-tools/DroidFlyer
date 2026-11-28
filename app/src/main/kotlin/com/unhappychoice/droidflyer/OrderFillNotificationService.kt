@@ -18,9 +18,11 @@ import com.unhappychoice.droidflyer.extension.androidMainThreadScheduler
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.PrivateEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.presentation.executionMessage
 import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
+import io.reactivex.exceptions.CompositeException
 import io.reactivex.schedulers.Schedulers
 import org.kodein.di.direct
 import org.kodein.di.instance
@@ -115,8 +117,9 @@ class OrderFillNotificationService : Service() {
         fun record(result: Result<Boolean>): OrderChecks = result.fold(
             onSuccess = { hasOrders -> OrderChecks(empty = if (hasOrders) 0 else empty + 1) },
             onFailure = { error ->
+                val causes = (error as? CompositeException)?.exceptions ?: listOf(error)
                 val message = when {
-                    (error as? HttpException)?.code() in listOf(401, 403) ->
+                    causes.any { (it as? HttpException)?.code() in listOf(401, 403) } ->
                         R.string.order_fill_monitoring_permission_error
                     failures + 1 >= MAX_CONSECUTIVE_FAILURES -> R.string.order_fill_monitoring_check_error
                     else -> null
@@ -202,11 +205,25 @@ class OrderFillNotificationService : Service() {
             val credentials = app.tokenPreference.read()
             val api = app.module.direct.instance<APIClient>().privateStatusClient(credentials)
                 ?: return Observable.just(false)
-            return api.getParentOrders(productCode = PRODUCT_CODE, orderState = "ACTIVE", count = 1)
-                .flatMap { parents ->
-                    if (parents.isNotEmpty()) Observable.just(true)
-                    else api.getChildOrders(PRODUCT_CODE, count = 1).map { it.isNotEmpty() }
+            return hasOpenOrders(api)
+        }
+
+        internal fun hasOpenOrders(api: APIClientV1): Observable<Boolean> {
+            val parents = api.getParentOrders(productCode = PRODUCT_CODE, orderState = "ACTIVE", count = 1)
+                .map { it.isNotEmpty() }
+                .onErrorResumeNext { error: Throwable ->
+                    if ((error as? HttpException)?.code() == 403) Observable.just(false)
+                    else Observable.error(error)
                 }
+                .subscribeOn(Schedulers.io())
+            val children = api.getChildOrders(PRODUCT_CODE, count = 1)
+                .map { it.isNotEmpty() }
+                .subscribeOn(Schedulers.io())
+
+            return Observable.mergeDelayError(parents, children)
+                .filter { it }
+                .first(false)
+                .toObservable()
                 .timeout(ORDER_CHECK_SECONDS, TimeUnit.SECONDS)
         }
 
