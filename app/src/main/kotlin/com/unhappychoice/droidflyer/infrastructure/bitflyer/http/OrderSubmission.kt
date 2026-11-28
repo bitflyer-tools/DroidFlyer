@@ -3,7 +3,7 @@ package com.unhappychoice.droidflyer.infrastructure.bitflyer.http
 import com.google.gson.JsonParseException
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.request.SendChildOrderRequest
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderAcceptance
-import io.reactivex.Observable
+import io.reactivex.rxjava3.core.Observable
 import retrofit2.HttpException
 import java.io.IOException
 
