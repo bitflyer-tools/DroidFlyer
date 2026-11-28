@@ -263,6 +263,7 @@ internal class StopOrderService(
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.toMap()
         val knownChildEvents = childEvents.toMap()
+        val verificationGapCount = channelGapCount.takeIf { orderEventsReady }
         val canConfirmWaitingFromRest = canUseRestWaitingEvidence
         val canOfferRecovery = orderEventsReady && channelGapCount > 0
         refreshRequest.set(null)
@@ -300,7 +301,8 @@ internal class StopOrderService(
                     val needsReverification = verification != null ||
                         (terminal && cached?.childVerificationPending == true)
                     when {
-                        verification != null && verification.parent == row &&
+                        verification != null && verificationGapCount != null &&
+                            verification.channelGapCount == verificationGapCount && verification.parent == row &&
                             verification.parentEvent == parentEvent &&
                             verification.childEvent == verification.childAcceptanceId?.let(knownChildEvents::get) ->
                             Observable.just(updated.copy(childVerification = verification))
@@ -313,7 +315,8 @@ internal class StopOrderService(
                                 val acceptanceId = childId?.takeIf(String::isNotBlank)
                                     ?: parentEvent?.childOrderAcceptanceId
                                 StopChildVerification(
-                                    row, parentEvent, acceptanceId, acceptanceId?.let(knownChildEvents::get)
+                                    row, parentEvent, acceptanceId, acceptanceId?.let(knownChildEvents::get),
+                                    verificationGapCount
                                 ).takeIf { terminal }
                             }
                         parent.parentOrderState == "ACTIVE" &&

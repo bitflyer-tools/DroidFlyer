@@ -1109,6 +1109,36 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun unchangedCanceledStopReverifiesChildDuringAndAfterEventGap() {
+        val service = service()
+        parentState = "CANCELED"
+        executedSize = 0.003
+        childOrders = marketChild(0.005, "CANCELED")
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(0.005, service.orders.value.single().parent.executedSize, 0.0)
+
+        childOrders = marketChild(0.006, "CANCELED")
+        requests.clear()
+        service.onPrivateChannelAvailability(false)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        assertEquals(0.006, service.orders.value.single().parent.executedSize, 0.0)
+
+        childOrders = marketChild(0.007, "CANCELED")
+        requests.clear()
+        service.onPrivateChannelAvailability(true)
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        assertEquals(0.007, service.orders.value.single().parent.executedSize, 0.0)
+
+        requests.clear()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(List(4) { "/v1/me/getparentorders" }, stopReadPaths())
+    }
+
+    @Test
     fun canceledStopRereadsChildWhenRawParentExecutionChanges() {
         val service = service()
         parentState = "CANCELED"
