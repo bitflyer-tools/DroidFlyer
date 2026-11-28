@@ -33,8 +33,8 @@ class StopOrderView(context: Context) : BaseView(context, null) {
         setHint(R.string.stop_quantity)
         setTextColor(DefaultStyle.accentColor)
         setHintTextColor(DefaultStyle.darkerAccentColor)
-        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
     }
+    private val quantitySymbols = quantity.configureDecimalAmountInput()
     private val price = EditText(context).apply {
         setHint(R.string.stop_trigger_price)
         setTextColor(DefaultStyle.accentColor)
@@ -116,7 +116,9 @@ class StopOrderView(context: Context) : BaseView(context, null) {
             sell.id -> StopSide.SELL
             else -> return showMessage(context.getString(R.string.stop_choose_side))
         }
-        val order = StopOrderRequest.fromInput(side, quantity.text.toString(), price.text.toString())
+        val normalizedQuantity = quantity.text.normalizeDecimalAmount(quantitySymbols)
+            ?: return showMessage(context.getString(R.string.stop_invalid_input))
+        val order = StopOrderRequest.fromInput(side, normalizedQuantity, price.text.toString())
             ?: return showMessage(context.getString(R.string.stop_invalid_input))
         orderSizeError(order)?.let { return showMessage(it) }
         val sideLabel = context.getString(if (side == StopSide.BUY) R.string.buy else R.string.sell)
