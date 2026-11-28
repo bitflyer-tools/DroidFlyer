@@ -1253,6 +1253,42 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun laterParentEventWithLongerFractionalSecondsReplacesCachedEvent() {
+        val service = service()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        service.onEvents(listOf(triggerEvent()))
+        service.onEvents(listOf(triggerEvent().copy(eventDate = "2026-01-01T00:00:00.1234567Z", eventType = "EXPIRE")))
+
+        val order = service.orders.value.single()
+        assertEquals(StopOrderStatus.EXPIRED, order.status)
+        assertFalse(order.canCancel)
+    }
+
+    @Test
+    fun laterChildEventWithLongerFractionalSecondsReplacesCachedTermination() {
+        val service = service()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        service.onEvents(listOf(triggerEvent()))
+        service.onChildEvents(listOf(childExecution().copy(childOrderAcceptanceId = "child-1", eventType = "CANCEL")))
+        service.onChildEvents(
+            listOf(
+                childExecution().copy(
+                    childOrderAcceptanceId = "child-1",
+                    eventDate = "2026-01-01T00:00:01.1234567Z",
+                    eventType = "EXPIRE"
+                )
+            )
+        )
+
+        val order = service.orders.value.single()
+        assertEquals(StopOrderStatus.EXPIRED, order.status)
+    }
+
+    @Test
     fun cancelsByParentAcceptanceIdAndAllowsRetryAfterFailure() {
         val service = service()
         service.refresh()
