@@ -12,7 +12,7 @@ class APITokenPreference internal constructor(
 
     private val preferences by lazy { context.getSharedPreferences("api_token", Context.MODE_PRIVATE) }
 
-    private val changes = PublishSubject.create<Unit>()
+    private val changes = PublishSubject.create<Unit>().toSerialized()
 
     /** Fires after an unlink or a validated credential replacement is applied, in every live instance. */
     internal val accountChanged = changes.hide()
@@ -20,6 +20,12 @@ class APITokenPreference internal constructor(
     @Volatile
     internal var credentialsGeneration = 0L
         private set
+
+    internal class Snapshot(val credentials: APICredentials, val generation: Long)
+
+    internal fun readSnapshot(): Snapshot = synchronized(lock) {
+        Snapshot(read(), credentialsGeneration)
+    }
 
     fun clear(): Boolean {
         val cleared = synchronized(lock) {

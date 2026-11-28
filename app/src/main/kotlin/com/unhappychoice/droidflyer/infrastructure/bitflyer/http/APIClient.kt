@@ -29,8 +29,11 @@ class APIClient internal constructor(
 
     fun client(credentials: APICredentials): APIClientV1 = createClient(credentials)
 
-    internal fun privateStatusClient(credentials: APICredentials): APIClientV1? =
-        credentials.takeIf { it.isConfigured }?.let(::client)
+    internal fun client(credentials: APICredentials, generation: Long): APIClientV1 =
+        createClient(credentials, generation)
+
+    internal fun privateStatusClient(snapshot: APITokenPreference.Snapshot): APIClientV1? =
+        snapshot.credentials.takeIf { it.isConfigured }?.let { client(it, snapshot.generation) }
 
     private val okHttp = transport.newBuilder()
         .followRedirects(false)
@@ -48,9 +51,8 @@ class APIClient internal constructor(
 
     private val defaultClient by lazy { createClient(null) }
 
-    private fun authenticatedTransport(credentials: APICredentials?): OkHttpClient {
-        val generation = preference.credentialsGeneration
-        return okHttp.newBuilder()
+    private fun authenticatedTransport(credentials: APICredentials?, generation: Long): OkHttpClient =
+        okHttp.newBuilder()
             .apply {
                 interceptors().add(0, Interceptor { chain ->
                     if (credentials != null && generation != preference.credentialsGeneration) {
@@ -60,7 +62,6 @@ class APIClient internal constructor(
                 })
             }
             .build()
-    }
 
     private fun authenticatedRequest(request: Request, pinned: APICredentials?): Request {
         val builder = request.newBuilder()
@@ -79,8 +80,11 @@ class APIClient internal constructor(
             .build()
     }
 
-    private fun createClient(credentials: APICredentials?): APIClientV1 = Retrofit.Builder()
-        .client(authenticatedTransport(credentials))
+    private fun createClient(
+        credentials: APICredentials?,
+        generation: Long = preference.credentialsGeneration
+    ): APIClientV1 = Retrofit.Builder()
+        .client(authenticatedTransport(credentials, generation))
         .baseUrl(baseUrl)
         .addConverterFactory(OrderRequestBodyConverterFactory())
         .addConverterFactory(GsonConverterFactory.create(gson))

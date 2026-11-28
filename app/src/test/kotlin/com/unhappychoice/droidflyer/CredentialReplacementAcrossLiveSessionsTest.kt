@@ -38,11 +38,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, application = Application::class, sdk = [30])
 class CredentialReplacementAcrossLiveSessionsTest {
     private val scheduler = TestScheduler()
+    private val main = TestScheduler()
     private val sessions = mutableListOf<ActivitySession>()
     private val requests = mutableListOf<Request>()
     private val preference = testAPITokenPreference(RuntimeEnvironment.getApplication())
@@ -71,7 +73,7 @@ class CredentialReplacementAcrossLiveSessionsTest {
         RxJavaPlugins.setIoSchedulerHandler { scheduler }
         RxJavaPlugins.setSingleSchedulerHandler { scheduler }
         RxJavaPlugins.setComputationSchedulerHandler { scheduler }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(scheduler) }
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
     }
 
     @After
@@ -89,7 +91,7 @@ class CredentialReplacementAcrossLiveSessionsTest {
         assertTrue(replacementGuard.reserve("pending-on-b"))
         val instance1 = ActivitySession().also(sessions::add)
         val instance2 = ActivitySession().also(sessions::add)
-        scheduler.triggerActions()
+        runSchedulers()
         assertFalse(instance1.status.privateState.stopOrders.reconcilingSubmission.value)
         assertFalse(instance2.status.privateState.stopOrders.reconcilingSubmission.value)
         assertTrue(oldGuard.reserve("pending-on-a"))
@@ -110,15 +112,54 @@ class CredentialReplacementAcrossLiveSessionsTest {
         assertPendingStopRestored(instance1, instance2)
         assertNull(replacementGuard.pending())
         assertEquals("pending-on-a", oldGuard.pending())
-        assertOrdersUseReplacementCredentials(instance1)
-        assertOrdersUseReplacementCredentials(instance2)
+        assertOrdersUseCredentials(instance1, "account-b-key")
+        assertOrdersUseCredentials(instance2, "account-b-key")
+    }
+
+    @Test
+    fun consecutiveReplacementsApplyOnlyTheLatestLoadedAccount() {
+        preference.save(APICredentials("account-a-key", "account-a-secret"))
+        val liveSessions = List(2) { ActivitySession().also(sessions::add) }
+        runSchedulers()
+        val switches = liveSessions.map { it.status.privateState.accountChanges.test() }
+
+        assertTrue(preference.saveIfChanged(APICredentials("account-b-key", "account-b-secret"), 0L))
+        scheduler.triggerActions() // Load B, but leave its result on the UI queue.
+        assertTrue(preference.saveIfChanged(APICredentials("account-c-key", "account-c-secret"), 1L))
+        scheduler.triggerActions() // Queue C behind the stale B result.
+        runSchedulers()
+
+        switches.forEach { it.assertValueCount(1) }
+        liveSessions.forEach { assertOrdersUseCredentials(it, "account-c-key") }
+    }
+
+    @Test
+    fun clientBuiltAfterReplacementCannotSendUsingTheOldSnapshot() {
+        preference.save(APICredentials("account-a-key", "account-a-secret"))
+        val oldSnapshot = preference.readSnapshot()
+        assertTrue(preference.saveIfChanged(APICredentials("account-b-key", "account-b-secret"), oldSnapshot.generation))
+
+        val api = APIClient(gson, preference, transport)
+        checkNotNull(api.privateStatusClient(oldSnapshot)).getPositions().test()
+            .assertNoValues().assertError(IOException::class.java)
+        assertTrue(requests.isEmpty())
+
+        checkNotNull(api.privateStatusClient(preference.readSnapshot())).getPositions().test().assertValueCount(1)
+        assertEquals("account-b-key", requests.single().header("Access-Key"))
+    }
+
+    private fun runSchedulers() {
+        scheduler.triggerActions()
+        main.triggerActions()
+        scheduler.triggerActions()
+        main.triggerActions()
     }
 
     private fun saveReplacementCredentials(settings: SettingsPresenter) {
         settings.key.value = "account-b-key"
         settings.secret.value = "account-b-secret"
         val saved = settings.saveCredentials().test()
-        scheduler.triggerActions()
+        runSchedulers()
         saved.assertValueCount(1).assertComplete()
     }
 
@@ -133,15 +174,15 @@ class CredentialReplacementAcrossLiveSessionsTest {
         assertNull(stopServices.last().confirmSubmissionRecovery())
     }
 
-    private fun assertOrdersUseReplacementCredentials(instance: ActivitySession) {
+    private fun assertOrdersUseCredentials(instance: ActivitySession, key: String) {
         requests.clear()
         val order = SendChildOrderRequest(childOrderType = "LIMIT", side = "BUY", price = 100L, size = 0.01)
         val prepared = checkNotNull(instance.status.privateState.prepareOrder(order))
         val submission = checkNotNull(instance.status.privateState.submitOrder(prepared)).test()
-        scheduler.triggerActions()
+        runSchedulers()
         submission.assertValueCount(1).assertComplete()
         val request = requests.single { it.url.encodedPath == "/v1/me/sendchildorder" }
-        assertEquals("account-b-key", request.header("Access-Key"))
+        assertEquals(key, request.header("Access-Key"))
     }
 
     private inner class ActivitySession {
@@ -151,10 +192,8 @@ class CredentialReplacementAcrossLiveSessionsTest {
         )
         val accountSockets = mutableListOf<TestSocket>()
         private val client = RealtimeClient(gson, preference, TestSocket()) { TestSocket().also(accountSockets::add) }
-        val status = CurrentStatusService(api.client(), client, null).apply {
-            initializeAccount { loadTradingAccount(api, stopSubmissions) }
-        }
-        private val session = RealtimeSession(client, status) { loadTradingAccount(api, stopSubmissions) }
+        val status = CurrentStatusService(api.client(), client, null)
+        private val session = RealtimeSession(client, status) { loadTradingAccount(api, stopSubmissions, it) }
 
         fun close() {
             session.close()

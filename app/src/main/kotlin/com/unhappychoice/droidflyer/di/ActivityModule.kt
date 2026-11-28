@@ -8,6 +8,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.RealtimeClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClient
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.http.APIClientV1
 import com.unhappychoice.droidflyer.infrastructure.preference.CryptoCfdAccountPreference
+import com.unhappychoice.droidflyer.infrastructure.preference.APITokenPreference
 import com.unhappychoice.droidflyer.infrastructure.preference.StopSubmissionPreference
 import com.unhappychoice.droidflyer.presentation.presenter.*
 import org.kodein.di.DI
@@ -23,16 +24,10 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
     bindSingleton<RealtimeClient> { RealtimeClient(instance(), instance()) }
     bind<CurrentStatusService> {
         eagerSingleton {
-            val api = instance<APIClient>()
-            val stopSubmissions = instance<StopSubmissionPreference>()
             CurrentStatusService(
                 instance(), instance(), null,
                 maximumOrderSize = instance<CryptoCfdAccountPreference>().maximumOrderSize
-            ).apply {
-                initializeAccount {
-                    loadTradingAccount(api, stopSubmissions)
-                }
-            }
+            )
         }
     }
     bindSingleton<SettingsPresenter> {
@@ -53,10 +48,10 @@ fun activityModule(activity: MainActivity) = DI.Module("activity") {
 
 internal fun loadTradingAccount(
     api: APIClient,
-    stopSubmissions: StopSubmissionPreference
+    stopSubmissions: StopSubmissionPreference,
+    snapshot: APITokenPreference.Snapshot
 ): Pair<APIClientV1, StopSubmissionGuard>? {
-    val credentials = api.preference.read()
-    return api.privateStatusClient(credentials)?.let { client ->
-        client to stopSubmissions.forApiKey(credentials.key)
+    return api.privateStatusClient(snapshot)?.let { client ->
+        client to stopSubmissions.forApiKey(snapshot.credentials.key)
     }
 }

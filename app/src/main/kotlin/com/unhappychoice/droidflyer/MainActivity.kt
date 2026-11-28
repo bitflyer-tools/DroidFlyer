@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
     private val realtimeSession = lazy {
         val api = module.direct.instance<APIClient>()
         val stopSubmissions = module.direct.instance<StopSubmissionPreference>()
-        RealtimeSession(module.direct.instance(), module.direct.instance()) { loadTradingAccount(api, stopSubmissions) }
+        RealtimeSession(module.direct.instance(), module.direct.instance()) { loadTradingAccount(api, stopSubmissions, it) }
     }
 
     private val chartScreen by lazy { ChartScreen() }

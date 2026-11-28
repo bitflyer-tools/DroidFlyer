@@ -74,7 +74,7 @@ class SettingsPresenter internal constructor(
     internal fun saveCredentials(): Observable<List<Map<String, Any>>> {
         val submitted = APICredentials(key.value, secret.value)
         val generation = preference.credentialsGeneration
-        return validateCredentials(submitted)
+        return validateCredentials(submitted, generation)
             .filter { generation == preference.credentialsGeneration }
             .map { balance -> balance to preference.saveIfChanged(submitted, generation) }
             .subscribeOnIoObserveOnUI()
@@ -83,8 +83,11 @@ class SettingsPresenter internal constructor(
             .map { (balance, _) -> balance }
     }
 
-    private fun validateCredentials(credentials: APICredentials): Observable<List<Map<String, Any>>> =
-        api.client(credentials).getBalance().onErrorResumeNext { error: Throwable ->
+    private fun validateCredentials(
+        credentials: APICredentials,
+        generation: Long
+    ): Observable<List<Map<String, Any>>> =
+        api.client(credentials, generation).getBalance().onErrorResumeNext { error: Throwable ->
             Observable.error(CredentialValidationFailure(error))
         }
 }

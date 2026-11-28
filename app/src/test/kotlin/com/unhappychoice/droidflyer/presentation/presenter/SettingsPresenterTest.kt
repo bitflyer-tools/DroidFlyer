@@ -208,8 +208,8 @@ class SettingsPresenterTest {
         )
         try {
             val guard = StopSubmissionGuard.inMemory().apply { reserve("pending-stop") }
-            status.initializeAccount {
-                api.privateStatusClient(preference.read())?.let { it to guard }
+            status.initializeAccount(preference) {
+                api.privateStatusClient(it)?.let { client -> client to guard }
             }
 
             val stopOrders = status.privateState.stopOrders
@@ -230,8 +230,8 @@ class SettingsPresenterTest {
         try {
             val stored = context.getSharedPreferences("api_token", Context.MODE_PRIVATE)
             val startupGuard = StopSubmissionGuard.inMemory().apply { reserve("pending-stop") }
-            status.initializeAccount {
-                api.privateStatusClient(preference.read())?.let { it to startupGuard }
+            status.initializeAccount(preference) {
+                api.privateStatusClient(it)?.let { client -> client to startupGuard }
             }
             assertEquals("saved-key", stored.getString("key", null))
 
@@ -355,8 +355,8 @@ class SettingsPresenterTest {
             settings.secret.value = "submitted-secret"
             // Mirrors how RealtimeSession reacts to a credential replacement in a live activity.
             val wiring = preference.accountChanged.subscribeNext {
-                status.applyAccountChange {
-                    api.privateStatusClient(preference.read())?.let { it to StopSubmissionGuard.inMemory() }
+                status.applyAccountChange(preference) {
+                    api.privateStatusClient(it)?.let { client -> client to StopSubmissionGuard.inMemory() }
                 }
             }
             val saved = settings.saveCredentials().test()
@@ -382,6 +382,33 @@ class SettingsPresenterTest {
     }
 
     @Test
+    fun applyAccountChangeSwitchesToNoAccountWhenLoadedClientIsNull() {
+        val status = createStatus()
+        try {
+            assertTrue(status.privateState.hasPrivateClient)
+            status.applyAccountChange(preference) { null }
+            assertFalse(status.privateState.hasPrivateClient)
+        } finally {
+            status.dispose()
+        }
+    }
+
+    @Test
+    fun applyAccountChangeIgnoresALoadThatResolvesAfterAnExplicitSwitch() {
+        val main = TestScheduler()
+        RxAndroidPlugins.setMainThreadSchedulerHandler { toV3Scheduler(main) }
+        val status = createStatus()
+        try {
+            status.applyAccountChange(preference) { null }
+            status.switchAccount(api.client(APICredentials("new-key", "new-secret")))
+            main.triggerActions()
+            assertTrue(status.privateState.hasPrivateClient)
+        } finally {
+            status.dispose()
+        }
+    }
+
+    @Test
     fun privateStatusRequiresBothPartsOfTheSavedCredentials() {
         listOf(APICredentials("key", ""), APICredentials("", "secret")).forEach {
             preference.save(it)
@@ -398,7 +425,7 @@ class SettingsPresenterTest {
 
     private fun createStatus() = CurrentStatusService(
         api.client(), Observable.empty(), Observable.empty(), Observable.empty(),
-        api.privateStatusClient(preference.read())
+        api.privateStatusClient(preference.readSnapshot())
     )
 
     private fun requestPaths() = requests.map { it.url.encodedPath }

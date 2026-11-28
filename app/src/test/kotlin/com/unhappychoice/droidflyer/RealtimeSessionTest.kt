@@ -164,7 +164,7 @@ class RealtimeSessionTest {
         }.also { accountSockets.single().authenticate() }
         val status = CurrentStatusService(api, client, api)
         val lifecycle = RealtimeSession(client, status) {
-            preference.read().takeIf { it.isConfigured }?.let { api to StopSubmissionGuard.inMemory() }
+            it.credentials.takeIf { it.isConfigured }?.let { api to StopSubmissionGuard.inMemory() }
         }.apply { notifyExecutions { notifications++ } }
     }
 
