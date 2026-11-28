@@ -1,6 +1,8 @@
 package com.unhappychoice.droidflyer.domain.service
 
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ChildOrderEvent
 import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrder
+import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEvent
 
 internal data class StopOrder(
     val parent: ParentOrder,
@@ -10,7 +12,9 @@ internal data class StopOrder(
     val childTermination: StopOrderStatus? = null,
     val waitingConfirmed: Boolean = true,
     val restWaitingConfirmed: Boolean = false,
-    val recoveryAvailable: Boolean = false
+    val recoveryAvailable: Boolean = false,
+    val childVerification: StopChildVerification? = null,
+    val childVerificationPending: Boolean = false
 ) {
     val acceptanceId get() = parent.parentOrderAcceptanceId
     val canCancel get() = triggerPrice != null && status == StopOrderStatus.WAITING
@@ -37,6 +41,15 @@ internal data class StopOrder(
         private val triggeredEvents = setOf("TRIGGER", "COMPLETE")
     }
 }
+
+internal data class StopChildVerification(
+    val parent: ParentOrder,
+    val parentEvent: ParentOrderEvent?,
+    val childAcceptanceId: String?,
+    val childEvent: ChildOrderEvent?,
+    val channelGapCount: Int?,
+    val childEventEvictionCount: Long
+)
 
 internal enum class StopOrderStatus {
     WAITING, TRIGGERED, PARTIALLY_EXECUTED, EXECUTED, CANCELED, EXPIRED, REJECTED, UNKNOWN

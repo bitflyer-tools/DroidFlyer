@@ -92,6 +92,8 @@ class MainActivityNavigationTest {
 
     @After
     fun resetSchedulers() {
+        // Let Material release detached snackbars before Robolectric resets the main looper.
+        shadowOf(Looper.getMainLooper()).idle()
         RxJavaPlugins.reset()
     }
 
