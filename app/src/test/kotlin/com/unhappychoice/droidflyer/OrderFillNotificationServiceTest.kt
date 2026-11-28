@@ -2,6 +2,7 @@ package com.unhappychoice.droidflyer
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.content.pm.ServiceInfo
 import com.google.gson.FieldNamingPolicy
 import com.google.gson.GsonBuilder
 import com.unhappychoice.droidflyer.domain.service.CurrentStatusService
@@ -27,6 +28,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,6 +58,16 @@ class OrderFillNotificationServiceTest {
         OrderFillNotificationService.sessionFactory = originalSessionFactory
         RxAndroidPlugins.reset()
         RxJavaPlugins.reset()
+    }
+
+    @Test
+    @Config(sdk = [36])
+    fun stopsItselfWhenDataSyncTimesOut() {
+        val service = Robolectric.buildService(OrderFillNotificationService::class.java).get()
+
+        service.onTimeout(1, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+
+        assertTrue(shadowOf(service).isStoppedBySelf)
     }
 
     @Test

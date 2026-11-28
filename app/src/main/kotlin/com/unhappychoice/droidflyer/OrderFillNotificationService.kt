@@ -44,6 +44,10 @@ class OrderFillNotificationService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        stopSelf()
+    }
+
     override fun onDestroy() {
         session?.close()
         session = null

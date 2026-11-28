@@ -100,6 +100,16 @@ class MainActivity : AppCompatActivity() {
         binding.containerView.doOnAttach { Snackbar.make(it, message, duration).show() }
     }
 
+    override fun onResume() {
+        super.onResume()
+        (application as DroidFlyerApplication).orderFillNotifications.onAppResumed()
+    }
+
+    override fun onPause() {
+        (application as DroidFlyerApplication).orderFillNotifications.onAppPaused()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         if (realtimeSession.isInitialized()) realtimeSession.value.close()
         scope.destroy()

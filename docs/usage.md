@@ -37,13 +37,20 @@ does not change your account type at bitFlyer.
 
 ## Order fill notifications
 
-While an account is linked, DroidFlyer runs a background service that posts a
-system notification for each order fill, even while the app is backgrounded
-or the screen is off. The first time you link an account, Android asks you to
-allow notifications; allow it so fills are shown. The service keeps a
-private realtime connection open as long as an account is linked, which uses
-some extra battery and data; it stops as soon as you unlink the account
-under **Setting**. See [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications)
+With an account linked, DroidFlyer watches for order fills and posts system
+notifications while monitoring is active, including when the app is in the
+background or the screen is off. Allow notifications when Android asks after
+you link an account. The realtime connection uses extra battery and data.
+Unlinking the account under **Setting** stops monitoring.
+
+On Android 15 and later, Android allows up to six hours of background monitoring
+in a 24-hour period. When the allowance runs out, DroidFlyer stops monitoring
+and fill notifications pause. See [Android's foreground service time limits](https://developer.android.com/develop/background-work/services/fgs/timeout).
+
+Bring DroidFlyer back to the foreground with your account still linked to reset
+the allowance and resume monitoring.
+Fills that occurred while monitoring was stopped do not generate notifications
+when it resumes. See [FAQ and troubleshooting](troubleshooting.md#order-fill-notifications)
 if fills aren't showing up.
 
 ## Private REST API permissions

@@ -104,7 +104,11 @@ that battery optimization isn't preventing the app from running in the backgroun
 device has a network connection, since the notification depends on DroidFlyer's realtime
 connection to bitFlyer.
 
+On Android 15 and later, Android can stop background monitoring after six
+hours of background use in a 24-hour period. Open DroidFlyer again with your
+account still linked to reset the allowance and resume notifications for new
+fills.
+
 **Does watching for fills use more battery or data?**
-Yes. While an account is linked, DroidFlyer keeps a background connection open so it can notify
-you of fills even when the app isn't open. Unlinking the account under **Setting** stops this
-connection.
+Yes. While monitoring is active, DroidFlyer keeps a realtime connection open so it can notify
+you of fills even when the app isn't open. Unlinking the account under **Setting** stops monitoring.

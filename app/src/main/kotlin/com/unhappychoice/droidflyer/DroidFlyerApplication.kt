@@ -11,15 +11,19 @@ class DroidFlyerApplication : Application() {
 
     internal val module by lazy { DI { import(applicationModule(this@DroidFlyerApplication)) } }
 
+    internal val orderFillNotifications by lazy {
+        OrderFillNotificationController(tokenPreference) { linked ->
+            if (linked) OrderFillNotificationService.start(this) else OrderFillNotificationService.stop(this)
+        }
+    }
+
     private val scope by lazy {
         MortarScope.buildRootScope().build("root_scope")
     }
 
     override fun onCreate() {
         super.onCreate()
-        OrderFillNotificationController(tokenPreference) { linked ->
-            if (linked) OrderFillNotificationService.start(this) else OrderFillNotificationService.stop(this)
-        }.start()
+        orderFillNotifications.start()
     }
 
     override fun getSystemService(name: String): Any? {
