@@ -55,6 +55,7 @@ internal class StopOrderService(
     private val refreshReads = StopOrderFallbackReads(io)
     private val waitingOrUnknown = setOf(StopOrderStatus.WAITING, StopOrderStatus.UNKNOWN)
     private val events = LinkedHashMap<String, ParentOrderEvent>()
+    private var childEventEvictionCount = 0L
     private val childEvents = LinkedHashMap<String, ChildOrderEvent>()
     private val childTerminations = LinkedHashMap<String, ChildOrderEvent>()
 
@@ -73,6 +74,7 @@ internal class StopOrderService(
         channelGapCount = 0
         events.clear()
         childEvents.clear()
+        childEventEvictionCount = 0L
         childTerminations.clear()
         orders.value = emptyList()
         loadFailed.value = false
@@ -205,7 +207,10 @@ internal class StopOrderService(
             val previous = childTerminations[id]
             if (previous == null || event.eventDate >= previous.eventDate) childTerminations[id] = event
         }
-        while (childEvents.size > 200) childEvents.remove(childEvents.keys.first())
+        while (childEvents.size > 200) {
+            childEvents.remove(childEvents.keys.first())
+            childEventEvictionCount++
+        }
         while (childTerminations.size > 200) childTerminations.remove(childTerminations.keys.first())
         if (updates.any { it.terminationStatus() != null }) orders.value = orders.value.map(::applyEvent)
     }
@@ -263,6 +268,7 @@ internal class StopOrderService(
         val previous = orders.value.associateBy { it.acceptanceId }
         val knownEvents = events.toMap()
         val knownChildEvents = childEvents.toMap()
+        val verificationEvictionCount = childEventEvictionCount
         val verificationGapCount = channelGapCount.takeIf { orderEventsReady }
         val canConfirmWaitingFromRest = canUseRestWaitingEvidence
         val canOfferRecovery = orderEventsReady && channelGapCount > 0
@@ -304,6 +310,7 @@ internal class StopOrderService(
                         verification != null && verificationGapCount != null &&
                             verification.channelGapCount == verificationGapCount && verification.parent == row &&
                             verification.parentEvent == parentEvent &&
+                            verification.childEventEvictionCount == verificationEvictionCount &&
                             verification.childEvent == verification.childAcceptanceId?.let(knownChildEvents::get) ->
                             Observable.just(updated.copy(childVerification = verification))
                         needsReverification || updated.status == StopOrderStatus.TRIGGERED ||
@@ -316,7 +323,7 @@ internal class StopOrderService(
                                     ?: parentEvent?.childOrderAcceptanceId
                                 StopChildVerification(
                                     row, parentEvent, acceptanceId, acceptanceId?.let(knownChildEvents::get),
-                                    verificationGapCount
+                                    verificationGapCount, verificationEvictionCount
                                 ).takeIf { terminal }
                             }
                         parent.parentOrderState == "ACTIVE" &&

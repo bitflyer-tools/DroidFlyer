@@ -1178,6 +1178,32 @@ class StopOrderServiceTest {
     }
 
     @Test
+    fun canceledStopRereadsChildWhenExecutionEventIsEvictedBeforeRefresh() {
+        val service = service()
+        parentState = "CANCELED"
+        executedSize = 0.003
+        childOrders = marketChild(0.005, "CANCELED")
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        childOrders = marketChild(0.006, "CANCELED")
+        val execution = childExecution()
+        service.onChildEvents(listOf(execution))
+        service.onChildEvents(List(200) { execution.copy(childOrderAcceptanceId = "unrelated-$it") })
+        requests.clear()
+        service.onChildUpdates()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+
+        assertEquals(1, stopReadPaths().count { it == "/v1/me/getchildorders" })
+        assertEquals(0.006, service.orders.value.single().parent.executedSize, 0.0)
+
+        requests.clear()
+        service.refresh()
+        serviceScheduler.advanceTimeBy(32, SECONDS)
+        assertEquals(List(4) { "/v1/me/getparentorders" }, stopReadPaths())
+    }
+
+    @Test
     fun fullyExecutedTerminalStopRetriesChildReverificationUntilSuccessful() {
         val service = service()
         parentState = "CANCELED"

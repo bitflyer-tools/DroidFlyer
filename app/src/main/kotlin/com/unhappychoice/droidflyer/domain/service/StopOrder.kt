@@ -47,7 +47,8 @@ internal data class StopChildVerification(
     val parentEvent: ParentOrderEvent?,
     val childAcceptanceId: String?,
     val childEvent: ChildOrderEvent?,
-    val channelGapCount: Int?
+    val channelGapCount: Int?,
+    val childEventEvictionCount: Long
 )
 
 internal enum class StopOrderStatus {
