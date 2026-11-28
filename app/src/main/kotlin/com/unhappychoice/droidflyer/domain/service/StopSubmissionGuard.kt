@@ -7,16 +7,18 @@ internal interface StopSubmissionGuard {
 
     companion object {
         fun inMemory(): StopSubmissionGuard = object : StopSubmissionGuard {
-            private var pending: String? = null
+            @Volatile private var pending: String? = null
 
             override fun pending() = pending
 
+            @Synchronized
             override fun reserve(id: String): Boolean {
                 if (pending != null) return false
                 pending = id
                 return true
             }
 
+            @Synchronized
             override fun release(id: String): Boolean {
                 if (pending != id) return false
                 pending = null

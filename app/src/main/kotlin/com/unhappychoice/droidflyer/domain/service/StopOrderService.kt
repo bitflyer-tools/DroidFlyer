@@ -13,6 +13,7 @@ import com.unhappychoice.droidflyer.infrastructure.bitflyer.model.ParentOrderEve
 import io.reactivex.Completable
 import io.reactivex.Observable
 import io.reactivex.Scheduler
+import io.reactivex.Single
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.disposables.SerialDisposable
 import io.reactivex.rxkotlin.addTo
@@ -30,6 +31,8 @@ internal class StopOrderService(
     maximumOrderSize: Variable<Double> = Variable(CryptoCfdOrderSize.INDIVIDUAL_MAXIMUM)
 ) {
     class SubmissionRejected(cause: HttpException) : RuntimeException("bitFlyer rejected the stop order", cause)
+
+    class ReservationFailed : RuntimeException("Could not reserve the stop order submission")
 
     val orders = Variable<List<StopOrder>>(emptyList())
     val loadFailed = Variable(false)
@@ -88,12 +91,7 @@ internal class StopOrderService(
     fun confirmSubmissionRecovery(): (() -> Boolean)? {
         val current = account
         val pending = current.guard.pending() ?: return null
-        return {
-            val recovered = current === account && pending !in activeSubmissions && !requests.isDisposed &&
-                current.guard.release(pending)
-            if (recovered) reconcilingSubmission.value = false
-            recovered
-        }
+        return { recoverSubmission(current, pending) }
     }
 
     fun submit(confirmation: Confirmation, result: (Result<String>) -> Unit): Boolean {
@@ -104,36 +102,34 @@ internal class StopOrderService(
         ) return false
         val client = current.client ?: return false
         val id = UUID.randomUUID().toString()
-        activeSubmissions.add(id)
-        if (!current.guard.reserve(id)) {
-            activeSubmissions.remove(id)
-            reconcilingSubmission.value = current.guard.pending() != null
-            return false
-        }
         submitting.value = true
-        Observable.defer { client.sendParentOrder(SendParentOrderRequest(confirmation.order)) }
-            .map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
-            .map { Result.success(it) }
-            .onErrorReturn { error ->
-                if (error is HttpException && error.code() in 400..499 && error.code() != 408) {
-                    Result.failure(SubmissionRejected(error))
-                } else {
-                    Result.failure(error)
+        activeSubmissions.add(id)
+        // Let durable cleanup finish even if the account ends while a write is in progress.
+        Observable.defer { submitReserved(current, client, confirmation.order, id) }
+            .subscribeOn(io)
+            .first(SubmissionOutcome(null))
+            .observeOn(io)
+            .map { outcome ->
+                val response = outcome.result
+                if (response != null && (response.isSuccess || response.exceptionOrNull() is SubmissionRejected)) {
+                    current.guard.release(id)
                 }
+                outcome
             }
-            .subscribeOn(io).observeOn(main)
-            .takeUntil(current.ended.toObservable<Unit>())
-            .doFinally {
-                activeSubmissions.remove(id)
-                submitting.value = false
-            }
-            .subscribeNext { outcome ->
-                if (outcome.isSuccess || outcome.exceptionOrNull() is SubmissionRejected) current.guard.release(id)
-                reconcilingSubmission.value = current.guard.pending() != null
-                result(outcome)
-                refresh()
-            }
-            .addTo(requests)
+            .doOnEvent { _, _ -> activeSubmissions.remove(id) }
+            .observeOn(main)
+            .subscribe({ outcome ->
+                finishSubmissionOperation()
+                if (current === account && !requests.isDisposed) {
+                    outcome.result?.let { response ->
+                        result(response)
+                        if (response.exceptionOrNull() !is ReservationFailed) refresh()
+                    }
+                }
+            }, { error ->
+                finishSubmissionOperation()
+                if (current === account && !requests.isDisposed) result(Result.failure(error))
+            })
         return true
     }
 
@@ -226,6 +222,52 @@ internal class StopOrderService(
     fun onChildUpdates() = queueRealtimeRefresh(RealtimeRefresh.CHILD)
 
     fun refresh(recoverTriggers: Boolean = false) = refresh(recoverTriggers, realtime = null)
+
+    private fun recoverSubmission(current: Account, pending: String): Boolean {
+        if (current !== account || submitting.value || !reconcilingSubmission.value ||
+            pending in activeSubmissions || requests.isDisposed
+        ) return false
+        submitting.value = true
+        Single.fromCallable {
+            !current.ended.hasComplete() && pending !in activeSubmissions && current.guard.release(pending)
+        }.subscribeOn(io).observeOn(main)
+            .subscribe({ finishSubmissionOperation() }, { finishSubmissionOperation() })
+        return true
+    }
+
+    private fun submitReserved(
+        current: Account,
+        client: APIClientV1,
+        order: StopOrderRequest,
+        id: String
+    ): Observable<SubmissionOutcome> {
+        if (current.ended.hasComplete()) return Observable.empty()
+        if (!current.guard.reserve(id)) return Observable.just(SubmissionOutcome(Result.failure(ReservationFailed())))
+        if (current.ended.hasComplete()) {
+            current.guard.release(id)
+            return Observable.empty()
+        }
+        return Observable.defer {
+            if (current.ended.hasComplete()) Observable.empty()
+            else client.sendParentOrder(SendParentOrderRequest(order))
+        }.map { response -> requireNotNull(response.parentOrderAcceptanceId?.takeIf(String::isNotBlank)) }
+            .map { SubmissionOutcome(Result.success(it)) }
+            .onErrorReturn { error ->
+                val failure = if (error is HttpException && error.code() in 400..499 && error.code() != 408) {
+                    SubmissionRejected(error)
+                } else {
+                    error
+                }
+                SubmissionOutcome(Result.failure(failure))
+            }
+            .takeUntil(current.ended.toObservable<Unit>())
+    }
+
+    private fun finishSubmissionOperation() {
+        if (requests.isDisposed) return
+        reconcilingSubmission.value = account.guard.pending() != null
+        submitting.value = false
+    }
 
     private fun queueRealtimeRefresh(update: RealtimeRefresh) {
         if (!enabled || privateChannelsUnavailable || requests.isDisposed) return
@@ -528,6 +570,8 @@ internal class StopOrderService(
     )
 
     class Confirmation internal constructor(internal val account: Account, val order: StopOrderRequest)
+
+    private data class SubmissionOutcome(val result: Result<String>?)
 
     class Account(val client: APIClientV1?, val guard: StopSubmissionGuard) {
         val ended = CompletableSubject.create()

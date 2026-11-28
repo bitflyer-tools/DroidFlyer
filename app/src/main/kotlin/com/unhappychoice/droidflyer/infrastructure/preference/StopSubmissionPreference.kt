@@ -11,9 +11,8 @@ internal class StopSubmissionPreference(context: Context) {
         val key = MessageDigest.getInstance("SHA-256").digest(apiKey.toByteArray())
             .joinToString("") { "%02x".format(it) }
         return object : StopSubmissionGuard {
-            override fun pending(): String? = synchronized(lock) {
-                preferences.getString(key, null)
-            }
+            // Keep reads independent of the lock held during disk writes.
+            override fun pending(): String? = preferences.getString(key, null)
 
             override fun reserve(id: String): Boolean = synchronized(lock) {
                 if (pending() != null) return@synchronized false

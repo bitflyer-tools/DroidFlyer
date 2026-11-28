@@ -352,6 +352,7 @@ class RealtimeClientTest {
             scheduler.triggerActions()
             verify(api).sendParentOrder(any())
             assertTrue(checkNotNull(restarted.confirmSubmissionRecovery()).invoke())
+            scheduler.triggerActions()
             assertFalse(restarted.reconcilingSubmission.value)
             whenever(api.sendParentOrder(any())).thenReturn(Observable.just(ParentOrderAcceptance("accepted")))
             assertTrue(restarted.submit(restarted.confirmation(order)) { assertEquals("accepted", it.getOrThrow()) })

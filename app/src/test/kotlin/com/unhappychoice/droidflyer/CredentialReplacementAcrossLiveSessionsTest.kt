@@ -171,6 +171,7 @@ class CredentialReplacementAcrossLiveSessionsTest {
         }
         val recover = checkNotNull(stopServices.first().confirmSubmissionRecovery())
         assertTrue(recover())
+        runSchedulers()
         assertNull(stopServices.last().confirmSubmissionRecovery())
     }
 
