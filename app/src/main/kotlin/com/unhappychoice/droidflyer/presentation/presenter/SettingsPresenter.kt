@@ -30,7 +30,7 @@ class SettingsPresenter internal constructor(
     private val switchAccount: (APIClientV1?, APICredentials) -> Unit,
     internal val accountPreference: CryptoCfdAccountPreference,
     private val updateRealtimeAccount: (() -> Unit) -> Unit,
-    private val requestNotificationPermission: () -> Unit = {}
+    internal val requestNotificationPermission: () -> Unit = {}
 ) : ViewPresenter<SettingsView>() {
     internal constructor(
         api: APIClient,
@@ -46,6 +46,7 @@ class SettingsPresenter internal constructor(
 
     val key: Variable<String> = Variable("")
     val secret: Variable<String> = Variable("")
+    internal val accountLinked = Variable(false)
     private val bag = CompositeDisposable()
     private var pendingSave: CompletableSubject? = null
 
@@ -55,6 +56,7 @@ class SettingsPresenter internal constructor(
             .subscribeNext { credentials ->
                 key.value = credentials.key
                 secret.value = credentials.secret
+                accountLinked.value = credentials.isConfigured
                 onLoaded()
             }
 
@@ -88,6 +90,7 @@ class SettingsPresenter internal constructor(
 
     fun unlink(onLoaded: () -> Unit = {}): Boolean {
         bag.clear()
+        accountLinked.value = false
         val cleared = preference.clear()
         loadCredentials(onLoaded).addTo(bag)
         return cleared
@@ -109,6 +112,7 @@ class SettingsPresenter internal constructor(
             .filter { generation == preference.unlinkGeneration }
             .map { (balance, changed) ->
                 if (changed) switchAccount(api.privateStatusClient(submitted), submitted)
+                accountLinked.value = submitted.isConfigured
                 balance
             }
     }

@@ -1,10 +1,12 @@
 package com.unhappychoice.droidflyer.presentation.view
 
+import android.Manifest
 import android.app.Activity
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Looper
 import android.os.Parcelable
+import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -43,6 +45,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindInstance
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
@@ -94,6 +97,27 @@ class SettingsViewTest {
             assertEquals("stored-key", attached.apiTokenTextView.text.toString())
             assertEquals("stored-secret", attached.apiSecretTextView.text.toString())
             assertTrue(attached.saveButton.isEnabled)
+        }
+    }
+
+    @Test
+    fun linkedAccountCanRequestNotificationPermissionWithoutApplyingCredentials() {
+        Robolectric.buildActivity(SettingsHost::class.java).setup().use { controller ->
+            val host = controller.get()
+            val application = shadowOf(RuntimeEnvironment.getApplication())
+            application.denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            val settings = host.openSettings()
+
+            assertEquals(View.VISIBLE, settings.enableNotificationsButton.visibility)
+            assertEquals(0, host.notificationPermissionRequests)
+            settings.enableNotificationsButton.performClick()
+
+            assertEquals(1, host.notificationPermissionRequests)
+            assertEquals(0, host.applyRequests)
+
+            application.grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            settings.root.onWindowFocusChanged(true)
+            assertEquals(View.GONE, settings.enableNotificationsButton.visibility)
         }
     }
 

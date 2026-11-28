@@ -116,6 +116,7 @@
     <string name="order_notification_rejected">%1$s order rejected</string>
     <string name="order_notification_canceled">%1$s order canceled</string>
     <string name="order_fill_notification_channel_name">Order updates</string>
+    <string name="enable_order_notifications">Enable order notifications</string>
     <string name="order_fill_notification_channel_description">Notifies you when a Crypto CFD order fills, is rejected, or is canceled while DroidFlyer is in the background.</string>
     <string name="order_fill_service_channel_name">Watching for order updates</string>
     <string name="order_fill_service_notification_title">Watching for Crypto CFD order updates</string>

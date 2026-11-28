@@ -1,7 +1,12 @@
 package com.unhappychoice.droidflyer.presentation.view
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.AttributeSet
+import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import com.google.android.material.snackbar.Snackbar
 import com.unhappychoice.droidflyer.R
 import com.unhappychoice.droidflyer.databinding.SettingsViewBinding
@@ -31,6 +36,15 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         presenter.takeView(this)
 
         setupStyle()
+
+        presenter.accountLinked.asObservable()
+            .subscribeNext { updateNotificationButton(it) }
+            .addTo(bag)
+        binding.enableNotificationsButton.clicks()
+            .subscribeNext {
+                if (binding.enableNotificationsButton.isVisible) presenter.requestNotificationPermission()
+            }
+            .addTo(bag)
 
         val credentialLoad = SerialDisposable()
         credentialLoad.addTo(bag)
@@ -81,6 +95,18 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         super.onDetachedFromWindow()
     }
 
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus && isAttachedToWindow) updateNotificationButton(presenter.accountLinked.value)
+    }
+
+    private fun updateNotificationButton(accountLinked: Boolean) {
+        binding.enableNotificationsButton.isVisible = accountLinked &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+    }
+
     private fun setCredentialInputsEnabled(enabled: Boolean) {
         binding.apiTokenTextView.isEnabled = enabled
         binding.apiSecretTextView.isEnabled = enabled
@@ -96,5 +122,7 @@ class SettingsView(context: Context?, attr: AttributeSet?) : BaseView(context, a
         binding.saveButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
         binding.unlinkButton.setTextColor(DefaultStyle.accentColor)
         binding.unlinkButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
+        binding.enableNotificationsButton.setTextColor(DefaultStyle.accentColor)
+        binding.enableNotificationsButton.setBackgroundColor(DefaultStyle.darkerPrimaryColor)
     }
 }

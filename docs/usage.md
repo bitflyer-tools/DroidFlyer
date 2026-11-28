@@ -40,7 +40,9 @@ does not change your account type at bitFlyer.
 With an account linked, DroidFlyer posts system notifications for order fills,
 rejections, and cancellations while monitoring is active, including when the app is in the
 background or the screen is off. Allow notifications when Android asks after
-you link an account. The realtime connection uses extra battery and data.
+you link an account. If your account is already linked, open **Setting** and
+tap **Enable order notifications** to request permission on Android 13 and later.
+The realtime connection uses extra battery and data.
 Unlinking the account under **Setting** stops monitoring.
 
 On Android 15 and later, Android allows up to six hours of background monitoring
