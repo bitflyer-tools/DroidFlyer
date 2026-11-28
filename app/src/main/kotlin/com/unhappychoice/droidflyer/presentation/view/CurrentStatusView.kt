@@ -72,7 +72,7 @@ class CurrentStatusView(context: Context?, attr: AttributeSet?) : BaseView(conte
         val balanceStatus = when {
             collateralStatus == ReadStatus.UNAVAILABLE -> collateralStatus
             totals.price != null && totals.balance != null && positionStatus == ReadStatus.STALE -> ReadStatus.STALE
-            totals.price != null && !positionsUsable && positions.isNotEmpty() -> ReadStatus.UNAVAILABLE
+            totals.price != null && !positionsUsable -> ReadStatus.UNAVAILABLE
             else -> collateralStatus
         }
         binding.balance.text = balanceSummary(totals.balance, totals.price, balanceStatus)

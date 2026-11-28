@@ -196,6 +196,34 @@ class CurrentStatusViewTest {
     }
 
     @Test
+    fun firstFailedPositionReadHidesTheValuedBalanceUntilPositionsAreKnown() {
+        Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
+            val activity = controller.get()
+            val view = CurrentStatusView(activity, null)
+            view.inject(DI { bindInstance<CurrentStatusService> { service } })
+            activity.setContentView(view)
+            val balance = view.findViewById<TextView>(R.id.balance)
+            val client = mock<APIClientV1>()
+            whenever(client.getPositions()).thenReturn(
+                Observable.error(IllegalStateException("Position read failed")),
+                Observable.just(emptyList())
+            )
+            whenever(client.getCollateral()).thenReturn(Observable.just(mapOf("collateral" to 100.0)))
+            service.privateState.switchAccount(client)
+
+            service.privateState.refreshPositionsAndCollateral().test()
+            scheduler.triggerActions()
+            assertEquals("150 JPY", view.findViewById<TextView>(R.id.currentPrice).text.toString())
+            assertEquals("Position unavailable", view.findViewById<TextView>(R.id.position).text.toString())
+            assertEquals("Balance unavailable", balance.text.toString())
+
+            service.privateState.refreshPositionsAndCollateral().test()
+            scheduler.triggerActions()
+            assertEquals("100 JPY", balance.text.toString())
+        }
+    }
+
+    @Test
     fun unavailablePositionHidesTheCachedPositionAndItsValuations() {
         Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
             val activity = controller.get()
