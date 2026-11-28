@@ -104,7 +104,9 @@ class OrderFillNotificationServiceTest {
     }
 
     @Test
-    fun notifiesOrderOutcomesAfterCredentialReplacementAndClosesSessionOnDestroy() {
+    fun dropsPreviousAccountFillsBeforeReconnectAndMonitorsReplacement() {
+        val reconnect = TestScheduler()
+        RxJavaPlugins.setIoSchedulerHandler { reconnect }
         val socket = TestSocket()
         val accountSockets = mutableListOf<TestSocket>()
         val gson = GsonBuilder().setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES).create()
@@ -126,6 +128,8 @@ class OrderFillNotificationServiceTest {
         try {
             val service = controller.get()
             assertEquals(Service.START_NOT_STICKY, service.onStartCommand(startIntent(), 0, 1))
+            RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
+            reconnect.triggerActions()
             time.triggerActions()
             assertFalse(socket.connected())
             val manager = service.getSystemService(NotificationManager::class.java)
@@ -133,13 +137,21 @@ class OrderFillNotificationServiceTest {
 
             val previousAccount = accountSockets.last()
             previousAccount.authenticate()
+            time.triggerActions()
             previousAccount.receiveEvent("EXECUTION")
 
             preference.save(APICredentials("new-key", "new-secret"))
+            assertTrue(previousAccount.connected())
+            previousAccount.receiveEvent("EXECUTION")
+            time.triggerActions()
+            assertEquals(1, shadowOf(manager).allNotifications.size)
+
+            reconnect.triggerActions()
             val replacement = accountSockets.last()
             assertFalse(previousAccount.connected())
             assertEquals("new-key", replacement.authKey)
             preference.save(APICredentials("new-key", "new-secret"))
+            reconnect.triggerActions()
             assertEquals(listOf(previousAccount, replacement), accountSockets)
             time.triggerActions()
             assertEquals(1, shadowOf(manager).allNotifications.size)

@@ -20,8 +20,10 @@ internal class PrivateEvent<T>(val value: T, val isCurrent: () -> Boolean)
 internal class PrivateRealtimeConnection(
     private val gson: Gson,
     private val credentials: APICredentials,
+    private val generation: Long,
     private val socket: Socket,
-    private val lock: Any
+    private val lock: Any,
+    private val isSavedAccount: () -> Boolean
 ) {
     private var closed = false
     private var attempt: Any? = null
@@ -32,11 +34,11 @@ internal class PrivateRealtimeConnection(
     @Volatile private var ready: Any? = null
     private lateinit var availability: (PrivateEvent<Boolean>) -> Unit
 
-    fun canReuse(other: APICredentials): Boolean =
-        authenticated != null && !subscriptionRejected && matches(other)
+    fun canReuse(other: APICredentials, generation: Long): Boolean =
+        authenticated != null && !subscriptionRejected && matches(other, generation)
 
-    fun matches(other: APICredentials): Boolean =
-        credentials.key == other.key && credentials.secret == other.secret
+    fun matches(other: APICredentials, generation: Long): Boolean =
+        this.generation == generation && credentials.key == other.key && credentials.secret == other.secret
 
     fun connect(
         childOrders: (PrivateEvent<List<ChildOrderEvent>>) -> Unit,
@@ -142,7 +144,7 @@ internal class PrivateRealtimeConnection(
             Log.d("Socket", "Subscription failed for $channel: $error")
         } else if (pending.remove(channel) && pending.isEmpty()) {
             ready = request
-            availability(PrivateEvent(true) { ready === request })
+            availability(PrivateEvent(true) { ready === request && isSavedAccount() })
         }
     }
 
@@ -152,7 +154,7 @@ internal class PrivateRealtimeConnection(
                 val session = authenticated ?: return@synchronized
                 events.filter { it is JSONObject || it is JSONArray }.forEach {
                     gson.decodeRealtimePayload<T>(it.toString(), type.type)?.let { value ->
-                        publish(PrivateEvent(value) { authenticated === session })
+                        publish(PrivateEvent(value) { authenticated === session && isSavedAccount() })
                     }
                 }
             }

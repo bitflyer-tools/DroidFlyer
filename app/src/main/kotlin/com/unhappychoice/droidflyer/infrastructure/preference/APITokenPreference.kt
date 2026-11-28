@@ -23,9 +23,18 @@ class APITokenPreference internal constructor(
     internal var unlinkGeneration = 0L
         private set
 
+    @Volatile
+    internal var credentialGeneration = 0L
+        private set
+
+    internal fun readWithGeneration(): Pair<APICredentials, Long> = synchronized(lock) {
+        read() to credentialGeneration
+    }
+
     fun clear(): Boolean {
         val cleared = synchronized(lock) {
             unlinkGeneration++
+            credentialGeneration++
             preferences.edit().remove(encryptedEntry).remove("key").remove("secret").commit()
         }
         unlinks.onNext(Unit)
@@ -55,8 +64,11 @@ class APITokenPreference internal constructor(
         synchronized(lock) {
             val encrypted = cipher.encrypt(credentials)
             val previous = preferences.all
+            val saved = (previous[encryptedEntry] as? String)?.let(::readEncrypted)
+                ?: APICredentials(previous["key"] as? String ?: "", previous["secret"] as? String ?: "")
             try {
                 persist(encrypted, null, null)
+                if (saved.key != credentials.key || saved.secret != credentials.secret) credentialGeneration++
             } catch (failure: Exception) {
                 // A failed commit can still update the in-memory preferences.
                 try {
